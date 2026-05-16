@@ -7,6 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::auth::AuthenticatedUser;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
 use crate::db::memory::{MemoryDb, MemoryType, CreateMemory};
@@ -38,6 +39,17 @@ impl From<ApiMemoryType> for MemoryType {
     }
 }
 
+impl From<MemoryType> for ApiMemoryType {
+    fn from(t: MemoryType) -> Self {
+        match t {
+            MemoryType::Text => ApiMemoryType::Text,
+            MemoryType::Image => ApiMemoryType::Image,
+            MemoryType::Audio => ApiMemoryType::Audio,
+            MemoryType::Video => ApiMemoryType::Video,
+        }
+    }
+}
+
 /// 创建记忆请求
 #[derive(Debug, Deserialize)]
 pub struct CreateMemoryRequest {
@@ -51,6 +63,19 @@ pub struct CreateMemoryRequest {
     pub is_shared: bool,
 }
 
+/// 更新记忆请求
+#[derive(Debug, Deserialize)]
+pub struct UpdateMemoryRequest {
+    pub title: Option<String>,
+    pub content: Option<String>,
+    #[serde(default)]
+    pub memory_type: Option<ApiMemoryType>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub is_shared: Option<bool>,
+}
+
 /// 列表查询参数
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -59,6 +84,8 @@ pub struct ListQuery {
     #[serde(default)]
     pub offset: i64,
     pub tag: Option<String>,
+    #[serde(default)]
+    pub memory_type: Option<ApiMemoryType>,
 }
 
 fn default_limit() -> i64 {
@@ -74,30 +101,34 @@ pub struct MemoryListResponse {
     pub offset: i64,
 }
 
-/// GET /api/v1/memories
+/// GET /api/v1/memories - 列出记忆
 pub async fn list(
     State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<MemoryListResponse>>, AppError> {
-    // TODO: 从 state 获取当前用户 ID（待认证模块）
-    let user_id = Uuid::nil();
-
     let memories = state.repositories.memories
-        .list_by_user(user_id, params.limit, params.offset)
+        .list_by_user(auth_user.user_id, params.limit, params.offset)
+        .await
+        .map_err(AppError::Database)?;
+
+    let total = state.repositories.memories
+        .count_by_user(auth_user.user_id)
         .await
         .map_err(AppError::Database)?;
 
     Ok(Json(ApiResponse::success(MemoryListResponse {
         items: memories,
-        total: memories.len() as i64,
+        total,
         limit: params.limit,
         offset: params.offset,
     })))
 }
 
-/// POST /api/v1/memories
+/// POST /api/v1/memories - 创建记忆
 pub async fn create(
     State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
     Json(req): Json<CreateMemoryRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<MemoryDb>>), AppError> {
     // 验证输入
@@ -105,11 +136,8 @@ pub async fn create(
         return Err(AppError::BadRequest("内容不能为空".to_string()));
     }
 
-    // TODO: 从 state 获取当前用户 ID（待认证模块）
-    let user_id = Uuid::nil();
-
     let create_memory = CreateMemory {
-        user_id,
+        user_id: auth_user.user_id,
         title: req.title,
         content: req.content,
         memory_type: req.memory_type.into(),
@@ -126,9 +154,10 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(ApiResponse::success(memory))))
 }
 
-/// GET /api/v1/memories/:id
+/// GET /api/v1/memories/:id - 获取单个记忆
 pub async fn get(
     State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<MemoryDb>>, AppError> {
     let memory = state.repositories.memories
@@ -137,14 +166,59 @@ pub async fn get(
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", id)))?;
 
+    // 检查权限（自己的或共享的）
+    if memory.user_id != auth_user.user_id && !memory.is_shared {
+        return Err(AppError::Unauthorized);
+    }
+
     Ok(Json(ApiResponse::success(memory)))
 }
 
-/// DELETE /api/v1/memories/:id
+/// PATCH /api/v1/memories/:id - 更新记忆
+pub async fn update(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateMemoryRequest>,
+) -> Result<Json<ApiResponse<MemoryDb>>, AppError> {
+    // 获取现有记忆
+    let existing = state.repositories.memories
+        .find_by_id(id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", id)))?;
+
+    // 检查权限
+    if existing.user_id != auth_user.user_id {
+        return Err(AppError::Unauthorized);
+    }
+
+    // 更新字段
+    let memory = state.repositories.memories
+        .update(id, &req.content, &req.title, req.memory_type.map(|t| t.into()))
+        .await
+        .map_err(AppError::Database)?;
+
+    Ok(Json(ApiResponse::success(memory)))
+}
+
+/// DELETE /api/v1/memories/:id - 删除记忆
 pub async fn delete(
     State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
+    // 获取现有记忆检查权限
+    let existing = state.repositories.memories
+        .find_by_id(id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", id)))?;
+
+    if existing.user_id != auth_user.user_id {
+        return Err(AppError::Unauthorized);
+    }
+
     let deleted = state.repositories.memories
         .delete(id)
         .await
@@ -180,6 +254,14 @@ mod tests {
         let req: CreateMemoryRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.content, "test");
         assert_eq!(req.memory_type, ApiMemoryType::Text);
+    }
+
+    #[test]
+    fn test_update_memory_request_serde() {
+        let json = r#"{"title":"New Title"}"#;
+        let req: UpdateMemoryRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.title, Some("New Title".to_string()));
+        assert_eq!(req.content, None);
     }
 
     #[test]

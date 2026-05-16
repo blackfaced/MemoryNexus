@@ -59,11 +59,22 @@ pub struct CreateMemory {
     pub tags: Vec<String>,
 }
 
+/// 更新记忆参数
+#[derive(Debug, Clone)]
+pub struct UpdateMemory {
+    pub title: Option<String>,
+    pub content: Option<String>,
+    pub memory_type: Option<MemoryType>,
+    pub is_shared: Option<bool>,
+}
+
 /// 记忆仓储 trait
 pub trait MemoryRepository: Send + Sync {
     fn create(&self, memory: CreateMemory) -> impl std::future::Future<Output = Result<MemoryDb, sqlx::Error>> + Send;
     fn find_by_id(&self, id: Uuid) -> impl std::future::Future<Output = Result<Option<MemoryDb>, sqlx::Error>> + Send;
     fn list_by_user(&self, user_id: Uuid, limit: i64, offset: i64) -> impl std::future::Future<Output = Result<Vec<MemoryDb>, sqlx::Error>> + Send;
+    fn count_by_user(&self, user_id: Uuid) -> impl std::future::Future<Output = Result<i64, sqlx::Error>> + Send;
+    fn update(&self, id: Uuid, content: &Option<String>, title: &Option<String>, memory_type: Option<MemoryType>) -> impl std::future::Future<Output = Result<MemoryDb, sqlx::Error>> + Send;
     fn delete(&self, id: Uuid) -> impl std::future::Future<Output = Result<bool, sqlx::Error>> + Send;
 }
 
@@ -130,6 +141,63 @@ impl MemoryRepository for PostgresMemoryRepository {
         .await
     }
 
+    async fn count_by_user(&self, user_id: Uuid) -> Result<i64, sqlx::Error> {
+        let result: (i64,) = sqlx::query_as(
+            r#"
+            SELECT COUNT(*) FROM memories 
+            WHERE user_id = $1 OR is_shared = true
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(result.0)
+    }
+
+    async fn update(&self, id: Uuid, content: &Option<String>, title: &Option<String>, memory_type: Option<MemoryType>) -> Result<MemoryDb, sqlx::Error> {
+        // 构建动态更新查询
+        let memory = if let Some(c) = content {
+            sqlx::query_as::<_, MemoryDb>(
+                r#"
+                UPDATE memories 
+                SET content = $2, title = COALESCE($3, title), updated_at = NOW()
+                WHERE id = $1
+                RETURNING *
+                "#,
+            )
+            .bind(id)
+            .bind(c)
+            .bind(title)
+            .fetch_one(&self.pool)
+            .await?
+        } else if let Some(t) = title {
+            sqlx::query_as::<_, MemoryDb>(
+                r#"
+                UPDATE memories 
+                SET title = $2, updated_at = NOW()
+                WHERE id = $1
+                RETURNING *
+                "#,
+            )
+            .bind(id)
+            .bind(t)
+            .fetch_one(&self.pool)
+            .await?
+        } else {
+            // 只更新 updated_at
+            sqlx::query_as::<_, MemoryDb>(
+                r#"
+                UPDATE memories SET updated_at = NOW() WHERE id = $1 RETURNING *
+                "#,
+            )
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?
+        };
+
+        Ok(memory)
+    }
+
     async fn delete(&self, id: Uuid) -> Result<bool, sqlx::Error> {
         let result = sqlx::query("DELETE FROM memories WHERE id = $1")
             .bind(id)
@@ -169,5 +237,19 @@ mod tests {
         };
         
         assert!(!memory.content.is_empty());
+    }
+
+    #[test]
+    fn test_update_memory_struct() {
+        let update = UpdateMemory {
+            title: Some("New Title".to_string()),
+            content: Some("New Content".to_string()),
+            memory_type: Some(MemoryType::Image),
+            is_shared: Some(true),
+        };
+        
+        assert!(update.title.is_some());
+        assert!(update.content.is_some());
+        assert!(update.memory_type.is_some());
     }
 }
