@@ -1,0 +1,53 @@
+name: 💡 Feature Request
+description: 提出一个新功能
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢提出建议！请描述你想要的功能。
+
+  - type: input
+    id: feature
+    attributes:
+      label: 功能描述
+      placeholder: 简明扼要地描述你想要的功能
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 解决的问题
+      placeholder: 这个功能解决什么问题？有什么痛点？
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的解决方案
+      placeholder: 你期望这个功能如何工作？
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      placeholder: 你考虑过其他解决方案吗？
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他信息
+      placeholder: 截图、链接、其他上下文

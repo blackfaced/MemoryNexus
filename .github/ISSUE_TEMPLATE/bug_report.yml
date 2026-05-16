@@ -1,0 +1,60 @@
+name: 🐛 Bug Report
+description: 报告一个 Bug
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告 Bug！请尽可能详细描述问题。
+
+  - type: input
+    id: description
+    attributes:
+      label: Bug 描述
+      placeholder: 简明扼要地描述 Bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: 环境信息
+      placeholder: OS, Python版本, Docker版本等
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+    validations:
+      required: true
