@@ -2,7 +2,15 @@
 
 > 连接每一份记忆，编织家庭知识网络
 
-**MemoryNexus** 是一个开源的家庭 AI 记忆系统，基于"第二大脑"概念构建。支持多用户、多模态记忆存储、AI 主动助理、多云部署。
+**MemoryNexus** 是一个开源的家庭 AI 记忆系统，基于"第二大脑"概念构建。
+
+| 🦀 **技术栈** | Rust + Axum | ⚛️ React + TS | ☁️ 云原生 |
+|:---:|:---:|:---:|:---:|
+| 后端 | Rust 0.72 | 前端 | React 18 |
+| 存储 | S3/MinIO | 向量 | Qdrant |
+| AI | Whisper + LLM | 数据库 | PostgreSQL |
+
+📋 **架构决策**: [decisions/](decisions/) 目录下管理所有 ADR
 
 [![GitHub stars](https://img.shields.io/github/stars/blackfaced/MemoryNexus)](https://github.com/blackfaced/MemoryNexus/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -90,7 +98,19 @@ Any Agent                 Qdrant      (向量数据)
                           Redis       (缓存)
 ```
 
-**技术栈**：[FastAPI](https://fastapi.tiangolo.com/) · [PostgreSQL](https://www.postgresql.org/) · [Qdrant](https://qdrant.tech/) · [React](https://react.dev/)
+## 🛠️ 技术栈
+
+| 层级 | 技术 | 说明 |
+|------|------|------|
+| **后端** | Rust + Axum | 高性能 API |
+| **前端** | React + TypeScript | Web 应用 |
+| **数据库** | PostgreSQL | 关系型数据 |
+| **向量库** | Qdrant | 语义搜索 |
+| **缓存** | Redis | 任务队列 |
+| **存储** | S3/MinIO | 文件存储 |
+| **AI** | Whisper + LLM | 语音/智能 |
+
+> 📖 详细技术决策见 [decisions/](decisions/) 目录
 
 ---
 
