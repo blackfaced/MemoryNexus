@@ -1,0 +1,62 @@
+# 📋 Architecture Decision Records (ADR)
+
+> 架构决策记录 - MemoryNexus 项目关键决策文档
+
+## 📁 目录结构
+
+```
+decisions/
+├── ADR-001-backend-language.md    ✅ Rust + Axum 后端选型
+├── ADR-002-storage-abstraction.md ✅ 存储层抽象设计
+├── ADR-003-vector-database.md    ✅ Qdrant 向量数据库
+├── ADR-004-whisper-deployment.md ✅ Whisper 语音方案
+└── ADR-005-project-naming.md     ✅ 项目命名选择
+```
+
+## 📖 ADR 是什么？
+
+ADR（Architecture Decision Record）是记录重要架构决策的文档，包含：
+
+| 字段 | 说明 |
+|------|------|
+| **状态** | 已接受 / 已废弃 / 待定 |
+| **背景** | 决策的背景和动机 |
+| **决策** | 最终的选择和理由 |
+| **后果** | 正面/负面影响 |
+
+## 🔗 相关资源
+
+- [架构设计文档](../docs/architecture.md)
+- [技术栈概览](../docs/imgs/memorynexus_rust_stack.png)
+
+## 📝 如何贡献新决策
+
+1. 创建新文件 `ADR-00X-feature-name.md`
+2. 使用标准模板
+3. 更新本文档目录
+4. 提交 PR
+
+## 标准模板
+
+```markdown
+# ADR-00X: 决策标题
+
+## 状态
+✅ 已接受
+
+## 背景
+...
+
+## 决策
+...
+
+## 后果
+正面：
+- ...
+
+负面：
+- ...
+
+## 相关决策
+- ADR-001: ...
+```
