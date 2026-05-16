@@ -41,6 +41,9 @@ chrono-english = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 nanoid = "0.4"
 
+# HTTP client (for AI APIs)
+reqwest = { version = "0.12", features = ["json"] }
+
 # Auth
 jsonwebtoken = "9"
 argon2 = "0.5"

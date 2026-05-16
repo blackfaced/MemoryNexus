@@ -2,6 +2,7 @@
 
 use axum::Router;
 
+mod ai;
 mod auth;
 mod health;
 mod memories;
@@ -33,6 +34,11 @@ pub fn routes() -> Router {
         // 搜索
         .route("/api/v1/search", axum::routing::get(search::search))
         .route("/api/v1/search/suggest", axum::routing::get(search::suggest))
+        // AI 功能
+        .route("/api/v1/ai/summarize", axum::routing::post(ai::summarize))
+        .route("/api/v1/ai/autotag", axum::routing::post(ai::auto_tag))
+        .route("/api/v1/ai/config", axum::routing::get(ai::get_config))
+        .route("/api/v1/memories/:id/summarize", axum::routing::post(ai::summarize_memory))
         // 文件上传 (预留)
         // .route("/api/v1/upload", axum::routing::post(upload::upload))
         // .route("/api/v1/media/:key", axum::routing::get(upload::get_media))
