@@ -5,6 +5,7 @@ use axum::Router;
 mod auth;
 mod health;
 mod memories;
+mod search;
 mod tags;
 mod upload;
 
@@ -29,6 +30,9 @@ pub fn routes() -> Router {
         .route("/api/v1/tags/:id", axum::routing::get(tags::get))
         .route("/api/v1/tags/:id", axum::routing::patch(tags::update))
         .route("/api/v1/tags/:id", axum::routing::delete(tags::delete))
+        // 搜索
+        .route("/api/v1/search", axum::routing::get(search::search))
+        .route("/api/v1/search/suggest", axum::routing::get(search::suggest))
         // 文件上传 (预留)
         // .route("/api/v1/upload", axum::routing::post(upload::upload))
         // .route("/api/v1/media/:key", axum::routing::get(upload::get_media))

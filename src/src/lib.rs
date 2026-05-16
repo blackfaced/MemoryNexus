@@ -6,5 +6,6 @@ pub mod api;
 pub mod auth;
 pub mod db;
 pub mod error;
+pub mod search;
 pub mod state;
 pub mod storage;
