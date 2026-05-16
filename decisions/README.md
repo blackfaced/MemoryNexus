@@ -10,7 +10,8 @@ decisions/
 ├── ADR-002-storage-abstraction.md ✅ 存储层抽象设计
 ├── ADR-003-vector-database.md    ✅ Qdrant 向量数据库
 ├── ADR-004-whisper-deployment.md ✅ Whisper 语音方案
-└── ADR-005-project-naming.md     ✅ 项目命名选择
+├── ADR-005-project-naming.md     ✅ 项目命名选择
+└── ADR-006-cli-agent-interface.md ✅ CLI + Agent 双模式接口
 ```
 
 ## 📖 ADR 是什么？
