@@ -3,9 +3,11 @@
 //! 使用 Axum 构建的高性能 Rust 后端
 
 mod api;
+mod auth;
 mod db;
 mod error;
 mod state;
+mod storage;
 
 use std::net::SocketAddr;
 use axum::Router;
@@ -49,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
     // 创建仓储
     let repositories = state::Repositories {
         memories: Arc::new(db::memory::PostgresMemoryRepository::new(pool.clone())),
+        tags: Arc::new(db::tag::PostgresTagRepository::new(pool.clone())),
         users: Arc::new(db::user::PostgresUserRepository::new(pool.clone())),
     };
 

@@ -2,6 +2,7 @@
 use sqlx::{postgres::PgPoolOptions, PgPool, Error};
 
 pub mod memory;
+pub mod tag;
 pub mod user;
 
 /// 初始化数据库连接池
