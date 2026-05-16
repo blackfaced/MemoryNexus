@@ -8,37 +8,34 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{ApiResponse, AppError};
+use crate::state::AppState;
+use crate::db::memory::{MemoryDb, MemoryType, CreateMemory};
 
-/// 记忆类型
+/// 记忆类型枚举（API 层）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum MemoryType {
+pub enum ApiMemoryType {
     Text,
     Image,
     Audio,
     Video,
 }
 
-impl Default for MemoryType {
+impl Default for ApiMemoryType {
     fn default() -> Self {
         Self::Text
     }
 }
 
-/// 记忆数据结构
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Memory {
-    pub id: Uuid,
-    pub title: Option<String>,
-    pub content: String,
-    #[serde(default)]
-    pub memory_type: MemoryType,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub is_shared: bool,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+impl From<ApiMemoryType> for MemoryType {
+    fn from(t: ApiMemoryType) -> Self {
+        match t {
+            ApiMemoryType::Text => MemoryType::Text,
+            ApiMemoryType::Image => MemoryType::Image,
+            ApiMemoryType::Audio => MemoryType::Audio,
+            ApiMemoryType::Video => MemoryType::Video,
+        }
+    }
 }
 
 /// 创建记忆请求
@@ -47,7 +44,7 @@ pub struct CreateMemoryRequest {
     pub title: Option<String>,
     pub content: String,
     #[serde(default)]
-    pub memory_type: MemoryType,
+    pub memory_type: ApiMemoryType,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
@@ -71,7 +68,7 @@ fn default_limit() -> i64 {
 /// 记忆列表响应
 #[derive(Serialize)]
 pub struct MemoryListResponse {
-    pub items: Vec<Memory>,
+    pub items: Vec<MemoryDb>,
     pub total: i64,
     pub limit: i64,
     pub offset: i64,
@@ -79,15 +76,20 @@ pub struct MemoryListResponse {
 
 /// GET /api/v1/memories
 pub async fn list(
+    State(state): State<AppState>,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<MemoryListResponse>>, AppError> {
-    // TODO: 从数据库查询
-    let items = vec![];
-    let total = 0;
+    // TODO: 从 state 获取当前用户 ID（待认证模块）
+    let user_id = Uuid::nil();
+
+    let memories = state.repositories.memories
+        .list_by_user(user_id, params.limit, params.offset)
+        .await
+        .map_err(AppError::Database)?;
 
     Ok(Json(ApiResponse::success(MemoryListResponse {
-        items,
-        total,
+        items: memories,
+        total: memories.len() as i64,
         limit: params.limit,
         offset: params.offset,
     })))
@@ -95,77 +97,96 @@ pub async fn list(
 
 /// POST /api/v1/memories
 pub async fn create(
+    State(state): State<AppState>,
     Json(req): Json<CreateMemoryRequest>,
-) -> Result<(StatusCode, Json<ApiResponse<Memory>>), AppError> {
+) -> Result<(StatusCode, Json<ApiResponse<MemoryDb>>), AppError> {
     // 验证输入
     if req.content.trim().is_empty() {
         return Err(AppError::BadRequest("内容不能为空".to_string()));
     }
 
-    let now = chrono::Utc::now();
-    let memory = Memory {
-        id: Uuid::new_v4(),
+    // TODO: 从 state 获取当前用户 ID（待认证模块）
+    let user_id = Uuid::nil();
+
+    let create_memory = CreateMemory {
+        user_id,
         title: req.title,
         content: req.content,
-        memory_type: req.memory_type,
-        tags: req.tags,
+        memory_type: req.memory_type.into(),
+        file_path: None,
         is_shared: req.is_shared,
-        created_at: now,
-        updated_at: now,
+        tags: req.tags,
     };
 
-    // TODO: 保存到数据库
+    let memory = state.repositories.memories
+        .create(create_memory)
+        .await
+        .map_err(AppError::Database)?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::success(memory))))
 }
 
 /// GET /api/v1/memories/:id
 pub async fn get(
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<Memory>>, AppError> {
-    // TODO: 从数据库查询
-    Err(AppError::NotFound(format!("Memory {} not found", id)))
+) -> Result<Json<ApiResponse<MemoryDb>>, AppError> {
+    let memory = state.repositories.memories
+        .find_by_id(id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", id)))?;
+
+    Ok(Json(ApiResponse::success(memory)))
+}
+
+/// DELETE /api/v1/memories/:id
+pub async fn delete(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<()>>, AppError> {
+    let deleted = state.repositories.memories
+        .delete(id)
+        .await
+        .map_err(AppError::Database)?;
+
+    if !deleted {
+        return Err(AppError::NotFound(format!("Memory {} not found", id)));
+    }
+
+    Ok(Json(ApiResponse::success(())))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_create_memory_validation() {
-        // 空内容应该返回错误
-        let req = CreateMemoryRequest {
-            title: None,
-            content: "".to_string(),
-            memory_type: MemoryType::Text,
-            tags: vec![],
-            is_shared: false,
-        };
-
-        let result = create(Json(req)).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_create_memory_success() {
-        let req = CreateMemoryRequest {
-            title: Some("测试记忆".to_string()),
-            content: "这是一条测试记忆".to_string(),
-            memory_type: MemoryType::Text,
-            tags: vec!["测试".to_string()],
-            is_shared: false,
-        };
-
-        let result = create(Json(req)).await;
-        assert!(result.is_ok());
-
-        let (status, body) = result.unwrap();
-        assert_eq!(status, StatusCode::CREATED);
-        assert!(body.data.id.ne(&Uuid::nil()));
+    #[test]
+    fn test_api_memory_type_default() {
+        assert_eq!(ApiMemoryType::default(), ApiMemoryType::Text);
     }
 
     #[test]
-    fn test_memory_type_default() {
-        assert_eq!(MemoryType::default(), MemoryType::Text);
+    fn test_api_memory_type_to_db_type() {
+        assert_eq!(MemoryType::Text, ApiMemoryType::Text.into());
+        assert_eq!(MemoryType::Image, ApiMemoryType::Image.into());
+        assert_eq!(MemoryType::Audio, ApiMemoryType::Audio.into());
+        assert_eq!(MemoryType::Video, ApiMemoryType::Video.into());
+    }
+
+    #[test]
+    fn test_create_memory_request_serde() {
+        let json = r#"{"content":"test","memory_type":"text"}"#;
+        let req: CreateMemoryRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.content, "test");
+        assert_eq!(req.memory_type, ApiMemoryType::Text);
+    }
+
+    #[test]
+    fn test_list_query_defaults() {
+        let json = r#"{}"#;
+        let query: ListQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.limit, 20);
+        assert_eq!(query.offset, 0);
     }
 }

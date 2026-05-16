@@ -3,11 +3,12 @@
 //! 使用 Axum 构建的高性能 Rust 后端
 
 mod api;
+mod db;
 mod error;
 mod state;
 
 use std::net::SocketAddr;
-use axum::{Router, routing::get};
+use axum::Router;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// 健康检查端点
@@ -18,12 +19,12 @@ async fn health() -> &'static str {
 /// 创建应用
 fn create_app() -> Router {
     Router::new()
-        .route("/health", get(health))
+        .route("/health", axum::routing::get(health))
         .merge(api::routes())
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     // 初始化日志
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
@@ -33,14 +34,37 @@ async fn main() {
 
     tracing::info!("🚀 MemoryNexus 启动中...");
 
+    // 数据库配置
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/memorynexus".to_string());
+
+    // 初始化数据库连接池
+    tracing::info!("📦 连接数据库...");
+    let pool = db::init_pool(&database_url).await?;
+    
+    // 运行迁移
+    tracing::info!("🔄 运行数据库迁移...");
+    db::run_migrations(&pool).await?;
+
+    // 创建仓储
+    let repositories = state::Repositories {
+        memories: Arc::new(db::memory::PostgresMemoryRepository::new(pool.clone())),
+        users: Arc::new(db::user::PostgresUserRepository::new(pool.clone())),
+    };
+
+    // 创建应用状态
+    let app_state = state::AppState::new(pool, repositories);
+
     // 创建应用
-    let app = create_app();
+    let app = create_app().with_state(app_state);
 
     // 监听地址
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     tracing::info!("📍 监听地址: http://{}", addr);
 
     // 启动服务器
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }

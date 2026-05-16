@@ -1,0 +1,5 @@
+{
+  "db_name": "postgres",
+  "ca_cert": null,
+  "connection_url": "postgresql://postgres:postgres@localhost:5432/memorynexus"
+}

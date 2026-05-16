@@ -1,174 +1,59 @@
-# ============================================
-# MemoryNexus - Docker Compose 配置
-# 一键部署家庭AI记忆中心
-# ============================================
-
 version: '3.8'
 
 services:
-  # ------------------------------
-  # 前端 Web
-  # ------------------------------
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: memorynexus-frontend
-    ports:
-      - "3000:80"
-    depends_on:
-      - api
-    networks:
-      - memorynexus-network
-    restart: unless-stopped
-
-  # ------------------------------
-  # API 服务
-  # ------------------------------
-  api:
-    build:
-      context: ./src
-      dockerfile: Dockerfile
-    container_name: memorynexus-api
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/memorynexus}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
-    depends_on:
-      - db
-      - redis
-      - qdrant
-    networks:
-      - memorynexus-network
-    restart: unless-stopped
-    volumes:
-      - uploads:/app/uploads
-
-  # ------------------------------
-  # 后台任务 Worker
-  # ------------------------------
-  worker:
-    build:
-      context: ./src
-      dockerfile: Dockerfile
-    container_name: memorynexus-worker
-    command: celery -A worker worker --loglevel=info
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/memorynexus}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-    depends_on:
-      - db
-      - redis
-      - qdrant
-    networks:
-      - memorynexus-network
-    restart: unless-stopped
-
-  # ------------------------------
-  # 数据库 - PostgreSQL
-  # ------------------------------
-  db:
+  # PostgreSQL 数据库
+  postgres:
     image: postgres:16-alpine
-    container_name: memorynexus-db
+    container_name: memorynexus_db
     environment:
-      - POSTGRES_DB=memorynexus
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: memorynexus
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - memorynexus-network
-    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
       retries: 5
 
-  # ------------------------------
-  # 向量数据库 - Qdrant
-  # ------------------------------
+  # Redis (预留)
+  redis:
+    image: redis:7-alpine
+    container_name: memorynexus_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Qdrant 向量数据库 (预留)
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: memorynexus-qdrant
+    container_name: memorynexus_qdrant
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
-    networks:
-      - memorynexus-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
-  # ------------------------------
-  # 缓存 - Redis
-  # ------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: memorynexus-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - memorynexus-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ------------------------------
-  # MinIO 对象存储 (可选 S3 替代)
-  # ------------------------------
+  # MinIO 对象存储 (预留)
   minio:
     image: minio/minio:latest
-    container_name: memorynexus-minio
+    container_name: memorynexus_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     ports:
       - "9000:9000"
       - "9001:9001"
-    environment:
-      - MINIO_ROOT_USER=${MINIO_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD:-minioadmin}
     volumes:
       - minio_data:/data
-    networks:
-      - memorynexus-network
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
 
-# ------------------------------
-# 网络配置
-# ------------------------------
-networks:
-  memorynexus-network:
-    driver: bridge
-
-# ------------------------------
-# 数据卷
-# ------------------------------
 volumes:
   postgres_data:
-  qdrant_data:
   redis_data:
+  qdrant_data:
   minio_data:
-  uploads:
