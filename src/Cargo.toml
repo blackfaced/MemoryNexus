@@ -41,6 +41,12 @@ chrono-english = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 nanoid = "0.4"
 
+# Auth
+jsonwebtoken = "9"
+argon2 = "0.5"
+async-trait = "0.1"
+rand = "0.8"
+
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"

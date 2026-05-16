@@ -1,14 +1,23 @@
 //! API 路由模块
 
-use axum::{Router, routing::get, routing::post};
+use axum::Router;
 
-mod memories;
+mod auth;
 mod health;
+mod memories;
 
 /// 聚合所有 API 路由
 pub fn routes() -> Router {
     Router::new()
-        .route("/api/v1/health", get(health::check))
-        .route("/api/v1/memories", get(memories::list))
-        .route("/api/v1/memories", post(memories::create))
+        // 健康检查
+        .route("/api/v1/health", axum::routing::get(health::check))
+        // 认证
+        .route("/api/v1/auth/login", axum::routing::post(auth::login))
+        .route("/api/v1/auth/register", axum::routing::post(auth::register))
+        .route("/api/v1/auth/me", axum::routing::get(auth::me))
+        // 记忆
+        .route("/api/v1/memories", axum::routing::get(memories::list))
+        .route("/api/v1/memories", axum::routing::post(memories::create))
+        .route("/api/v1/memories/:id", axum::routing::get(memories::get))
+        .route("/api/v1/memories/:id", axum::routing::delete(memories::delete))
 }
