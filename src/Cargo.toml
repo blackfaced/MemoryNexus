@@ -47,6 +47,13 @@ argon2 = "0.5"
 async-trait = "0.1"
 rand = "0.8"
 
+# Storage (S3)
+aws-config = "1"
+aws-sdk-s3 = "1"
+
+# Image processing
+image = "0.25"
+
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"

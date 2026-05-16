@@ -5,6 +5,7 @@ use axum::Router;
 mod auth;
 mod health;
 mod memories;
+mod upload;
 
 /// 聚合所有 API 路由
 pub fn routes() -> Router {
@@ -21,4 +22,7 @@ pub fn routes() -> Router {
         .route("/api/v1/memories/:id", axum::routing::get(memories::get))
         .route("/api/v1/memories/:id", axum::routing::patch(memories::update))
         .route("/api/v1/memories/:id", axum::routing::delete(memories::delete))
+        // 文件上传 (预留)
+        // .route("/api/v1/upload", axum::routing::post(upload::upload))
+        // .route("/api/v1/media/:key", axum::routing::get(upload::get_media))
 }
