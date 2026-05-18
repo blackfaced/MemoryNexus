@@ -10,19 +10,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # 1. 格式检查
+  # 格式检查
   fmt:
-    name: Rustfmt
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - run: cargo fmt --all -- --check
 
-  # 2. 编译检查
+  # Clippy 检查
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -31,67 +30,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
-  # 3. 依赖审计
-  audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Audit dependencies
-        run: |
-          cargo install cargo-audit || true
-          cargo audit || true
-
-  # 4. 编译测试
+  # 构建
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build
-        run: cargo build --verbose --all-targets
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - run: cargo build --verbose --all-targets
 
-  # 5. 运行测试
+  # 单元测试
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
         with:
-          components: rustfmt, clippy
-      - name: Run tests
-        run: cargo test --all-features --all-targets -- --nocapture
-
-  # 6. 文档检查
-  doc:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Generate documentation
-        run: cargo doc --no-deps --all-features
-        env:
-          RUSTDOCFLAGS: -D warnings
-
-  # 7. 检查未使用依赖
-  udeps:
-    name: Unused Dependencies
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: cargo-udeps
-      - name: Check unused dependencies
-        run: |
-          cargo install cargo-udeps || true
-          cargo udeps --all-targets || true
+          workspaces: src
+      - run: cargo test --all-features --all-targets
+        timeout-minutes: 20

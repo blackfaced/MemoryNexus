@@ -11,3 +11,9 @@ build/
 node_modules/
 *.log
 *.sqlite
+
+# Rust
+/target/
+**/target/
+*.profraw
+*.pdb
