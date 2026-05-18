@@ -6,9 +6,11 @@ use crate::state::AppState;
 
 mod ai;
 mod auth;
+mod embedding;
 mod health;
 mod memories;
 mod search;
+mod semantic;
 mod tags;
 mod upload;
 
@@ -52,6 +54,29 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v1/memories/:id/summarize",
             axum::routing::post(ai::summarize_memory),
+        )
+        // 向量管理
+        .route("/api/v1/embeddings", axum::routing::post(embedding::create_embedding))
+        .route(
+            "/api/v1/embeddings/batch",
+            axum::routing::post(embedding::batch_create_embeddings),
+        )
+        .route(
+            "/api/v1/embeddings/:id",
+            axum::routing::delete(embedding::delete_embeddings),
+        )
+        .route(
+            "/api/v1/embeddings/:id",
+            axum::routing::get(embedding::check_embedding),
+        )
+        // 语义搜索
+        .route(
+            "/api/v1/search/semantic",
+            axum::routing::post(semantic::semantic_search),
+        )
+        .route(
+            "/api/v1/search/semantic",
+            axum::routing::get(semantic::semantic_search_get),
         )
     // 文件上传 (预留)
     // .route("/api/v1/upload", axum::routing::post(upload::upload))
