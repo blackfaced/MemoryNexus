@@ -1,13 +1,14 @@
 //! AI API 端点
 
 use axum::{
-    Json, extract::{Path, Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::ai::{Summarizer, OpenAISummarizer, SummaryOptions, SummaryStyle};
+use crate::ai::{OpenAISummarizer, Summarizer, SummaryOptions, SummaryStyle};
 use crate::auth::AuthenticatedUser;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
@@ -16,7 +17,7 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 pub struct SummarizeRequest {
     pub content: String,
-    
+
     #[serde(default)]
     pub options: Option<SummaryOptions>,
 }
@@ -62,18 +63,19 @@ pub async fn summarize(
     // 获取 API Key
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| AppError::BadRequest("AI 功能未配置".to_string()))?;
-    
+
     // 创建摘要器
     let summarizer = OpenAISummarizer::new(api_key);
-    
+
     // 使用提供的选项或默认值
     let options = req.options.unwrap_or_default();
-    
+
     // 生成摘要
-    let result = summarizer.summarize(&req.content, &options)
+    let result = summarizer
+        .summarize(&req.content, &options)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    
+
     Ok(Json(ApiResponse::success(SummarizeResponse {
         summary: result.summary,
         keywords: result.keywords,
@@ -92,33 +94,36 @@ pub async fn summarize_memory(
     Json(req): Json<SummarizeRequest>,
 ) -> Result<Json<ApiResponse<SummarizeResponse>>, AppError> {
     // 获取记忆
-    let memory = state.repositories.memories
+    let memory = state
+        .repositories
+        .memories
         .find_by_id(id)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", id)))?;
-    
+
     // 验证权限
     if memory.user_id != auth_user.user_id {
         return Err(AppError::Unauthorized);
     }
-    
+
     // 获取 API Key
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| AppError::BadRequest("AI 功能未配置".to_string()))?;
-    
+
     // 创建摘要器
     let summarizer = OpenAISummarizer::new(api_key);
-    
+
     // 生成摘要
     let options = req.options.unwrap_or_default();
-    let result = summarizer.summarize(&memory.content, &options)
+    let result = summarizer
+        .summarize(&memory.content, &options)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    
+
     // 更新记忆记录（如果用户想要保存）
     // 这里只是返回结果，实际保存由客户端决定
-    
+
     Ok(Json(ApiResponse::success(SummarizeResponse {
         summary: result.summary,
         keywords: result.keywords,
@@ -138,10 +143,10 @@ pub async fn auto_tag(
     // 获取 API Key
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| AppError::BadRequest("AI 功能未配置".to_string()))?;
-    
+
     // 创建摘要器
     let summarizer = OpenAISummarizer::new(api_key);
-    
+
     // 构建标签推荐 prompt
     let prompt = format!(
         r#"请分析以下内容，推荐3-5个最相关的标签。
@@ -152,27 +157,29 @@ pub async fn auto_tag(
 {}"#,
         req.content
     );
-    
+
     let options = SummaryOptions {
         max_words: 20,
         language: "zh".to_string(),
         include_keywords: true,
         style: SummaryStyle::Concise,
     };
-    
-    let result = summarizer.summarize(&prompt, &options)
+
+    let result = summarizer
+        .summarize(&prompt, &options)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    
+
     // 解析标签（从摘要中提取）
-    let tags: Vec<String> = result.summary
+    let tags: Vec<String> = result
+        .summary
         .split(|c: char| !c.is_alphanumeric() && c != '，' && c != ',' && c != '、')
         .filter(|s| !s.is_empty())
         .map(|s| s.trim().to_string())
         .filter(|s| s.len() <= 10) // 过滤太长的词
         .take(5)
         .collect();
-    
+
     Ok(Json(ApiResponse::success(AutoTagResponse {
         suggested_tags: tags,
         confidence: 0.8, // 简化实现，实际可计算置信度
@@ -182,10 +189,9 @@ pub async fn auto_tag(
 /// GET /api/v1/ai/config - 获取 AI 配置
 pub async fn get_config() -> Result<Json<ApiResponse<AiConfigResponse>>, AppError> {
     let enabled = std::env::var("OPENAI_API_KEY").is_ok();
-    
+
     Ok(Json(ApiResponse::success(AiConfigResponse {
-        model: std::env::var("OPENAI_MODEL")
-            .unwrap_or_else(|_| "gpt-3.5-turbo".to_string()),
+        model: std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".to_string()),
         embedding_model: std::env::var("OPENAI_EMBEDDING_MODEL")
             .unwrap_or_else(|_| "text-embedding-ada-002".to_string()),
         enabled,
@@ -222,7 +228,7 @@ mod tests {
             summary_length: 50,
             processing_time_ms: 100,
         };
-        
+
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("测试摘要"));
         assert!(json.contains("\"keywords\":"));
@@ -242,7 +248,7 @@ mod tests {
             embedding_model: "text-embedding-3-small".to_string(),
             enabled: true,
         };
-        
+
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("gpt-4"));
         assert!(json.contains("\"enabled\":true"));

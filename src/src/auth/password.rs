@@ -1,7 +1,9 @@
 //! 密码哈希
 
 use argon2::{
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{
+        PasswordHash, PasswordHasher as ArgonPasswordHasher, PasswordVerifier, SaltString,
+    },
     Argon2,
 };
 use rand::rngs::OsRng;
@@ -38,7 +40,7 @@ mod tests {
     fn test_password_hash() {
         let password = "secure_password_123";
         let hash = PasswordHasher::hash(password).unwrap();
-        
+
         // 哈希应该是非空的
         assert!(!hash.is_empty());
         // 哈希应该不同于原始密码
@@ -49,7 +51,7 @@ mod tests {
     fn test_password_verify() {
         let password = "secure_password_123";
         let hash = PasswordHasher::hash(password).unwrap();
-        
+
         // 正确密码应该验证通过
         assert!(PasswordHasher::verify(password, &hash));
         // 错误密码应该验证失败
@@ -62,7 +64,7 @@ mod tests {
         let password = "secure_password_123";
         let hash1 = PasswordHasher::hash(password).unwrap();
         let hash2 = PasswordHasher::hash(password).unwrap();
-        
+
         assert_ne!(hash1, hash2);
         // 但两者都应该能验证通过
         assert!(PasswordHasher::verify(password, &hash1));

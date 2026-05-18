@@ -1,5 +1,5 @@
 //! 数据库模块
-use sqlx::{postgres::PgPoolOptions, PgPool, Error};
+use sqlx::{postgres::PgPoolOptions, Error, PgPool};
 
 pub mod memory;
 pub mod tag;
@@ -19,9 +19,7 @@ pub async fn init_pool(database_url: &str) -> Result<PgPool, Error> {
 
 /// 运行数据库迁移
 pub async fn run_migrations(pool: &PgPool) -> Result<(), Error> {
-    sqlx::migrate!("./migrations")
-        .run(pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(pool).await?;
     Ok(())
 }
 

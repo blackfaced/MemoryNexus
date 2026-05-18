@@ -1,6 +1,6 @@
 //! 搜索过滤器模块
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use serde::{Deserialize, Serialize};
 
 /// 排序顺序
@@ -43,7 +43,7 @@ impl DateRange {
     pub fn new(from: Option<DateTime<Utc>>, to: Option<DateTime<Utc>>) -> Self {
         Self { from, to }
     }
-    
+
     /// 创建最近 N 天的范围
     pub fn last_days(days: i64) -> Self {
         let to = Utc::now();
@@ -53,17 +53,18 @@ impl DateRange {
             to: Some(to),
         }
     }
-    
+
     /// 创建本周范围
     pub fn this_week() -> Self {
         let now = Utc::now();
-        let start_of_week = now - chrono::Duration::days(now.weekday().num_days_from_monday() as i64);
+        let start_of_week =
+            now - chrono::Duration::days(now.weekday().num_days_from_monday() as i64);
         Self {
             from: Some(start_of_week),
             to: Some(now),
         }
     }
-    
+
     /// 创建本月范围
     pub fn this_month() -> Self {
         let now = Utc::now();
@@ -73,7 +74,7 @@ impl DateRange {
             to: Some(now),
         }
     }
-    
+
     /// 创建今年范围
     pub fn this_year() -> Self {
         let now = Utc::now();
@@ -90,16 +91,16 @@ impl DateRange {
 pub struct MemoryFilter {
     /// 标签过滤
     pub tags: Option<Vec<String>>,
-    
+
     /// 记忆类型
     pub memory_type: Option<Vec<String>>,
-    
+
     /// 日期范围
     pub date_range: Option<DateRange>,
-    
+
     /// 共享状态
     pub is_shared: Option<bool>,
-    
+
     /// 有无媒体文件
     pub has_media: Option<bool>,
 }
@@ -120,27 +121,27 @@ impl MemoryFilter {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn with_tags(mut self, tags: Vec<String>) -> Self {
         self.tags = Some(tags);
         self
     }
-    
+
     pub fn with_types(mut self, types: Vec<String>) -> Self {
         self.memory_type = Some(types);
         self
     }
-    
+
     pub fn with_date_range(mut self, range: DateRange) -> Self {
         self.date_range = Some(range);
         self
     }
-    
+
     pub fn shared_only(mut self) -> Self {
         self.is_shared = Some(true);
         self
     }
-    
+
     pub fn with_media(mut self) -> Self {
         self.has_media = Some(true);
         self
@@ -152,13 +153,13 @@ impl MemoryFilter {
 pub struct AdvancedSearchOptions {
     /// 模糊匹配
     pub fuzzy: bool,
-    
+
     /// 包含标题搜索
     pub include_title: bool,
-    
+
     /// 包含内容搜索
     pub include_content: bool,
-    
+
     /// 精确匹配
     pub exact_match: bool,
 }
@@ -200,7 +201,7 @@ mod tests {
         let range = DateRange::this_month();
         assert!(range.from.is_some());
         assert!(range.to.is_some());
-        
+
         let from = range.from.unwrap();
         let to = range.to.unwrap();
         assert!(from <= to);
@@ -213,7 +214,7 @@ mod tests {
             .with_types(vec!["text".to_string()])
             .shared_only()
             .with_media();
-        
+
         assert!(filter.tags.is_some());
         assert!(filter.memory_type.is_some());
         assert_eq!(filter.is_shared, Some(true));

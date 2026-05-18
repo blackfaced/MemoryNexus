@@ -1,8 +1,9 @@
 //! 标签 API
 
 use axum::{
-    Json, extract::{Path, State},
+    extract::{Path, State},
     http::StatusCode,
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -46,30 +47,39 @@ pub async fn create(
     // 验证输入
     let name = req.name.trim();
     if name.is_empty() || name.len() > 100 {
-        return Err(AppError::BadRequest("标签名长度需在1-100字符之间".to_string()));
+        return Err(AppError::BadRequest(
+            "标签名长度需在1-100字符之间".to_string(),
+        ));
     }
-    
+
     // 检查标签是否已存在
-    let existing = state.repositories.tags
+    let existing = state
+        .repositories
+        .tags
         .find_by_name(name, auth_user.user_id)
         .await
         .map_err(AppError::Database)?;
-        
+
     if existing.is_some() {
         return Err(AppError::BadRequest("标签已存在".to_string()));
     }
-    
+
     // 创建标签
-    let tag = state.repositories.tags
+    let tag = state
+        .repositories
+        .tags
         .create(name, auth_user.user_id)
         .await
         .map_err(AppError::Database)?;
-    
-    Ok((StatusCode::CREATED, Json(ApiResponse::success(TagResponse {
-        id: tag.id,
-        name: tag.name,
-        memory_count: None,
-    }))))
+
+    Ok((
+        StatusCode::CREATED,
+        Json(ApiResponse::success(TagResponse {
+            id: tag.id,
+            name: tag.name,
+            memory_count: None,
+        })),
+    ))
 }
 
 /// GET /api/v1/tags - 列出用户标签
@@ -77,26 +87,30 @@ pub async fn list(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
 ) -> Result<Json<ApiResponse<TagListResponse>>, AppError> {
-    let tags = state.repositories.tags
+    let tags = state
+        .repositories
+        .tags
         .list_by_user(auth_user.user_id)
         .await
         .map_err(AppError::Database)?;
-    
+
     // 获取每个标签的记忆数量
     let mut items = Vec::new();
     for tag in tags {
-        let count = state.repositories.tags
+        let count = state
+            .repositories
+            .tags
             .count_memories(tag.id)
             .await
             .map_err(AppError::Database)?;
-        
+
         items.push(TagResponse {
             id: tag.id,
             name: tag.name,
             memory_count: Some(count),
         });
     }
-    
+
     Ok(Json(ApiResponse::success(TagListResponse { items })))
 }
 
@@ -106,22 +120,26 @@ pub async fn get(
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<TagResponse>>, AppError> {
-    let tag = state.repositories.tags
+    let tag = state
+        .repositories
+        .tags
         .find_by_id(id)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Tag {} not found", id)))?;
-    
+
     // 验证权限（用户创建的标签）
     if tag.user_id != Some(auth_user.user_id) {
         return Err(AppError::Unauthorized);
     }
-    
-    let count = state.repositories.tags
+
+    let count = state
+        .repositories
+        .tags
         .count_memories(tag.id)
         .await
         .map_err(AppError::Database)?;
-    
+
     Ok(Json(ApiResponse::success(TagResponse {
         id: tag.id,
         name: tag.name,
@@ -139,27 +157,33 @@ pub async fn update(
     // 验证输入
     let name = req.name.trim();
     if name.is_empty() || name.len() > 100 {
-        return Err(AppError::BadRequest("标签名长度需在1-100字符之间".to_string()));
+        return Err(AppError::BadRequest(
+            "标签名长度需在1-100字符之间".to_string(),
+        ));
     }
-    
+
     // 获取现有标签
-    let existing = state.repositories.tags
+    let existing = state
+        .repositories
+        .tags
         .find_by_id(id)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Tag {} not found", id)))?;
-    
+
     // 验证权限
     if existing.user_id != Some(auth_user.user_id) {
         return Err(AppError::Unauthorized);
     }
-    
+
     // 更新标签
-    let tag = state.repositories.tags
+    let tag = state
+        .repositories
+        .tags
         .update(id, name)
         .await
         .map_err(AppError::Database)?;
-    
+
     Ok(Json(ApiResponse::success(TagResponse {
         id: tag.id,
         name: tag.name,
@@ -174,21 +198,25 @@ pub async fn delete(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     // 获取现有标签验证权限
-    let existing = state.repositories.tags
+    let existing = state
+        .repositories
+        .tags
         .find_by_id(id)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Tag {} not found", id)))?;
-    
+
     if existing.user_id != Some(auth_user.user_id) {
         return Err(AppError::Unauthorized);
     }
-    
-    state.repositories.tags
+
+    state
+        .repositories
+        .tags
         .delete(id)
         .await
         .map_err(AppError::Database)?;
-    
+
     Ok(Json(ApiResponse::success(())))
 }
 
@@ -217,7 +245,7 @@ mod tests {
             name: "旅行".to_string(),
             memory_count: Some(10),
         };
-        
+
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"name\":\"旅行\""));
         assert!(json.contains("\"memory_count\":10"));

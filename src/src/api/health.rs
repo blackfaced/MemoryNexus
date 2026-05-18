@@ -1,6 +1,6 @@
 //! 健康检查 API
 
-use axum::{Json, http::StatusCode};
+use axum::{http::StatusCode, Json};
 use serde::Serialize;
 
 /// 健康检查响应

@@ -3,7 +3,8 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    Json, response::IntoResponse,
+    response::IntoResponse,
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -11,7 +12,7 @@ use uuid::Uuid;
 use crate::auth::AuthenticatedUser;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
-use crate::storage::{DEFAULT_BUCKET, THUMBNAIL_BUCKET, ThumbnailGenerator, ThumbnailSize};
+use crate::storage::{ThumbnailGenerator, ThumbnailSize, DEFAULT_BUCKET, THUMBNAIL_BUCKET};
 
 /// 上传查询参数
 #[derive(Debug, Deserialize)]
@@ -19,7 +20,7 @@ pub struct UploadQuery {
     /// 是否生成缩略图
     #[serde(default)]
     pub thumbnail: bool,
-    
+
     /// 缩略图尺寸
     #[serde(default)]
     pub size: Option<String>,
@@ -65,7 +66,7 @@ pub async fn upload_memory_media(
 pub async fn get_media(
     State(state): State<AppState>,
     Path(key): Path<String>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Json<ApiResponse<()>>, AppError> {
     // TODO: 实现媒体文件获取
     // 可以直接从存储返回文件，或者重定向到预签名 URL
     Err(AppError::NotImplemented("媒体获取".to_string()))
@@ -103,7 +104,7 @@ mod tests {
             size: 1024,
             content_type: "image/jpeg".to_string(),
         };
-        
+
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"url\":"));
         assert!(json.contains("\"thumbnail_url\":"));

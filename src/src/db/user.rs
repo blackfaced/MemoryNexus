@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool, Error};
+use sqlx::{Error, FromRow, PgPool};
 use uuid::Uuid;
 
 /// 用户数据库模型
@@ -51,10 +51,11 @@ pub struct CreateUser {
 }
 
 /// 用户仓储 trait
+#[async_trait::async_trait]
 pub trait UserRepository: Send + Sync {
-    fn create(&self, user: CreateUser) -> impl std::future::Future<Output = Result<UserDb, Error>> + Send;
-    fn find_by_email(&self, email: &str) -> impl std::future::Future<Output = Result<Option<UserDb>, Error>> + Send;
-    fn find_by_id(&self, id: Uuid) -> impl std::future::Future<Output = Result<Option<UserDb>, Error>> + Send;
+    async fn create(&self, user: CreateUser) -> Result<UserDb, Error>;
+    async fn find_by_email(&self, email: &str) -> Result<Option<UserDb>, Error>;
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<UserDb>, Error>;
 }
 
 /// PostgreSQL 用户仓储实现
@@ -68,6 +69,7 @@ impl PostgresUserRepository {
     }
 }
 
+#[async_trait::async_trait]
 impl UserRepository for PostgresUserRepository {
     async fn create(&self, user: CreateUser) -> Result<UserDb, Error> {
         sqlx::query_as::<_, UserDb>(
@@ -85,21 +87,17 @@ impl UserRepository for PostgresUserRepository {
     }
 
     async fn find_by_email(&self, email: &str) -> Result<Option<UserDb>, Error> {
-        sqlx::query_as::<_, UserDb>(
-            "SELECT * FROM users WHERE email = $1",
-        )
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await
+        sqlx::query_as::<_, UserDb>("SELECT * FROM users WHERE email = $1")
+            .bind(email)
+            .fetch_optional(&self.pool)
+            .await
     }
 
     async fn find_by_id(&self, id: Uuid) -> Result<Option<UserDb>, Error> {
-        sqlx::query_as::<_, UserDb>(
-            "SELECT * FROM users WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
+        sqlx::query_as::<_, UserDb>("SELECT * FROM users WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
     }
 }
 
@@ -121,7 +119,7 @@ mod tests {
         };
 
         let public: UserPublic = user.clone().into();
-        
+
         assert_eq!(public.email, user.email);
         assert_eq!(public.username, user.username);
         // password_hash 不应该出现在 UserPublic 中

@@ -69,13 +69,25 @@ pub struct UpdateMemory {
 }
 
 /// 记忆仓储 trait
+#[async_trait::async_trait]
 pub trait MemoryRepository: Send + Sync {
-    fn create(&self, memory: CreateMemory) -> impl std::future::Future<Output = Result<MemoryDb, sqlx::Error>> + Send;
-    fn find_by_id(&self, id: Uuid) -> impl std::future::Future<Output = Result<Option<MemoryDb>, sqlx::Error>> + Send;
-    fn list_by_user(&self, user_id: Uuid, limit: i64, offset: i64) -> impl std::future::Future<Output = Result<Vec<MemoryDb>, sqlx::Error>> + Send;
-    fn count_by_user(&self, user_id: Uuid) -> impl std::future::Future<Output = Result<i64, sqlx::Error>> + Send;
-    fn update(&self, id: Uuid, content: &Option<String>, title: &Option<String>, memory_type: Option<MemoryType>) -> impl std::future::Future<Output = Result<MemoryDb, sqlx::Error>> + Send;
-    fn delete(&self, id: Uuid) -> impl std::future::Future<Output = Result<bool, sqlx::Error>> + Send;
+    async fn create(&self, memory: CreateMemory) -> Result<MemoryDb, sqlx::Error>;
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<MemoryDb>, sqlx::Error>;
+    async fn list_by_user(
+        &self,
+        user_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<MemoryDb>, sqlx::Error>;
+    async fn count_by_user(&self, user_id: Uuid) -> Result<i64, sqlx::Error>;
+    async fn update(
+        &self,
+        id: Uuid,
+        content: &Option<String>,
+        title: &Option<String>,
+        memory_type: Option<MemoryType>,
+    ) -> Result<MemoryDb, sqlx::Error>;
+    async fn delete(&self, id: Uuid) -> Result<bool, sqlx::Error>;
 }
 
 /// PostgreSQL 记忆仓储实现
@@ -89,6 +101,7 @@ impl PostgresMemoryRepository {
     }
 }
 
+#[async_trait::async_trait]
 impl MemoryRepository for PostgresMemoryRepository {
     async fn create(&self, memory: CreateMemory) -> Result<MemoryDb, sqlx::Error> {
         let result = sqlx::query_as::<_, MemoryDb>(
@@ -117,15 +130,18 @@ impl MemoryRepository for PostgresMemoryRepository {
     }
 
     async fn find_by_id(&self, id: Uuid) -> Result<Option<MemoryDb>, sqlx::Error> {
-        sqlx::query_as::<_, MemoryDb>(
-            "SELECT * FROM memories WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
+        sqlx::query_as::<_, MemoryDb>("SELECT * FROM memories WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
     }
 
-    async fn list_by_user(&self, user_id: Uuid, limit: i64, offset: i64) -> Result<Vec<MemoryDb>, sqlx::Error> {
+    async fn list_by_user(
+        &self,
+        user_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<MemoryDb>, sqlx::Error> {
         sqlx::query_as::<_, MemoryDb>(
             r#"
             SELECT * FROM memories 
@@ -154,7 +170,13 @@ impl MemoryRepository for PostgresMemoryRepository {
         Ok(result.0)
     }
 
-    async fn update(&self, id: Uuid, content: &Option<String>, title: &Option<String>, memory_type: Option<MemoryType>) -> Result<MemoryDb, sqlx::Error> {
+    async fn update(
+        &self,
+        id: Uuid,
+        content: &Option<String>,
+        title: &Option<String>,
+        memory_type: Option<MemoryType>,
+    ) -> Result<MemoryDb, sqlx::Error> {
         // 构建动态更新查询
         let memory = if let Some(c) = content {
             sqlx::query_as::<_, MemoryDb>(
@@ -235,7 +257,7 @@ mod tests {
             is_shared: false,
             tags: vec![],
         };
-        
+
         assert!(!memory.content.is_empty());
     }
 
@@ -247,7 +269,7 @@ mod tests {
             memory_type: Some(MemoryType::Image),
             is_shared: Some(true),
         };
-        
+
         assert!(update.title.is_some());
         assert!(update.content.is_some());
         assert!(update.memory_type.is_some());

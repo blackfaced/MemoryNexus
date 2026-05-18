@@ -2,6 +2,8 @@
 
 use axum::Router;
 
+use crate::state::AppState;
+
 mod ai;
 mod auth;
 mod health;
@@ -11,7 +13,7 @@ mod tags;
 mod upload;
 
 /// 聚合所有 API 路由
-pub fn routes() -> Router {
+pub fn routes() -> Router<AppState> {
     Router::new()
         // 健康检查
         .route("/api/v1/health", axum::routing::get(health::check))
@@ -23,8 +25,14 @@ pub fn routes() -> Router {
         .route("/api/v1/memories", axum::routing::get(memories::list))
         .route("/api/v1/memories", axum::routing::post(memories::create))
         .route("/api/v1/memories/:id", axum::routing::get(memories::get))
-        .route("/api/v1/memories/:id", axum::routing::patch(memories::update))
-        .route("/api/v1/memories/:id", axum::routing::delete(memories::delete))
+        .route(
+            "/api/v1/memories/:id",
+            axum::routing::patch(memories::update),
+        )
+        .route(
+            "/api/v1/memories/:id",
+            axum::routing::delete(memories::delete),
+        )
         // 标签 CRUD
         .route("/api/v1/tags", axum::routing::get(tags::list))
         .route("/api/v1/tags", axum::routing::post(tags::create))
@@ -33,13 +41,19 @@ pub fn routes() -> Router {
         .route("/api/v1/tags/:id", axum::routing::delete(tags::delete))
         // 搜索
         .route("/api/v1/search", axum::routing::get(search::search))
-        .route("/api/v1/search/suggest", axum::routing::get(search::suggest))
+        .route(
+            "/api/v1/search/suggest",
+            axum::routing::get(search::suggest),
+        )
         // AI 功能
         .route("/api/v1/ai/summarize", axum::routing::post(ai::summarize))
         .route("/api/v1/ai/autotag", axum::routing::post(ai::auto_tag))
         .route("/api/v1/ai/config", axum::routing::get(ai::get_config))
-        .route("/api/v1/memories/:id/summarize", axum::routing::post(ai::summarize_memory))
-        // 文件上传 (预留)
-        // .route("/api/v1/upload", axum::routing::post(upload::upload))
-        // .route("/api/v1/media/:key", axum::routing::get(upload::get_media))
+        .route(
+            "/api/v1/memories/:id/summarize",
+            axum::routing::post(ai::summarize_memory),
+        )
+    // 文件上传 (预留)
+    // .route("/api/v1/upload", axum::routing::post(upload::upload))
+    // .route("/api/v1/media/:key", axum::routing::get(upload::get_media))
 }

@@ -4,9 +4,8 @@
 //! 支持 MinIO（本地开发）和 AWS S3（生产）
 
 use async_trait::async_trait;
-use aws_config::Region;
 use aws_sdk_s3::{
-    config::Builder as S3ConfigBuilder,
+    config::{Builder as S3ConfigBuilder, Credentials, Region},
     primitives::ByteStream,
     Client as S3Client,
 };
@@ -19,22 +18,22 @@ use thiserror::Error;
 pub enum StorageError {
     #[error("连接失败: {0}")]
     Connection(#[from] aws_sdk_s3::Error),
-    
+
     #[error("上传失败: {0}")]
     Upload(String),
-    
+
     #[error("下载失败: {0}")]
     Download(String),
-    
+
     #[error("删除失败: {0}")]
     Delete(String),
-    
+
     #[error("文件不存在: {0}")]
     NotFound(String),
-    
+
     #[error("配置错误: {0}")]
     Config(String),
-    
+
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -53,16 +52,16 @@ impl Serialize for StorageError {
 pub struct StorageConfig {
     /// 端点 URL（本地开发用 MinIO）
     pub endpoint: Option<String>,
-    
+
     /// 区域
     pub region: String,
-    
+
     /// 访问密钥
     pub access_key: Option<String>,
-    
+
     /// 秘密密钥
     pub secret_key: Option<String>,
-    
+
     /// 是否使用路径模式（MinIO 需要设为 true）
     pub path_style: bool,
 }
@@ -73,12 +72,13 @@ impl Default for StorageConfig {
             endpoint: std::env::var("S3_ENDPOINT")
                 .ok()
                 .or_else(|| Some("http://localhost:9000".to_string())),
-            region: std::env::var("S3_REGION")
-                .unwrap_or_else(|_| "us-east-1".to_string()),
+            region: std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
             access_key: std::env::var("S3_ACCESS_KEY")
-                .or_else(|_| std::env::var("MINIO_ROOT_USER").ok()),
+                .ok()
+                .or_else(|| std::env::var("MINIO_ROOT_USER").ok()),
             secret_key: std::env::var("S3_SECRET_KEY")
-                .or_else(|_| std::env::var("MINIO_ROOT_PASSWORD").ok()),
+                .ok()
+                .or_else(|| std::env::var("MINIO_ROOT_PASSWORD").ok()),
             path_style: true,
         }
     }
@@ -108,7 +108,7 @@ pub trait Storage: Send + Sync {
         data: Vec<u8>,
         content_type: Option<&str>,
     ) -> Result<UploadResult, StorageError>;
-    
+
     /// 上传文件（从路径）
     async fn upload_file(
         &self,
@@ -117,16 +117,16 @@ pub trait Storage: Send + Sync {
         path: &Path,
         content_type: Option<&str>,
     ) -> Result<UploadResult, StorageError>;
-    
+
     /// 下载文件
     async fn download(&self, bucket: &str, key: &str) -> Result<Vec<u8>, StorageError>;
-    
+
     /// 删除文件
     async fn delete(&self, bucket: &str, key: &str) -> Result<(), StorageError>;
-    
+
     /// 获取文件 URL
     fn get_url(&self, bucket: &str, key: &str) -> String;
-    
+
     /// 检查文件是否存在
     async fn exists(&self, bucket: &str, key: &str) -> Result<bool, StorageError>;
 }
@@ -142,60 +142,47 @@ impl S3Storage {
     /// 创建 S3 存储客户端
     pub async fn new(config: StorageConfig) -> Result<Self, StorageError> {
         // 构建 S3 配置
-        let mut s3_config = aws_config::defaults(aws_config::BehaviorVersion::latest());
-        
+        let mut config_loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+
         // 设置区域
-        s3_config = s3_config.region(Region::new(config.region.clone()));
-        
+        config_loader = config_loader.region(Region::new(config.region.clone()));
+
         // 如果有凭证，使用默认凭证提供程序链
         // （环境变量、~/.aws/credentials、ECS 任务角色、EC2 实例角色等）
-        
-        let client = if let (Some(access_key), Some(secret_key)) = 
-            (&config.access_key, &config.secret_key) 
-        {
+
+        if let (Some(access_key), Some(secret_key)) = (&config.access_key, &config.secret_key) {
             // 使用显式凭证
-            let creds = aws_config::Credentials::new(
-                access_key,
-                secret_key,
-                None,
-                None,
-                "env",
-            );
-            s3_config = s3_config.credentials_provider(creds);
-            
-            // 如果有自定义端点（MinIO），设置它
-            if let Some(endpoint) = &config.endpoint {
-                let endpoint_url = aws_endpoint::AwsEndpoint::new(
-                    endpoint.parse().map_err(|e| StorageError::Config(format!("Invalid endpoint: {}", e)))?,
-                );
-                s3_config = s3_config.endpoint_url(endpoint);
-            }
-            
-            S3Client::new(&s3_config)
-        } else {
-            // 使用默认凭证链
-            let s3_config = s3_config.load().await;
-            S3Client::new(&s3_config)
+            let creds = Credentials::new(access_key, secret_key, None, None, "env");
+            config_loader = config_loader.credentials_provider(creds);
         };
-        
+
+        if let Some(endpoint) = &config.endpoint {
+            config_loader = config_loader.endpoint_url(endpoint);
+        }
+
+        let sdk_config = config_loader.load().await;
+        let s3_config = S3ConfigBuilder::from(&sdk_config)
+            .force_path_style(config.path_style)
+            .build();
+        let client = S3Client::from_conf(s3_config);
+
         Ok(Self { client, config })
     }
-    
+
     /// 确保桶存在
     pub async fn ensure_bucket(&self, bucket: &str) -> Result<(), StorageError> {
-        let exists = self.client.head_bucket()
-            .bucket(bucket)
-            .send()
-            .await;
-            
+        let exists = self.client.head_bucket().bucket(bucket).send().await;
+
         if exists.is_err() {
             // 桶不存在，创建它
-            self.client.create_bucket()
+            self.client
+                .create_bucket()
                 .bucket(bucket)
                 .send()
-                .await?;
+                .await
+                .map_err(|e| StorageError::Config(e.to_string()))?;
         }
-        
+
         Ok(())
     }
 }
@@ -209,20 +196,20 @@ impl Storage for S3Storage {
         data: Vec<u8>,
         content_type: Option<&str>,
     ) -> Result<UploadResult, StorageError> {
+        let size = data.len() as u64;
         let body = ByteStream::from(data);
-        let size = body.len().unwrap_or(0) as u64;
-        
-        let mut put_request = self.client.put_object()
-            .bucket(bucket)
-            .key(key)
-            .body(body);
-            
+
+        let mut put_request = self.client.put_object().bucket(bucket).key(key).body(body);
+
         if let Some(ct) = content_type {
             put_request = put_request.content_type(ct);
         }
-        
-        let result = put_request.send().await?;
-        
+
+        let result = put_request
+            .send()
+            .await
+            .map_err(|e| StorageError::Upload(e.to_string()))?;
+
         Ok(UploadResult {
             key: key.to_string(),
             url: self.get_url(bucket, key),
@@ -230,7 +217,7 @@ impl Storage for S3Storage {
             etag: result.e_tag,
         })
     }
-    
+
     async fn upload_file(
         &self,
         bucket: &str,
@@ -241,26 +228,30 @@ impl Storage for S3Storage {
         let data = tokio::fs::read(path).await?;
         self.upload(bucket, key, data, content_type).await
     }
-    
+
     async fn download(&self, bucket: &str, key: &str) -> Result<Vec<u8>, StorageError> {
-        let result = self.client.get_object()
+        let result = self
+            .client
+            .get_object()
             .bucket(bucket)
             .key(key)
             .send()
             .await
             .map_err(|e| StorageError::Download(e.to_string()))?;
-            
-        let body = result.body
+
+        let body = result
+            .body
             .collect()
             .await
             .map_err(|e| StorageError::Download(e.to_string()))?
             .into_bytes();
-            
+
         Ok(body.to_vec())
     }
-    
+
     async fn delete(&self, bucket: &str, key: &str) -> Result<(), StorageError> {
-        self.client.delete_object()
+        self.client
+            .delete_object()
             .bucket(bucket)
             .key(key)
             .send()
@@ -268,21 +259,26 @@ impl Storage for S3Storage {
             .map_err(|e| StorageError::Delete(e.to_string()))?;
         Ok(())
     }
-    
+
     fn get_url(&self, bucket: &str, key: &str) -> String {
         if let Some(endpoint) = &self.config.endpoint {
             format!("{}/{}/{}", endpoint, bucket, key)
         } else {
-            format!("https://{}.s3.{}.amazonaws.com/{}", bucket, self.config.region, key)
+            format!(
+                "https://{}.s3.{}.amazonaws.com/{}",
+                bucket, self.config.region, key
+            )
         }
     }
-    
+
     async fn exists(&self, bucket: &str, key: &str) -> Result<bool, StorageError> {
-        match self.client.head_object()
+        match self
+            .client
+            .head_object()
             .bucket(bucket)
             .key(key)
             .send()
-            .await 
+            .await
         {
             Ok(_) => Ok(true),
             Err(e) => {
@@ -315,7 +311,7 @@ mod tests {
             size: 1024,
             etag: Some("\"abc123\"".to_string()),
         };
-        
+
         assert!(result.key.contains("test"));
         assert!(result.size > 0);
     }
@@ -330,7 +326,7 @@ mod tests {
             secret_key: Some("minioadmin".to_string()),
             path_style: true,
         };
-        
+
         // 验证配置创建成功
         assert!(config.endpoint.is_some());
         assert!(config.access_key.is_some());

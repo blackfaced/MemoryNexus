@@ -10,3 +10,4 @@ pub mod error;
 pub mod search;
 pub mod state;
 pub mod storage;
+pub mod vector;

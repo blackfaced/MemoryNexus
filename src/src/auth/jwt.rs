@@ -1,10 +1,6 @@
 //! JWT 认证
 
-use axum::{
-    extract::FromRequestParts,
-    http::request::Parts,
-    AsyncReadExt,
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
@@ -30,7 +26,7 @@ impl Default for JwtConfig {
 /// JWT Claims
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: Uuid,       // user_id
+    pub sub: Uuid, // user_id
     pub email: String,
     pub exp: i64,
     pub iat: i64,
@@ -60,7 +56,11 @@ impl JwtAuth {
     }
 
     /// 生成 Token
-    pub fn generate(&self, user_id: Uuid, email: &str) -> Result<String, jsonwebtoken::errors::Error> {
+    pub fn generate(
+        &self,
+        user_id: Uuid,
+        email: &str,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
         let claims = Claims::new(user_id, email.to_string(), self.config.expiration);
         encode(
             &Header::default(),
@@ -80,6 +80,12 @@ impl JwtAuth {
     }
 }
 
+impl Default for JwtAuth {
+    fn default() -> Self {
+        Self::new(JwtConfig::default())
+    }
+}
+
 /// 从请求中提取认证信息
 #[derive(Debug, Clone)]
 pub struct AuthenticatedUser {
@@ -93,7 +99,8 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthenticatedUser {
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // 从 Authorization header 获取 token
-        let auth_header = parts.headers
+        let auth_header = parts
+            .headers
             .get("Authorization")
             .and_then(|v| v.to_str().ok())
             .ok_or(crate::error::AppError::Unauthorized)?;
@@ -105,7 +112,8 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthenticatedUser {
 
         // 验证 token
         let jwt = JwtAuth::default();
-        let claims = jwt.verify(token)
+        let claims = jwt
+            .verify(token)
             .map_err(|_| crate::error::AppError::Unauthorized)?;
 
         Ok(AuthenticatedUser {

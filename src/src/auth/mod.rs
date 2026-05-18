@@ -2,5 +2,5 @@
 pub mod jwt;
 pub mod password;
 
-pub use jwt::{JwtAuth, Claims};
+pub use jwt::{AuthenticatedUser, Claims, JwtAuth};
 pub use password::PasswordHasher;

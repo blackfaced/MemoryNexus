@@ -1,16 +1,19 @@
 //! 记忆 API
 
 use axum::{
-    Json, extract::{Query, Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::ai::{Embedder, OpenAIEmbedder};
 use crate::auth::AuthenticatedUser;
+use crate::db::memory::{CreateMemory, MemoryDb, MemoryType};
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
-use crate::db::memory::{MemoryDb, MemoryType, CreateMemory};
+use crate::vector::{MemoryVectorPayload, MemoryVectorPoint};
 
 /// 记忆类型枚举（API 层）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -107,12 +110,16 @@ pub async fn list(
     auth_user: AuthenticatedUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<MemoryListResponse>>, AppError> {
-    let memories = state.repositories.memories
+    let memories = state
+        .repositories
+        .memories
         .list_by_user(auth_user.user_id, params.limit, params.offset)
         .await
         .map_err(AppError::Database)?;
 
-    let total = state.repositories.memories
+    let total = state
+        .repositories
+        .memories
         .count_by_user(auth_user.user_id)
         .await
         .map_err(AppError::Database)?;
@@ -136,22 +143,70 @@ pub async fn create(
         return Err(AppError::BadRequest("内容不能为空".to_string()));
     }
 
+    let content = req.content;
+    let title = req.title;
+    let memory_type: MemoryType = req.memory_type.into();
+
     let create_memory = CreateMemory {
         user_id: auth_user.user_id,
-        title: req.title,
-        content: req.content,
-        memory_type: req.memory_type.into(),
+        title: title.clone(),
+        content: content.clone(),
+        memory_type,
         file_path: None,
         is_shared: req.is_shared,
         tags: req.tags,
     };
 
-    let memory = state.repositories.memories
+    let memory = state
+        .repositories
+        .memories
         .create(create_memory)
         .await
         .map_err(AppError::Database)?;
 
+    index_memory_embedding(&state, &memory).await;
+
     Ok((StatusCode::CREATED, Json(ApiResponse::success(memory))))
+}
+
+async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
+    let Some(vector_store) = state.vector_store.as_ref() else {
+        return;
+    };
+
+    let Ok(api_key) = std::env::var("OPENAI_API_KEY") else {
+        tracing::warn!("跳过记忆向量索引：OPENAI_API_KEY 未配置");
+        return;
+    };
+
+    let model = std::env::var("OPENAI_EMBEDDING_MODEL")
+        .or_else(|_| std::env::var("EMBEDDING_MODEL"))
+        .unwrap_or_else(|_| "text-embedding-ada-002".to_string());
+    let embedder = OpenAIEmbedder::new(api_key).with_model(model);
+
+    let embedding = match embedder.embed(&memory.content).await {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::warn!(?error, memory_id = %memory.id, "生成记忆 embedding 失败");
+            return;
+        }
+    };
+
+    let point = MemoryVectorPoint {
+        id: memory.id,
+        vector: embedding.embedding,
+        payload: MemoryVectorPayload {
+            memory_id: memory.id,
+            user_id: memory.user_id,
+            title: memory.title.clone(),
+            memory_type: memory.memory_type.clone(),
+            is_shared: memory.is_shared,
+        },
+    };
+
+    if let Err(error) = vector_store.upsert_memory(point).await {
+        tracing::warn!(?error, memory_id = %memory.id, "写入 Qdrant 失败");
+    }
 }
 
 /// GET /api/v1/memories/:id - 获取单个记忆
@@ -160,7 +215,9 @@ pub async fn get(
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<MemoryDb>>, AppError> {
-    let memory = state.repositories.memories
+    let memory = state
+        .repositories
+        .memories
         .find_by_id(id)
         .await
         .map_err(AppError::Database)?
@@ -182,7 +239,9 @@ pub async fn update(
     Json(req): Json<UpdateMemoryRequest>,
 ) -> Result<Json<ApiResponse<MemoryDb>>, AppError> {
     // 获取现有记忆
-    let existing = state.repositories.memories
+    let existing = state
+        .repositories
+        .memories
         .find_by_id(id)
         .await
         .map_err(AppError::Database)?
@@ -194,8 +253,15 @@ pub async fn update(
     }
 
     // 更新字段
-    let memory = state.repositories.memories
-        .update(id, &req.content, &req.title, req.memory_type.map(|t| t.into()))
+    let memory = state
+        .repositories
+        .memories
+        .update(
+            id,
+            &req.content,
+            &req.title,
+            req.memory_type.map(|t| t.into()),
+        )
         .await
         .map_err(AppError::Database)?;
 
@@ -209,7 +275,9 @@ pub async fn delete(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     // 获取现有记忆检查权限
-    let existing = state.repositories.memories
+    let existing = state
+        .repositories
+        .memories
         .find_by_id(id)
         .await
         .map_err(AppError::Database)?
@@ -219,7 +287,9 @@ pub async fn delete(
         return Err(AppError::Unauthorized);
     }
 
-    let deleted = state.repositories.memories
+    let deleted = state
+        .repositories
+        .memories
         .delete(id)
         .await
         .map_err(AppError::Database)?;

@@ -48,23 +48,23 @@ docker-compose up -d
 # API:  http://localhost:8000
 ```
 
-### 方式二：本地开发
+### 方式二：本地开发（Rust 主线）
 
 ```bash
 # 1. 克隆项目
 git clone https://github.com/blackfaced/MemoryNexus.git
 cd MemoryNexus
 
-# 2. 安装依赖
-pip install -r requirements.txt
+# 2. 启动基础设施
+docker-compose up -d postgres qdrant redis
 
 # 3. 配置环境变量
 cp .env.example .env
-# 编辑 .env 填入你的配置
+# 至少配置 DATABASE_URL；语义搜索还需要 OPENAI_API_KEY 和 QDRANT_URL
 
-# 4. 启动服务
-docker-compose up -d postgres qdrant redis
-uvicorn src.api.main:app --reload
+# 4. 启动 Rust API
+cd src
+cargo run
 ```
 
 ---

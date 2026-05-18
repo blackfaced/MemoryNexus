@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool, Error};
+use sqlx::{Error, FromRow, PgPool};
 use uuid::Uuid;
 
 /// 标签数据库模型
@@ -10,7 +10,7 @@ use uuid::Uuid;
 pub struct TagDb {
     pub id: Uuid,
     pub name: String,
-    pub user_id: Option<Uuid>,  // None 表示系统标签
+    pub user_id: Option<Uuid>, // None 表示系统标签
     pub created_at: DateTime<Utc>,
 }
 
@@ -22,19 +22,20 @@ pub struct CreateTag {
 }
 
 /// 标签仓储 trait
+#[async_trait::async_trait]
 pub trait TagRepository: Send + Sync {
-    fn create(&self, name: &str, user_id: Uuid) -> impl std::future::Future<Output = Result<TagDb, Error>> + Send;
-    fn find_by_id(&self, id: Uuid) -> impl std::future::Future<Output = Result<Option<TagDb>, Error>> + Send;
-    fn find_by_name(&self, name: &str, user_id: Uuid) -> impl std::future::Future<Output = Result<Option<TagDb>, Error>> + Send;
-    fn list_by_user(&self, user_id: Uuid) -> impl std::future::Future<Output = Result<Vec<TagDb>, Error>> + Send;
-    fn update(&self, id: Uuid, name: &str) -> impl std::future::Future<Output = Result<TagDb, Error>> + Send;
-    fn delete(&self, id: Uuid) -> impl std::future::Future<Output = Result<bool, Error>> + Send;
-    fn count_memories(&self, tag_id: Uuid) -> impl std::future::Future<Output = Result<i64, Error>> + Send;
-    
+    async fn create(&self, name: &str, user_id: Uuid) -> Result<TagDb, Error>;
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<TagDb>, Error>;
+    async fn find_by_name(&self, name: &str, user_id: Uuid) -> Result<Option<TagDb>, Error>;
+    async fn list_by_user(&self, user_id: Uuid) -> Result<Vec<TagDb>, Error>;
+    async fn update(&self, id: Uuid, name: &str) -> Result<TagDb, Error>;
+    async fn delete(&self, id: Uuid) -> Result<bool, Error>;
+    async fn count_memories(&self, tag_id: Uuid) -> Result<i64, Error>;
+
     // 记忆-标签关联
-    fn add_memory_tag(&self, memory_id: Uuid, tag_id: Uuid) -> impl std::future::Future<Output = Result<(), Error>> + Send;
-    fn remove_memory_tag(&self, memory_id: Uuid, tag_id: Uuid) -> impl std::future::Future<Output = Result<(), Error>> + Send;
-    fn list_memory_tags(&self, memory_id: Uuid) -> impl std::future::Future<Output = Result<Vec<TagDb>, Error>> + Send;
+    async fn add_memory_tag(&self, memory_id: Uuid, tag_id: Uuid) -> Result<(), Error>;
+    async fn remove_memory_tag(&self, memory_id: Uuid, tag_id: Uuid) -> Result<(), Error>;
+    async fn list_memory_tags(&self, memory_id: Uuid) -> Result<Vec<TagDb>, Error>;
 }
 
 /// PostgreSQL 标签仓储实现
@@ -48,6 +49,7 @@ impl PostgresTagRepository {
     }
 }
 
+#[async_trait::async_trait]
 impl TagRepository for PostgresTagRepository {
     async fn create(&self, name: &str, user_id: Uuid) -> Result<TagDb, Error> {
         sqlx::query_as::<_, TagDb>(
@@ -66,22 +68,18 @@ impl TagRepository for PostgresTagRepository {
     }
 
     async fn find_by_id(&self, id: Uuid) -> Result<Option<TagDb>, Error> {
-        sqlx::query_as::<_, TagDb>(
-            "SELECT * FROM tags WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
+        sqlx::query_as::<_, TagDb>("SELECT * FROM tags WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
     }
 
     async fn find_by_name(&self, name: &str, user_id: Uuid) -> Result<Option<TagDb>, Error> {
-        sqlx::query_as::<_, TagDb>(
-            "SELECT * FROM tags WHERE name = $1 AND user_id = $2",
-        )
-        .bind(name)
-        .bind(user_id)
-        .fetch_optional(&self.pool)
-        .await
+        sqlx::query_as::<_, TagDb>("SELECT * FROM tags WHERE name = $1 AND user_id = $2")
+            .bind(name)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
     }
 
     async fn list_by_user(&self, user_id: Uuid) -> Result<Vec<TagDb>, Error> {
@@ -120,12 +118,10 @@ impl TagRepository for PostgresTagRepository {
     }
 
     async fn count_memories(&self, tag_id: Uuid) -> Result<i64, Error> {
-        let result: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM memory_tags WHERE tag_id = $1",
-        )
-        .bind(tag_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let result: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM memory_tags WHERE tag_id = $1")
+            .bind(tag_id)
+            .fetch_one(&self.pool)
+            .await?;
         Ok(result.0)
     }
 
@@ -146,13 +142,11 @@ impl TagRepository for PostgresTagRepository {
     }
 
     async fn remove_memory_tag(&self, memory_id: Uuid, tag_id: Uuid) -> Result<(), Error> {
-        sqlx::query(
-            "DELETE FROM memory_tags WHERE memory_id = $1 AND tag_id = $2",
-        )
-        .bind(memory_id)
-        .bind(tag_id)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("DELETE FROM memory_tags WHERE memory_id = $1 AND tag_id = $2")
+            .bind(memory_id)
+            .bind(tag_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -183,7 +177,7 @@ mod tests {
             user_id: Some(Uuid::new_v4()),
             created_at: Utc::now(),
         };
-        
+
         assert!(!tag.name.is_empty());
         assert!(tag.user_id.is_some());
     }
@@ -197,7 +191,7 @@ mod tests {
             user_id: None,
             created_at: Utc::now(),
         };
-        
+
         assert!(system_tag.user_id.is_none());
     }
 }

@@ -28,9 +28,9 @@
 
 | ID | 任务 | 状态 | 优先级 | 负责人 |
 |----|------|------|--------|--------|
-| P2.1 | Embedding 集成 | 🟡 Todo | P0 | - |
-| P2.2 | Qdrant 向量存储 | 🟡 Todo | P0 | - |
-| P2.3 | 语义搜索实现 | 🟡 Todo | P0 | - |
+| P2.1 | Embedding 集成 | 🔄 In Progress | P0 | Codex |
+| P2.2 | Qdrant 向量存储 | 🔄 In Progress | P0 | Codex |
+| P2.3 | 语义搜索实现 | 🔄 In Progress | P0 | Codex |
 | P2.4 | AI 摘要完善 | 🟡 Todo | P1 | - |
 | P2.5 | 智能标签生成 | 🟡 Todo | P1 | - |
 
@@ -89,4 +89,3 @@
 - 🚀 [部署指南](./deployment.md)
 - 💻 [开发指南](./development.md)
 - 📝 [决策记录](../decisions/)
-

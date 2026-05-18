@@ -1,14 +1,11 @@
 //! 认证 API
 
-use axum::{
-    Json, extract::State,
-    http::StatusCode,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::{JwtAuth, PasswordHasher};
-use crate::db::user::{UserDb, CreateUser};
+use crate::db::user::{CreateUser, UserDb};
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
 
@@ -53,7 +50,9 @@ pub async fn login(
     }
 
     // 查找用户
-    let user = state.repositories.users
+    let user = state
+        .repositories
+        .users
         .find_by_email(&req.email)
         .await
         .map_err(AppError::Database)?
@@ -66,7 +65,8 @@ pub async fn login(
 
     // 生成 JWT
     let jwt = JwtAuth::default();
-    let token = jwt.generate(user.id, &user.email)
+    let token = jwt
+        .generate(user.id, &user.email)
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(ApiResponse::success(AuthResponse {
@@ -96,7 +96,9 @@ pub async fn register(
     }
 
     // 检查邮箱是否已存在
-    let existing = state.repositories.users
+    let existing = state
+        .repositories
+        .users
         .find_by_email(&req.email)
         .await
         .map_err(AppError::Database)?;
@@ -115,24 +117,30 @@ pub async fn register(
         password_hash,
     };
 
-    let user = state.repositories.users
+    let user = state
+        .repositories
+        .users
         .create(create_user)
         .await
         .map_err(AppError::Database)?;
 
     // 生成 JWT
     let jwt = JwtAuth::default();
-    let token = jwt.generate(user.id, &user.email)
+    let token = jwt
+        .generate(user.id, &user.email)
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    Ok((StatusCode::CREATED, Json(ApiResponse::success(AuthResponse {
-        user: UserPublicResponse {
-            id: user.id,
-            email: user.email,
-            username: user.username,
-        },
-        token,
-    }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(ApiResponse::success(AuthResponse {
+            user: UserPublicResponse {
+                id: user.id,
+                email: user.email,
+                username: user.username,
+            },
+            token,
+        })),
+    ))
 }
 
 /// 获取当前用户信息
@@ -140,7 +148,9 @@ pub async fn me(
     State(state): State<AppState>,
     auth_user: crate::auth::AuthenticatedUser,
 ) -> Result<Json<ApiResponse<UserPublicResponse>>, AppError> {
-    let user = state.repositories.users
+    let user = state
+        .repositories
+        .users
         .find_by_id(auth_user.user_id)
         .await
         .map_err(AppError::Database)?
@@ -184,9 +194,9 @@ mod tests {
             },
             token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...".to_string(),
         };
-        
+
         let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("\"ok\":true"));
+        assert!(json.contains("\"user\":"));
         assert!(json.contains("\"token\":"));
     }
 }
