@@ -56,7 +56,10 @@ pub fn routes() -> Router<AppState> {
             axum::routing::post(ai::summarize_memory),
         )
         // 向量管理
-        .route("/api/v1/embeddings", axum::routing::post(embedding::create_embedding))
+        .route(
+            "/api/v1/embeddings",
+            axum::routing::post(embedding::create_embedding),
+        )
         .route(
             "/api/v1/embeddings/batch",
             axum::routing::post(embedding::batch_create_embeddings),

@@ -2,6 +2,8 @@
 //!
 //! P0 语义检索闭环使用 Qdrant REST API，避免把 SDK 细节扩散到 API 层。
 
+pub mod repository;
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

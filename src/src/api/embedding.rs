@@ -3,7 +3,8 @@
 //! 用于管理记忆的向量嵌入
 
 use axum::{
-    Json, extract::{Path, State},
+    extract::{Path, State},
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -12,24 +13,24 @@ use crate::ai::embedding::Embedder;
 use crate::auth::AuthenticatedUser;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
-use crate::vector::repository::{VectorRepository, MemoryVector, VectorPayload};
+use crate::vector::repository::{MemoryVector, VectorPayload, VectorRepository};
 
 /// 创建向量请求
 #[derive(Debug, Deserialize)]
 pub struct CreateEmbeddingRequest {
     /// 记忆 ID
     pub memory_id: Uuid,
-    
+
     /// 要向量化的文本内容
     pub content: String,
-    
+
     /// 可选标题
     pub title: Option<String>,
-    
+
     /// 可选标签
     #[serde(default)]
     pub tags: Vec<String>,
-    
+
     /// 记忆类型
     #[serde(default = "default_memory_type")]
     pub memory_type: String,
@@ -98,16 +99,15 @@ pub async fn create_embedding(
     Json(req): Json<CreateEmbeddingRequest>,
 ) -> Result<Json<ApiResponse<CreateEmbeddingResponse>>, AppError> {
     // 检查 AI 功能是否可用
-    if state.ai.openai_api_key.is_none() {
-        return Err(AppError::BadRequest("AI 功能未配置".to_string()));
-    }
-    
+    let embedder = state.ai.embedder.as_ref()
+        .ok_or_else(|| AppError::BadRequest("AI 功能未配置".to_string()))?;
+
     // 生成嵌入
-    let embedding_result = state.ai.embedder
+    let embedding_result = embedder
         .embed(&req.content)
         .await
         .map_err(|e| AppError::BadRequest(format!("嵌入生成失败: {}", e)))?;
-    
+
     // 构建向量
     let memory_vector = MemoryVector {
         memory_id: req.memory_id,
@@ -121,13 +121,15 @@ pub async fn create_embedding(
             created_at: chrono::Utc::now(),
         }),
     };
-    
+
     // 存储向量
-    state.repositories.vectors
+    state
+        .repositories
+        .vectors
         .store(memory_vector)
         .await
         .map_err(|e| AppError::BadRequest(format!("向量存储失败: {}", e)))?;
-    
+
     Ok(Json(ApiResponse::success(CreateEmbeddingResponse {
         memory_id: req.memory_id,
         dimension: embedding_result.embedding.len(),
@@ -142,21 +144,20 @@ pub async fn batch_create_embeddings(
     Json(req): Json<BatchCreateEmbeddingRequest>,
 ) -> Result<Json<ApiResponse<BatchCreateEmbeddingResponse>>, AppError> {
     // 检查 AI 功能是否可用
-    if state.ai.openai_api_key.is_none() {
-        return Err(AppError::BadRequest("AI 功能未配置".to_string()));
-    }
-    
+    let embedder = state.ai.embedder.as_ref()
+        .ok_or_else(|| AppError::BadRequest("AI 功能未配置".to_string()))?;
+
     let mut created = 0;
     let mut failed = 0;
     let mut errors: Vec<String> = Vec::new();
-    
+
     // 批量生成嵌入
     let contents: Vec<String> = req.items.iter().map(|i| i.content.clone()).collect();
-    let embeddings = state.ai.embedder
+    let embeddings = embedder
         .embed_batch(contents)
         .await
         .map_err(|e| AppError::BadRequest(format!("批量嵌入生成失败: {}", e)))?;
-    
+
     // 构建向量列表
     let mut vectors: Vec<MemoryVector> = Vec::new();
     for (i, item) in req.items.iter().enumerate() {
@@ -168,11 +169,11 @@ pub async fn batch_create_embeddings(
                 continue;
             }
         };
-        
+
         let created_at = chrono::DateTime::parse_from_rfc3339(&item.created_at)
             .map(|dt| dt.with_timezone(&chrono::Utc))
             .unwrap_or_else(|_| chrono::Utc::now());
-        
+
         vectors.push(MemoryVector {
             memory_id: item.memory_id,
             user_id: auth_user.user_id,
@@ -185,19 +186,20 @@ pub async fn batch_create_embeddings(
                 created_at,
             }),
         });
-        
+
         created += 1;
     }
-    
+
     // 批量存储
+    let vectors_count = vectors.len();
     if !vectors.is_empty() {
         if let Err(e) = state.repositories.vectors.store_batch(vectors).await {
             errors.push(format!("批量存储失败: {}", e));
-            failed = vectors.len();
+            failed = vectors_count;
             created = 0;
         }
     }
-    
+
     Ok(Json(ApiResponse::success(BatchCreateEmbeddingResponse {
         created,
         failed,
@@ -211,11 +213,13 @@ pub async fn delete_embeddings(
     _auth_user: AuthenticatedUser,
     Json(req): Json<DeleteEmbeddingRequest>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    state.repositories.vectors
+    state
+        .repositories
+        .vectors
         .delete_batch(req.memory_ids)
         .await
         .map_err(|e| AppError::BadRequest(format!("向量删除失败: {}", e)))?;
-    
+
     Ok(Json(ApiResponse::success(())))
 }
 
@@ -225,11 +229,13 @@ pub async fn check_embedding(
     _auth_user: AuthenticatedUser,
     Path(memory_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<CheckEmbeddingResponse>>, AppError> {
-    let exists = state.repositories.vectors
+    let exists = state
+        .repositories
+        .vectors
         .exists(memory_id)
         .await
         .map_err(|e| AppError::BadRequest(format!("向量查询失败: {}", e)))?;
-    
+
     Ok(Json(ApiResponse::success(CheckEmbeddingResponse {
         memory_id,
         exists,
