@@ -6,19 +6,18 @@ use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 /// 记忆类型枚举
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "VARCHAR", rename_all = "lowercase")]
 pub enum MemoryType {
+    /// 文本
+    #[default]
     Text,
+    /// 图片
     Image,
+    /// 音频
     Audio,
+    /// 视频
     Video,
-}
-
-impl Default for MemoryType {
-    fn default() -> Self {
-        Self::Text
-    }
 }
 
 impl std::fmt::Display for MemoryType {
@@ -175,7 +174,7 @@ impl MemoryRepository for PostgresMemoryRepository {
         id: Uuid,
         content: &Option<String>,
         title: &Option<String>,
-        memory_type: Option<MemoryType>,
+        _memory_type: Option<MemoryType>,
     ) -> Result<MemoryDb, sqlx::Error> {
         // 构建动态更新查询
         let memory = if let Some(c) = content {

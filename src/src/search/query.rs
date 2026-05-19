@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::filter::{MemoryFilter, SortOrder};
 use crate::ai::{Embedder, EmbeddingError, OpenAIEmbedder};
 use crate::db::memory::MemoryDb;
 use crate::vector::{VectorError, VectorStore};

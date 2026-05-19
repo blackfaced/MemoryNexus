@@ -4,32 +4,27 @@ use chrono::{DateTime, Datelike, Utc};
 use serde::{Deserialize, Serialize};
 
 /// 排序顺序
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum SortOrder {
+    /// 降序
+    #[default]
     Desc,
+    /// 升序
     Asc,
 }
 
-impl Default for SortOrder {
-    fn default() -> Self {
-        Self::Desc
-    }
-}
-
 /// 排序字段
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SortField {
+    /// 创建时间
+    #[default]
     CreatedAt,
+    /// 更新时间
     UpdatedAt,
+    /// 相关性
     Relevance,
-}
-
-impl Default for SortField {
-    fn default() -> Self {
-        Self::CreatedAt
-    }
 }
 
 /// 日期范围
@@ -87,7 +82,7 @@ impl DateRange {
 }
 
 /// 记忆过滤器
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryFilter {
     /// 标签过滤
     pub tags: Option<Vec<String>>,
@@ -103,18 +98,6 @@ pub struct MemoryFilter {
 
     /// 有无媒体文件
     pub has_media: Option<bool>,
-}
-
-impl Default for MemoryFilter {
-    fn default() -> Self {
-        Self {
-            tags: None,
-            memory_type: None,
-            date_range: None,
-            is_shared: None,
-            has_media: None,
-        }
-    }
 }
 
 impl MemoryFilter {

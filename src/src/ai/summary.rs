@@ -61,10 +61,11 @@ fn default_include_keywords() -> bool {
 }
 
 /// 摘要风格
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SummaryStyle {
     /// 简洁摘要
+    #[default]
     Concise,
     /// 详细摘要
     Detailed,
@@ -72,12 +73,6 @@ pub enum SummaryStyle {
     BulletPoints,
     /// 问答形式
     QnA,
-}
-
-impl Default for SummaryStyle {
-    fn default() -> Self {
-        Self::Concise
-    }
 }
 
 impl std::fmt::Display for SummaryStyle {
@@ -288,7 +283,7 @@ fn extract_keywords_simple(text: &str) -> Vec<String> {
 
     // 返回前5个高频词
     let mut sorted: Vec<_> = freq.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     sorted
         .into_iter()

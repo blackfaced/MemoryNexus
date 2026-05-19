@@ -9,7 +9,9 @@
 pub mod s3;
 pub mod thumbnail;
 
+#[allow(unused_imports)]
 pub use s3::{Storage, StorageConfig, StorageError};
+#[allow(unused_imports)]
 pub use thumbnail::{ThumbnailGenerator, ThumbnailSize};
 
 /// 默认存储桶

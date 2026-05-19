@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::{JwtAuth, PasswordHasher};
-use crate::db::user::{CreateUser, UserDb};
+use crate::db::user::CreateUser;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
 

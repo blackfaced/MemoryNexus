@@ -9,11 +9,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::ai::embedding::Embedder;
 use crate::auth::AuthenticatedUser;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
-use crate::vector::repository::{MemoryVector, VectorPayload, VectorRepository};
+use crate::vector::repository::{MemoryVector, VectorPayload};
 
 /// 创建向量请求
 #[derive(Debug, Deserialize)]
@@ -77,6 +76,7 @@ pub struct DeleteEmbeddingRequest {
 
 /// 检查向量是否存在请求
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct CheckEmbeddingRequest {
     pub memory_id: Uuid,
 }
@@ -88,6 +88,7 @@ pub struct CheckEmbeddingResponse {
     pub exists: bool,
 }
 
+#[allow(dead_code)]
 fn default_memory_type() -> String {
     "text".to_string()
 }
@@ -99,7 +100,10 @@ pub async fn create_embedding(
     Json(req): Json<CreateEmbeddingRequest>,
 ) -> Result<Json<ApiResponse<CreateEmbeddingResponse>>, AppError> {
     // 检查 AI 功能是否可用
-    let embedder = state.ai.embedder.as_ref()
+    let embedder = state
+        .ai
+        .embedder
+        .as_ref()
         .ok_or_else(|| AppError::BadRequest("AI 功能未配置".to_string()))?;
 
     // 生成嵌入
@@ -144,7 +148,10 @@ pub async fn batch_create_embeddings(
     Json(req): Json<BatchCreateEmbeddingRequest>,
 ) -> Result<Json<ApiResponse<BatchCreateEmbeddingResponse>>, AppError> {
     // 检查 AI 功能是否可用
-    let embedder = state.ai.embedder.as_ref()
+    let embedder = state
+        .ai
+        .embedder
+        .as_ref()
         .ok_or_else(|| AppError::BadRequest("AI 功能未配置".to_string()))?;
 
     let mut created = 0;

@@ -9,11 +9,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::ai::embedding::Embedder;
 use crate::auth::AuthenticatedUser;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
-use crate::vector::repository::{VectorRepository, VectorSearchResult};
+use crate::vector::repository::VectorSearchResult;
 
 /// 语义搜索请求
 #[derive(Debug, Deserialize)]
@@ -67,10 +66,7 @@ impl From<VectorSearchResult> for SemanticSearchResult {
                 .as_ref()
                 .map(|p| p.memory_type.clone())
                 .unwrap_or_default(),
-            created_at: v
-                .payload
-                .as_ref()
-                .and_then(|p| Some(p.created_at.to_rfc3339())),
+            created_at: v.payload.as_ref().map(|p| p.created_at.to_rfc3339()),
         }
     }
 }
@@ -86,7 +82,10 @@ pub async fn semantic_search(
     Json(req): Json<SemanticSearchRequest>,
 ) -> Result<Json<ApiResponse<SemanticSearchResponse>>, AppError> {
     // 检查 AI 功能是否可用
-    let embedder = state.ai.embedder.as_ref()
+    let embedder = state
+        .ai
+        .embedder
+        .as_ref()
         .ok_or_else(|| AppError::BadRequest("AI 功能未配置".to_string()))?;
 
     // 生成查询向量
@@ -136,7 +135,10 @@ async fn semantic_search_impl(
     req: SemanticSearchRequest,
 ) -> Result<Json<ApiResponse<SemanticSearchResponse>>, AppError> {
     // 检查 AI 功能是否可用
-    let embedder = state.ai.embedder.as_ref()
+    let embedder = state
+        .ai
+        .embedder
+        .as_ref()
         .ok_or_else(|| AppError::BadRequest("AI 功能未配置".to_string()))?;
 
     // 生成查询向量

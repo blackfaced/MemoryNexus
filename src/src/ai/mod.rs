@@ -6,5 +6,7 @@
 pub mod embedding;
 pub mod summary;
 
+#[allow(unused_imports)]
 pub use embedding::{Embedder, EmbeddingError, EmbeddingResult, OpenAIEmbedder};
+#[allow(unused_imports)]
 pub use summary::{OpenAISummarizer, Summarizer, SummaryOptions, SummaryResult, SummaryStyle};

@@ -2,8 +2,6 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -12,17 +10,18 @@ use uuid::Uuid;
 use crate::auth::AuthenticatedUser;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
-use crate::storage::{ThumbnailGenerator, ThumbnailSize, DEFAULT_BUCKET, THUMBNAIL_BUCKET};
 
 /// 上传查询参数
 #[derive(Debug, Deserialize)]
 pub struct UploadQuery {
     /// 是否生成缩略图
     #[serde(default)]
+    #[allow(dead_code)]
     pub thumbnail: bool,
 
     /// 缩略图尺寸
     #[serde(default)]
+    #[allow(dead_code)]
     pub size: Option<String>,
 }
 
@@ -36,11 +35,12 @@ pub struct UploadResponse {
     pub content_type: String,
 }
 
+#[allow(dead_code)]
 /// POST /api/v1/upload - 上传文件
 pub async fn upload(
-    State(state): State<AppState>,
-    auth_user: AuthenticatedUser,
-    Query(query): Query<UploadQuery>,
+    State(_state): State<AppState>,
+    _auth_user: AuthenticatedUser,
+    Query(_query): Query<UploadQuery>,
 ) -> Result<Json<ApiResponse<UploadResponse>>, AppError> {
     // TODO: 实现 multipart 文件上传
     // 需要使用 tower-http 的 multipart 支持
@@ -48,11 +48,12 @@ pub async fn upload(
 }
 
 /// POST /api/v1/memories/:id/media - 上传记忆媒体
+#[allow(dead_code)]
 pub async fn upload_memory_media(
-    State(state): State<AppState>,
-    auth_user: AuthenticatedUser,
-    Path(memory_id): Path<Uuid>,
-    Query(query): Query<UploadQuery>,
+    State(_state): State<AppState>,
+    _auth_user: AuthenticatedUser,
+    Path(_memory_id): Path<Uuid>,
+    Query(_query): Query<UploadQuery>,
 ) -> Result<Json<ApiResponse<UploadResponse>>, AppError> {
     // TODO: 实现记忆媒体上传
     // 1. 验证记忆存在且属于当前用户
@@ -63,9 +64,10 @@ pub async fn upload_memory_media(
 }
 
 /// GET /api/v1/media/:key - 获取媒体文件
+#[allow(dead_code)]
 pub async fn get_media(
-    State(state): State<AppState>,
-    Path(key): Path<String>,
+    State(_state): State<AppState>,
+    Path(_key): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     // TODO: 实现媒体文件获取
     // 可以直接从存储返回文件，或者重定向到预签名 URL
@@ -73,10 +75,11 @@ pub async fn get_media(
 }
 
 /// DELETE /api/v1/media/:key - 删除媒体文件
+#[allow(dead_code)]
 pub async fn delete_media(
-    State(state): State<AppState>,
-    auth_user: AuthenticatedUser,
-    Path(key): Path<String>,
+    State(_state): State<AppState>,
+    _auth_user: AuthenticatedUser,
+    Path(_key): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     // TODO: 实现媒体删除
     // 需要验证用户权限

@@ -16,19 +16,18 @@ use crate::state::AppState;
 use crate::vector::{MemoryVectorPayload, MemoryVectorPoint};
 
 /// 记忆类型枚举（API 层）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ApiMemoryType {
+    /// 文本
+    #[default]
     Text,
+    /// 图片
     Image,
+    /// 音频
     Audio,
+    /// 视频
     Video,
-}
-
-impl Default for ApiMemoryType {
-    fn default() -> Self {
-        Self::Text
-    }
 }
 
 impl From<ApiMemoryType> for MemoryType {
@@ -73,9 +72,9 @@ pub struct UpdateMemoryRequest {
     pub content: Option<String>,
     #[serde(default)]
     pub memory_type: Option<ApiMemoryType>,
-    #[serde(default)]
+    #[allow(dead_code)]
     pub tags: Option<Vec<String>>,
-    #[serde(default)]
+    #[allow(dead_code)]
     pub is_shared: Option<bool>,
 }
 
@@ -86,8 +85,9 @@ pub struct ListQuery {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
+    #[allow(dead_code)]
     pub tag: Option<String>,
-    #[serde(default)]
+    #[allow(dead_code)]
     pub memory_type: Option<ApiMemoryType>,
 }
 

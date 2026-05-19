@@ -2,6 +2,8 @@
 //!
 //! 使用 Axum 构建的高性能 Rust 后端
 
+#![allow(dead_code)] // 项目早期阶段，允许预留但未启用的代码
+
 mod ai;
 mod api;
 mod auth;
@@ -61,11 +63,15 @@ async fn main() -> anyhow::Result<()> {
         .map(|store| Arc::new(store) as Arc<dyn vector::VectorStore>);
 
     let vector_repo: Arc<dyn vector::repository::VectorRepository> = match &vector_store {
-        Some(store) => Arc::new(QdrantVectorRepository::new(store.clone(), uuid::Uuid::nil())),
+        Some(store) => Arc::new(QdrantVectorRepository::new(
+            store.clone(),
+            uuid::Uuid::nil(),
+        )),
         None => Arc::new(QdrantVectorRepository::new(
             Arc::new(vector::QdrantVectorStore::new(
                 std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6333".to_string()),
-                std::env::var("QDRANT_COLLECTION").unwrap_or_else(|_| "memorynexus_memories".to_string()),
+                std::env::var("QDRANT_COLLECTION")
+                    .unwrap_or_else(|_| "memorynexus_memories".to_string()),
             )),
             uuid::Uuid::nil(),
         )),

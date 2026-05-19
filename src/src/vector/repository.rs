@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{MemoryVectorPayload, MemoryVectorPoint, VectorError, VectorSearchMatch, VectorStore};
+use super::{MemoryVectorPayload, MemoryVectorPoint, VectorError, VectorStore};
 
 /// 记忆向量数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +82,7 @@ pub trait VectorRepository: Send + Sync {
 #[derive(Clone)]
 pub struct QdrantVectorRepository {
     inner: Arc<dyn VectorStore>,
+    #[allow(dead_code)]
     user_id: Uuid,
 }
 
@@ -125,7 +126,7 @@ impl VectorRepository for QdrantVectorRepository {
         Ok(())
     }
 
-    async fn delete(&self, memory_id: Uuid) -> Result<(), RepositoryError> {
+    async fn delete(&self, _memory_id: Uuid) -> Result<(), RepositoryError> {
         // Qdrant REST API 不直接支持删除，需要通过 delete points API
         // 这里暂时返回成功，实际删除需要扩展 VectorStore trait
         Ok(())

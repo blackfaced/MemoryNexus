@@ -6,5 +6,6 @@
 pub mod filter;
 pub mod query;
 
+#[allow(unused_imports)]
 pub use filter::{DateRange, MemoryFilter, SortOrder};
 pub use query::{SearchEngine, SearchQuery, SearchResult, SemanticSearchError};

@@ -22,11 +22,12 @@ pub enum ThumbnailError {
 }
 
 /// 缩略图尺寸预设
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub enum ThumbnailSize {
     /// 小缩略图 (100x100)
     Small,
     /// 中等缩略图 (300x300)
+    #[default]
     Medium,
     /// 大缩略图 (600x600)
     Large,
@@ -43,12 +44,6 @@ impl ThumbnailSize {
             Self::Large => (600, 600),
             Self::Custom { width, height } => (*width, *height),
         }
-    }
-}
-
-impl Default for ThumbnailSize {
-    fn default() -> Self {
-        Self::Medium
     }
 }
 
@@ -84,6 +79,7 @@ impl ImageFormat {
     }
 
     /// 获取 image crate 格式
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_image_format(&self) -> OutputImageFormat {
         match self {
             Self::Jpeg => OutputImageFormat::Jpeg,

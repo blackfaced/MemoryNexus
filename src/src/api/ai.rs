@@ -1,8 +1,7 @@
 //! AI API 端点
 
 use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
+    extract::{Path, State},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -55,9 +54,10 @@ pub struct AiConfigResponse {
 }
 
 /// POST /api/v1/ai/summarize - 生成摘要
+#[allow(dead_code)]
 pub async fn summarize(
-    State(state): State<AppState>,
-    auth_user: AuthenticatedUser,
+    State(_state): State<AppState>,
+    _auth_user: AuthenticatedUser,
     Json(req): Json<SummarizeRequest>,
 ) -> Result<Json<ApiResponse<SummarizeResponse>>, AppError> {
     // 获取 API Key
@@ -136,8 +136,8 @@ pub async fn summarize_memory(
 
 /// POST /api/v1/ai/autotag - 智能标签推荐
 pub async fn auto_tag(
-    State(state): State<AppState>,
-    auth_user: AuthenticatedUser,
+    State(_state): State<AppState>,
+    _auth_user: AuthenticatedUser,
     Json(req): Json<AutoTagRequest>,
 ) -> Result<Json<ApiResponse<AutoTagResponse>>, AppError> {
     // 获取 API Key
