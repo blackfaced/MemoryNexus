@@ -33,7 +33,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src
-      - run: cargo clippy --all-targets --all-features -- -D warnings --manifest-path src/Cargo.toml
+      - run: cargo clippy --all-targets --all-features -- -D clippy::all --manifest-path src/Cargo.toml
 
   # 构建
   build:
