@@ -80,6 +80,16 @@ Agent
 - [ ] 补充注册登录、创建记忆、搜索召回、摘要生成的端到端验收。
 - [ ] 更新 API 文档，明确 memory 创建、搜索和摘要接口都以 Cognitive Space 为核心上下文。
 
+### Phase 1.5 TODO: CLI MVP 试用入口
+
+目标：在前端完成前，用一个很薄的 CLI 先验证后端 API 和最小记忆闭环。
+
+- [x] 新增 `memorynexus-cli` Rust binary，作为现有 REST API 的无状态客户端。
+- [x] 支持 `health`、`auth register/login`、`memory add/list/get/delete`、`search --semantic`。
+- [x] 默认输出 JSON，便于人类调试，也便于 Agent 调用和解析。
+- [x] 使用 `MEMORYNEXUS_API_URL` 和 `MEMORYNEXUS_TOKEN` 配置，不在第一版持久化 token。
+- [x] CLI v0 先不引入 Space/Lens 命令；等 Phase 1A/1B API 落地后再扩展为 `space` 和 `--space` 参数。
+
 ## Phase 2 TODO: Lens 最小模型
 
 目标：把 Lens 从 prompt 概念收敛为可配置、可复用、可审计的解释策略。
