@@ -6,6 +6,10 @@
 |------|------|
 | [🏗️ 架构设计](architecture.md) | 系统整体架构 |
 | [🔌 API 文档](api.md) | REST API 接口规范 |
+| [🧠 Cognitive Manifesto](cognitive-manifesto.md) | 项目的认知理论内核 |
+| [🧩 Cognitive Architecture](cognitive-architecture.md) | Rust-first 认知架构设计 |
+| [🧠 认知概念](cognitive-concepts.md) | Memory、Lens、Reflection、Belief 等核心概念 |
+| [🧭 Cognitive Lens 路线图](cognitive-lens-roadmap.md) | Cognitive Lens Memory 的阶段路线 |
 | [🚀 部署指南](deployment.md) | 各平台部署教程 |
 | [🛠️ 开发指南](development.md) | 本地开发说明 |
 | [📅 路线图](roadmap.md) | 开发计划和里程碑 |

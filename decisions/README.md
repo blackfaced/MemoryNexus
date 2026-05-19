@@ -7,6 +7,7 @@
 ```
 decisions/
 ├── ADR-001-backend-language.md    ✅ Rust + Axum 后端选型
+├── ADR-002-cognitive-lens-memory.md ✅ Cognitive Lens Memory 产品方向
 ├── ADR-002-storage-abstraction.md ✅ 存储层抽象设计
 ├── ADR-003-vector-database.md    ✅ Qdrant 向量数据库
 ├── ADR-004-whisper-deployment.md ✅ Whisper 语音方案
