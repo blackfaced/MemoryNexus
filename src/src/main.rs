@@ -8,6 +8,7 @@ mod ai;
 mod api;
 mod auth;
 mod db;
+mod domain;
 mod error;
 mod search;
 mod state;
