@@ -25,8 +25,6 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_init_pool_config() {
         // 测试连接池配置正确性
