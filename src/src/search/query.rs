@@ -212,11 +212,11 @@ impl SearchEngine {
 
         // 分页
         params.push(query.limit.to_string());
-        sql.push_str(&format!(" LIMIT ${}", param_idx));
+        sql.push_str(&format!(" LIMIT ${}::bigint", param_idx));
         param_idx += 1;
 
         params.push(query.offset.to_string());
-        sql.push_str(&format!(" OFFSET ${}", param_idx));
+        sql.push_str(&format!(" OFFSET ${}::bigint", param_idx));
 
         // 构建绑定参数
         let mut builder = sqlx::query_as::<_, MemoryDb>(&sql);
