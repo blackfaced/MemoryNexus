@@ -9,6 +9,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    working-directory: src
+
 jobs:
   # 格式检查
   fmt:
@@ -19,7 +23,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all -- --check --manifest-path src/Cargo.toml
+      - run: cargo fmt --all -- --check
 
   # Clippy 检查
   clippy:
@@ -33,7 +37,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src
-      - run: cargo clippy --all-targets --all-features -- -D clippy::all --manifest-path src/Cargo.toml
+      - run: cargo clippy --all-targets --all-features -- -D clippy::all
 
   # 构建
   build:
@@ -45,7 +49,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src
-      - run: cargo build --verbose --all-targets --manifest-path src/Cargo.toml
+      - run: cargo build --verbose --all-targets
 
   # 单元测试
   test:
@@ -57,5 +61,5 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src
-      - run: cargo test --all-features --all-targets --manifest-path src/Cargo.toml
+      - run: cargo test --all-features --all-targets
         timeout-minutes: 20

@@ -1,0 +1,56 @@
+image: rust:latest
+
+stages:
+  - fmt
+  - lint
+  - build
+  - test
+
+variables:
+  CARGO_TERM_COLOR: always
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  CARGO_TARGET_DIR: "$CI_PROJECT_DIR/src/target"
+
+cache:
+  key:
+    files:
+      - src/Cargo.lock
+  paths:
+    - .cargo/registry
+    - .cargo/git
+    - src/target
+
+before_script:
+  - cd src
+  - rustc --version
+  - cargo --version
+
+fmt:
+  stage: fmt
+  before_script:
+    - cd src
+    - rustup component add rustfmt
+    - rustc --version
+    - cargo --version
+  script:
+    - cargo fmt --all -- --check
+
+clippy:
+  stage: lint
+  before_script:
+    - cd src
+    - rustup component add clippy
+    - rustc --version
+    - cargo --version
+  script:
+    - cargo clippy --all-targets --all-features -- -D clippy::all
+
+build:
+  stage: build
+  script:
+    - cargo build --verbose --all-targets
+
+test:
+  stage: test
+  script:
+    - cargo test --all-features --all-targets
