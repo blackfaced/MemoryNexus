@@ -15,12 +15,12 @@ MemoryNexus 曾经同时保留 Rust + Axum 与 Python/FastAPI 两套后端实现
 
 MemoryNexus 后端主线确定为 **Rust-first**。
 
-Rust 服务作为唯一主后端继续演进，承载认证、记忆管理、标签、搜索、AI 编排、上传与媒体管理等用户可见能力。Python/FastAPI 相关实现若仍保留，只作为历史兼容层、实验代码或迁移参考，不再新增业务能力。
+Rust 服务作为唯一主后端继续演进，承载认证、记忆管理、标签、搜索、AI 编排、上传与媒体管理等用户可见能力。历史 Python/FastAPI 骨架已删除，不再作为兼容层保留。
 
 ## 执行规则
 
 - 新增 API、数据库访问、对象存储、向量检索和 AI 编排默认落在 Rust 服务。
-- Python 代码不得再作为新功能入口；确需保留时，必须在文档中标注为 compatibility 或 experiment。
+- 不再引入第二套后端主线；实验代码必须与主 API 路径隔离。
 - README、architecture、roadmap、TODO 等文档必须以 Rust 主线为准。
 - P0 验收用例优先覆盖 Rust API，而不是 Python 路由。
 - 影响架构、技术选型、长期接口契约的决策必须通过 `decisions/ADR-00X-*.md` 记录。
@@ -33,7 +33,7 @@ Rust 服务作为唯一主后端继续演进，承载认证、记忆管理、标
 - Rust 类型系统和编译检查可以更早暴露接口、状态和模块边界问题。
 
 **负面：**
-- Python 侧已有代码需要冻结、迁移或删除，短期会产生清理成本。
+- 历史 Python 代码已经删除，后续如需 AI/ML 实验要单独隔离。
 - AI/ML 快速实验仍可能需要 Python，但不能再混入主 API 路径。
 - Rust 主线要求本地开发环境必须能稳定运行 `cargo test`。
 
@@ -41,7 +41,7 @@ Rust 服务作为唯一主后端继续演进，承载认证、记忆管理、标
 
 1. 打通语义检索最小闭环：Embedding 生成 -> Qdrant upsert -> 查询召回 -> Rust API 返回。
 2. 补齐端到端验收：注册登录、创建记忆、搜索召回、摘要生成。
-3. 清理或冻结 Python/FastAPI 文档表述，避免“FastAPI 为主”的误导。
+3. Lens 最小模型：Lens 配置、Lens Run、可追溯输出。
 
 ## 相关决策
 

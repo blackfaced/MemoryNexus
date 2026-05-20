@@ -1,19 +1,18 @@
-__pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
 .env
-*.egg-info/
-dist/
-build/
+.env.local
 .DS_Store
-node_modules/
 *.log
-*.sqlite
 
 # Rust
 /target/
 **/target/
 *.profraw
 *.pdb
+**/*.rs.bk
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

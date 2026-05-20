@@ -4,9 +4,10 @@
 
 ## 项目主线
 
-- MemoryNexus 是家庭 AI 记忆中心，后端主线是 **Rust-first**。
-- Rust + Axum 服务位于 `src/` crate 中，是唯一继续演进的主后端。
-- Python/FastAPI 代码若仍存在，只作为历史兼容层或实验参考，不承载新功能主路径。
+- MemoryNexus 是 cognitive lens memory 系统，后端主线是 **Rust-first**。
+- Rust + Axum crate 位于仓库根目录，是唯一继续演进的主后端。
+- 记忆归属于 `CognitiveSpace`，不归属于 Agent。
+- 历史 Python/FastAPI 和空前端骨架已移除；不要重新引入双后端主线。
 
 ## 架构决策
 
@@ -23,9 +24,9 @@
 
 ```bash
 docker run --rm \
-  -v "$PWD/src:/workspace" \
+  -v "$PWD:/workspace" \
   -w /workspace \
-  rust:1.75 cargo test
+  rust:latest cargo test
 ```
 
 - 不要把生成的 `*.profraw`、`target/`、临时测试产物提交进仓库。
@@ -35,11 +36,13 @@ docker run --rm \
 
 1. Embedding -> Qdrant -> Rust search API 的语义检索闭环。
 2. 注册登录、创建记忆、搜索召回、摘要生成的端到端验收。
-3. 文档口径统一：README、architecture、roadmap、TODO 都应以 Rust 主线为准。
+3. Lens 最小模型：Lens 配置、Lens Run、可追溯输出。
+4. 文档口径统一：README、architecture、TODO 都应以 Rust 主线和 Cognitive Space 为准。
 
 ## 文档位置
 
 - `README.md`：面向使用者的项目入口和快速开始。
 - `docs/`：API、开发、部署、路线图等说明。
 - `decisions/`：架构决策记录，所有长期决策放这里。
-- `src/`：Rust 后端 crate。
+- `src/`：Rust 源码。
+- `migrations/`：SQLx 数据库迁移。

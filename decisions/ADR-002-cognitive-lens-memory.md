@@ -37,7 +37,7 @@ MemoryNexus 调整为 **cognitive lens memory**。
 
 4. **Rust-first 主路径不变**
    - Memory Space、Lens、语义检索和 AI 编排的新功能默认落在 Rust + Axum 服务。
-   - Python/FastAPI 历史代码只作为兼容层或实验参考，不承载 cognitive lens memory 主路径。
+   - 不引入第二套后端主线。
 
 ## 架构影响
 
@@ -59,7 +59,7 @@ MemoryNexus 调整为 **cognitive lens memory**。
 - 数据模型会比普通 agent memory 更复杂，需要维护 Space、Lens、Run、provenance 等概念。
 - API 需要更明确的上下文参数，不能默认假设“当前 Agent 的 memory”。
 - Lens 输出的缓存和持久化需要谨慎设计，避免派生解释污染原始 memory。
-- 旧文档中与 FastAPI 或 Agent 私有记忆相关的描述需要逐步清理。
+- 旧文档中与 Agent 私有记忆相关的描述需要持续清理。
 
 ## Phase 1-4 接续任务
 

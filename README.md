@@ -1,159 +1,79 @@
-# 🧠 MemoryNexus - 家庭AI记忆中心
+# MemoryNexus
 
-> 连接每一份记忆，编织家庭知识网络
+MemoryNexus is a Rust-first cognitive lens memory system. It is not an
+agent-owned memory plugin. Memories belong to a Cognitive Space, and agents or
+users interpret that space through Lens-style strategies.
 
-**MemoryNexus** 是一个开源的家庭 AI 记忆系统，基于"第二大脑"概念构建。
+## Current Shape
 
-| 🦀 **技术栈** | Rust + Axum | ⚛️ React + TS | ☁️ 云原生 |
-|:---:|:---:|:---:|:---:|
-| 后端 | Rust 0.72 | 前端 | React 18 |
-| 存储 | S3/MinIO | 向量 | Qdrant |
-| AI | Whisper + LLM | 数据库 | PostgreSQL |
+- Backend: Rust + Axum
+- Database: PostgreSQL
+- Vector search: Qdrant
+- Object storage abstraction: S3/MinIO compatible
+- CLI: `memorynexus-cli`
+- Main crate: repository root
 
-📋 **架构决策**: [decisions/](decisions/) 目录下管理所有 ADR
+The old Python/FastAPI and empty frontend skeletons have been removed. New
+backend work should land in the Rust crate.
 
-[![GitHub stars](https://img.shields.io/github/stars/blackfaced/MemoryNexus)](https://github.com/blackfaced/MemoryNexus/stargazers)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Actions](https://github.com/blackfaced/MemoryNexus/actions/workflows/ci.yml/badge.svg)](https://github.com/blackfaced/MemoryNexus/actions)
+## Quick Start
 
----
-
-## ✨ 核心特性
-
-| 特性 | 说明 |
-|------|------|
-| 🤖 **AI 主动助理** | 定时回顾、洞察发现、主动提醒、TODO 生成 |
-| 👨‍👩‍👧 **多用户/家庭** | 孩子学习模式、父母工作模式、家庭共享 |
-| 📦 **多模态存储** | 文字、图片、音频、视频，统一向量检索 |
-| 🔒 **隐私优先** | 数据完全自主，支持本地部署 |
-| ☁️ **多云部署** | Docker 一键部署，支持所有主流云 |
-| 🔌 **开放生态** | 标准 API，任何 Agent 都能接入 |
-
----
-
-## 🚀 快速开始
-
-### 方式一：Docker 一键部署（推荐）
+Start local infrastructure:
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/blackfaced/MemoryNexus.git
-cd MemoryNexus
-
-# 2. 一键启动
-docker-compose up -d
-
-# 3. 访问
-# 前端: http://localhost:3000
-# API:  http://localhost:8000
+docker compose up -d postgres qdrant
 ```
 
-### 方式二：本地开发（Rust 主线）
+Run the API:
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/blackfaced/MemoryNexus.git
-cd MemoryNexus
-
-# 2. 启动基础设施
-docker-compose up -d postgres qdrant redis
-
-# 3. 配置环境变量
-cp .env.example .env
-# 至少配置 DATABASE_URL；语义搜索还需要 OPENAI_API_KEY 和 QDRANT_URL
-
-# 4. 启动 Rust API
-cd src
-cargo run
+cargo run --bin memorynexus
 ```
 
----
+Run the CLI from another terminal:
 
-## 🎯 使用场景
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                      MemoryNexus                         │
-├─────────────────────────────────────────────────────────┤
-│  👦 孩子模式          👨‍💼 父母模式          👨‍👩‍👧 家庭模式     │
-│  ─────────          ─────────          ─────────        │
-│  📚 学习记录         💼 工作想法         🏠 家庭日记     │
-│  📝 作业积累         📋 项目笔记         📅 共享日程     │
-│  🔄 定时回顾         🔍 跨项目检索       👨‍👩‍👧 成长记录     │
-│  📊 进度报告         ⚡ 主动提醒        🎉 活动回忆     │
-└─────────────────────────────────────────────────────────┘
+```bash
+cargo run --bin memorynexus-cli -- health
 ```
 
----
+The API listens on `http://localhost:8080`.
 
-## 🏗️ 技术架构
+## Local Semantic Search
 
+Use the deterministic local embedding provider for smoke tests without an
+external API key:
+
+```bash
+export QDRANT_URL=http://localhost:6333
+export QDRANT_COLLECTION=memorynexus_local
+export MEMORYNEXUS_EMBEDDING_PROVIDER=local
+
+cargo run --bin memorynexus
 ```
-客户端层 ──► API网关 ──► 核心服务 ──► 数据层
-   │                          │
-   ▼                          ▼
-Web/App                   PostgreSQL  (关系数据)
-Any Agent                 Qdrant      (向量数据)
-                          S3/MinIO    (文件存储)
-                          Redis       (缓存)
+
+Then follow [docs/cli.md](docs/cli.md) to register, create a space, add memory,
+and run `search --semantic --space <SPACE_ID>`.
+
+## Verification
+
+```bash
+cargo fmt --check
+cargo test
+cargo clippy --all-targets --all-features -- -D clippy::all
 ```
 
-## 🛠️ 技术栈
+## Documentation
 
-| 层级 | 技术 | 说明 |
-|------|------|------|
-| **后端** | Rust + Axum | 高性能 API |
-| **前端** | React + TypeScript | Web 应用 |
-| **数据库** | PostgreSQL | 关系型数据 |
-| **向量库** | Qdrant | 语义搜索 |
-| **缓存** | Redis | 任务队列 |
-| **存储** | S3/MinIO | 文件存储 |
-| **AI** | Whisper + LLM | 语音/智能 |
+- [Architecture](docs/architecture.md)
+- [API](docs/api.md)
+- [CLI](docs/cli.md)
+- [Development](docs/development.md)
+- [Deployment](docs/deployment.md)
+- [Cognitive Manifesto](docs/cognitive-manifesto.md)
+- [Cognitive Concepts](docs/cognitive-concepts.md)
+- [Cognitive Lens Roadmap](docs/cognitive-lens-roadmap.md)
+- [Architecture Decisions](decisions/)
 
-> 📖 详细技术决策见 [decisions/](decisions/) 目录
+## License
 
----
-
-## 📖 文档
-
-| 文档 | 说明 |
-|------|------|
-| [🏗️ 架构设计](docs/architecture.md) | 系统架构详解 |
-| [🔌 API 文档](docs/api.md) | API 接口规范 |
-| [🚀 部署指南](docs/deployment.md) | 各平台部署教程 |
-| [🛠️ 开发指南](docs/development.md) | 本地开发说明 |
-| [📅 路线图](docs/roadmap.md) | 开发计划 |
-
----
-
-## 🤝 贡献
-
-欢迎各种形式的贡献！
-
-- 🐛 提交 [Issue](https://github.com/blackfaced/MemoryNexus/issues)
-- 💡 提交 [Feature Request](https://github.com/blackfaced/MemoryNexus/issues)
-- 📝 提交 Pull Request
-- 📖 完善文档
-
-请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解贡献指南。
-
----
-
-## 📄 协议
-
-本项目采用 [MIT License](LICENSE) 开源。
-
----
-
-## 🙏 致谢
-
-- 基于 [第二大脑](https://www.buildingasecondbrain.com/) 理念
-- 使用 [Qdrant](https://qdrant.tech/) 作为向量数据库
-- 使用 [FastAPI](https://fastapi.tiangolo.com/) 构建 API
-
----
-
-<p align="center">
-  <strong>让记忆连接，让知识生长</strong><br>
-  ⭐ 如果对你有帮助，请 Star！
-</p>
+MIT. See [LICENSE](LICENSE).

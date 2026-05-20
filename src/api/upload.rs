@@ -43,7 +43,6 @@ pub async fn upload(
     Query(_query): Query<UploadQuery>,
 ) -> Result<Json<ApiResponse<UploadResponse>>, AppError> {
     // TODO: 实现 multipart 文件上传
-    // 需要使用 tower-http 的 multipart 支持
     Err(AppError::NotImplemented("文件上传".to_string()))
 }
 

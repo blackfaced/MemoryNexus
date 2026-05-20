@@ -9,26 +9,24 @@ stages:
 variables:
   CARGO_TERM_COLOR: always
   CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
-  CARGO_TARGET_DIR: "$CI_PROJECT_DIR/src/target"
+  CARGO_TARGET_DIR: "$CI_PROJECT_DIR/target"
 
 cache:
   key:
     files:
-      - src/Cargo.lock
+      - Cargo.lock
   paths:
     - .cargo/registry
     - .cargo/git
-    - src/target
+    - target
 
 before_script:
-  - cd src
   - rustc --version
   - cargo --version
 
 fmt:
   stage: fmt
   before_script:
-    - cd src
     - rustup component add rustfmt
     - rustc --version
     - cargo --version
@@ -38,7 +36,6 @@ fmt:
 clippy:
   stage: lint
   before_script:
-    - cd src
     - rustup component add clippy
     - rustc --version
     - cargo --version

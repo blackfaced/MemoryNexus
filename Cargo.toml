@@ -12,8 +12,6 @@ rust-version = "1.75"
 # Web Framework
 axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -30,16 +28,11 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Configuration
-config = "0.14"
-
 # Date/Time
 chrono = { version = "0.4", features = ["serde"] }
-chrono-english = "0.1"
 
 # Utils
 uuid = { version = "1", features = ["v4", "serde"] }
-nanoid = "0.4"
 
 # HTTP client (for AI APIs)
 reqwest = { version = "0.12", features = ["json"] }
@@ -56,13 +49,6 @@ aws-sdk-s3 = "1"
 
 # Image processing
 image = "0.25"
-
-[dev-dependencies]
-# Testing
-tokio-test = "0.4"
-wiremock = "0.6"
-claim = "0.5"
-tempfile = "3"
 
 [profile.release]
 lto = true

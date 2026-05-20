@@ -17,7 +17,7 @@ The functional core contains cognitive types and pure transformations. The shell
 ## Layering
 
 ```text
-src/src/
+src/
   domain/
     memory.rs
     reflection.rs
@@ -259,7 +259,7 @@ Category theory can inform the model, but should not dominate the first implemen
 After Phase 0 documentation, the next implementation target is:
 
 ```text
-src/src/domain/
+src/domain/
 ```
 
 with unit tests proving:

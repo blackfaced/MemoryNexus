@@ -1,193 +1,98 @@
-# 🏗️ MemoryNexus 架构设计
+# MemoryNexus Architecture
 
-> 让记忆连接，让知识生长
+MemoryNexus is a Rust-first backend for cognitive lens memory. The core
+ownership boundary is `CognitiveSpace`; users and agents operate inside spaces,
+but they do not own memory directly.
 
----
+## Runtime Components
 
-## 整体架构
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                          客户端层                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │ Web App  │  │ Mobile   │  │ Desktop  │  │ External     │  │
-│  │ React    │  │ React    │  │ Electron │  │ Agents       │  │
-│  │          │  │ Native   │  │          │  │ (Any LLM)    │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘  │
-└───────┼─────────────┼─────────────┼───────────────┼───────────┘
-        │             │             │               │
-        ▼             ▼             ▼               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         API 网关层                               │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    FastAPI / Uvicorn                       │  │
-│  │  Authentication | Rate Limit | Request Routing | CORS   │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        ▼                    ▼                    ▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│   用户服务        │ │   记忆服务       │ │   AI 服务        │
-│  ───────────    │ │  ───────────    │ │  ───────────    │
-│  - 注册/登录     │ │  - CRUD         │ │  - 摘要生成     │
-│  - 角色管理      │ │  - 向量化        │ │  - 洞察发现     │
-│  - 权限控制      │ │  - 检索         │ │  - TODO生成     │
-│  - 家庭管理      │ │  - 多模态处理   │ │  - 定时回顾     │
-└────────┬────────┘ └────────┬────────┘ └────────┬────────┘
-         │                     │                    │
-         │          ┌──────────┼──────────┐       │
-         │          ▼                     ▼       │
-         │   ┌──────────────┐      ┌──────────────┐│
-         │   │   提醒服务    │      │   报告服务    ││
-         │   │  ───────────  │      │  ───────────  ││
-         │   │  - 定时任务   │      │  - 学习报告   ││
-         │   │  - 推送通知   │      │  - 工作报告   ││
-         │   │  - TODO       │      │  - 家庭报告   ││
-         │   └──────────────┘      └──────────────┘│
-         │                                    Celery Worker
-         └────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                          数据层                                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
-│  │  PostgreSQL   │  │  Qdrant      │  │  S3/MinIO    │        │
-│  │              │  │              │  │              │        │
-│  │  用户表       │  │  记忆向量    │  │  图片文件    │        │
-│  │  记忆元数据   │  │  图片向量    │  │  音频文件    │        │
-│  │  关系表       │  │  音频向量    │  │  视频文件    │        │
-│  │  TODO         │  │  概念向量    │  │              │        │
-│  │  提醒         │  │              │  │              │        │
-│  │  标签         │  │              │  │              │        │
-│  └──────────────┘  └──────────────┘  └──────────────┘        │
-│           │                │                                   │
-│           └────────────────┴───────────────────────────────────┤
-│                            Redis                                │
-│                     缓存 | Session | 任务队列                    │
-└─────────────────────────────────────────────────────────────────┘
+```text
+CLI / HTTP clients
+      |
+      v
+Rust Axum API
+      |
+      +--> PostgreSQL
+      |      users, cognitive spaces, memories, tags
+      |
+      +--> Qdrant
+      |      memory embeddings scoped by space_id
+      |
+      +--> S3 / MinIO compatible storage
+             media objects and thumbnails
 ```
 
----
+## Rust Layout
 
-## 核心模块
+```text
+src/
+  api/       Axum handlers and route composition
+  ai/        embedding, summary, and AI provider abstractions
+  auth/      JWT and password handling
+  db/        PostgreSQL repositories
+  domain/    functional cognitive model
+  search/    keyword and semantic search orchestration
+  state/     application state and repository wiring
+  storage/   S3 and thumbnail storage helpers
+  vector/    Qdrant vector store and vector repository
+  bin/       memorynexus-cli
 
-### 1. 用户与家庭
-
-```
-┌─────────────┐     ┌─────────────┐
-│   Family    │────<│   User      │
-│   家庭       │ 1:N │   用户       │
-└─────────────┘     └─────────────┘
-                          │
-        ┌─────────────────┼─────────────────┐
-        ▼                 ▼                 ▼
-   ┌────────┐        ┌────────┐        ┌────────┐
-   │ Child  │        │ Parent │        │ Admin  │
-   │ 孩子   │        │ 父母   │        │ 管理员 │
-   └────────┘        └────────┘        └────────┘
-```
-
-### 2. 记忆存储
-
-```
-┌─────────────┐     ┌─────────────┐
-│   Memory    │────<│  Embedding  │
-│   记忆      │ 1:1 │  向量       │
-└─────────────┘     └─────────────┘
-        │
-        ├──► Text (文本)
-        ├──► Image (图片)
-        ├──► Audio (音频)
-        └──► Video (视频)
+migrations/ PostgreSQL schema migrations
+tests/      integration test entry points
 ```
 
-### 3. AI 主动助理
+## Request Flow
 
-```
-┌──────────────────────────────────────────────────────┐
-│                    Auto-Join 引擎                    │
-├──────────────────────────────────────────────────────┤
-│                                                       │
-│   定时触发 ──► 检索相关记忆 ──► AI 分析 ──► 输出     │
-│                                                       │
-│   ┌──────────┐  ┌──────────┐  ┌──────────┐         │
-│   │ 每日回顾 │  │ 洞察发现  │  │ TODO生成 │         │
-│   │ 10:00 AM │  │ 关联分析  │  │ 优先级   │         │
-│   └──────────┘  └──────────┘  └──────────┘         │
-│                                                       │
-│   ┌──────────┐  ┌──────────┐  ┌──────────┐         │
-│   │ 主动提醒 │  │ 定期报告  │  │ 学习追踪  │         │
-│   │ 相关事件 │  │ 周/月报   │  │ 进度分析  │         │
-│   └──────────┘  └──────────┘  └──────────┘         │
-│                                                       │
-└──────────────────────────────────────────────────────┘
+### Memory Create
+
+```text
+POST /api/v1/memories
+  -> resolve Cognitive Space
+  -> persist memory in PostgreSQL
+  -> embed content if an embedder is configured
+  -> upsert vector to Qdrant with space provenance
 ```
 
----
+Vector payloads include:
 
-## 数据流
+- `space_id`
+- `memory_id`
+- `user_id`
+- `source_type`
+- `created_at`
+- `visibility`
+- title/type metadata
 
-```
-输入 ──────► 处理 ──────► 存储 ──────► 检索 ──────► 输出
+### Search
 
-用户输入          多模态处理      PostgreSQL      语义检索      展示
-  │
-  ├── 文字 ──► 清洗/分段 ──┐
-  │                      │
-  ├── 图片 ──► CLIP向量 ──┴─────► Qdrant ──► 混合检索 ──► AI总结
-  │                      │
-  ├── 音频 ──► Whisper ──┤
-  │                      │
-  └── 视频 ──► 关键帧 ───┘
-                        │
-                        ▼
-                   S3 存储
-```
-
----
-
-## 部署架构
-
-### 开发环境
-```
-┌────────────────────────────────────┐
-│         单机 Docker Compose         │
-│  ┌─────┬─────┬─────┬─────┬─────┐  │
-│  │ API │ DB  │Redis│Qdrnt│ S3  │  │
-│  └─────┴─────┴─────┴─────┴─────┘  │
-└────────────────────────────────────┘
+```text
+GET /api/v1/search?q=...&space_id=...&semantic=true
+  -> resolve Cognitive Space
+  -> embed query
+  -> search Qdrant with space_id filter
+  -> hydrate matching memories from PostgreSQL
 ```
 
-### 生产环境
-```
-┌────────────────────────────────────────────┐
-│                 负载均衡                    │
-└────────────────────┬───────────────────────┘
-                     │
-     ┌───────────────┼───────────────┐
-     ▼               ▼               ▼
-┌─────────┐    ┌─────────┐    ┌─────────┐
-│ API #1  │    │ API #2  │    │ API #3  │
-└────┬────┘    └────┬────┘    └────┬────┘
-     │               │               │
-     └───────────────┼───────────────┘
-                     ▼
-┌─────────┬─────────┬─────────┬─────────┐
-│   DB    │  Redis  │ Qdrant  │   S3    │
-│ Cluster │ Cluster │ Cluster │ Bucket  │
-└─────────┴─────────┴─────────┴─────────┘
-```
+Keyword search uses PostgreSQL full-text/ILIKE matching and the same
+`CognitiveSpace` boundary.
 
----
+## Cognitive Model
 
-## 技术选型理由
+- `Memory` is raw or user-authored material.
+- `CognitiveSpace` is the durable ownership and permission boundary.
+- `Lens` is an interpretation strategy over a space.
+- `Reflection`, `Concept`, `Belief`, `Relation`, and `Contradiction` are domain
+  primitives used by the functional core.
 
-| 组件 | 选择 | 理由 |
-|------|------|------|
-| API | FastAPI | 高性能、自动文档、类型安全 |
-| DB | PostgreSQL | 成熟可靠、JSONB支持、pgvector |
-| Vector DB | Qdrant | 高性能、原生向量、成熟稳定 |
-| Cache | Redis | 高速缓存、Celery后端 |
-| File Storage | S3/MinIO | S3兼容、任意云 |
-| Task Queue | Celery | Python生态成熟 |
+See [cognitive-concepts.md](cognitive-concepts.md) for definitions and
+[cognitive-architecture.md](cognitive-architecture.md) for the theoretical
+architecture.
+
+## Current Constraints
+
+- The CLI is the primary manual MVP surface.
+- Semantic search is available when `QDRANT_URL` and an embedding provider are
+  configured.
+- `MEMORYNEXUS_EMBEDDING_PROVIDER=local` is intended for deterministic local
+  smoke tests.
+- Lens persistence and Lens runs are roadmap work, not current runtime API.

@@ -45,7 +45,7 @@ body:
     id: environment
     attributes:
       label: 环境信息
-      placeholder: OS, Python版本, Docker版本等
+      placeholder: OS, Rust版本, Docker版本等
 
   - type: dropdown
     id: priority

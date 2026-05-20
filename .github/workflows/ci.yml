@@ -9,10 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-defaults:
-  run:
-    working-directory: src
-
 jobs:
   # 格式检查
   fmt:
@@ -35,8 +31,6 @@ jobs:
         with:
           components: clippy
       - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src
       - run: cargo clippy --all-targets --all-features -- -D clippy::all
 
   # 构建
@@ -47,8 +41,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src
       - run: cargo build --verbose --all-targets
 
   # 单元测试
@@ -59,7 +51,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src
       - run: cargo test --all-features --all-targets
         timeout-minutes: 20

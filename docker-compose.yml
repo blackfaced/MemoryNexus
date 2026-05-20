@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # PostgreSQL 数据库
   postgres:
     image: postgres:16-alpine
     container_name: memorynexus_db
@@ -19,16 +16,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis (预留)
-  redis:
-    image: redis:7-alpine
-    container_name: memorynexus_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-  # Qdrant 向量数据库 (预留)
   qdrant:
     image: qdrant/qdrant:latest
     container_name: memorynexus_qdrant
@@ -38,7 +25,6 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
-  # MinIO 对象存储 (预留)
   minio:
     image: minio/minio:latest
     container_name: memorynexus_minio
@@ -54,6 +40,5 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   qdrant_data:
   minio_data:
