@@ -23,6 +23,7 @@
 | P1.4 | AI 摘要与智能标签 | P1 | 2026-05-17 | 99619bf |
 | P1A.1 | Cognitive Space 基础模型与 CLI 入口 | P0 | 2026-05-20 | - |
 | P1B.1 | 本地语义检索基础链路 | P0 | 2026-05-20 | - |
+| P1C.1 | Space-scoped CLI 端到端验收 | P0 | 2026-05-20 | - |
 
 ---
 
@@ -66,7 +67,23 @@
 | P1B.4 | 向量 payload 补齐 `space_id`、`memory_id`、`source_type`、`created_at`、`visibility` | ✅ Done | P0 | Codex |
 | P1B.5 | `search --semantic --space <SPACE_ID>` 保持空间隔离过滤 | ✅ Done | P0 | Codex |
 | P1B.6 | 本地 Qdrant + CLI semantic smoke test | ✅ Done | P0 | Codex |
-| P1B.7 | 注册、space、memory、semantic search 的端到端自动化验收 | 🟡 Todo | P0 | Codex |
+| P1B.7 | 注册、space、memory、semantic search 的端到端自动化验收 | ✅ Done | P0 | Codex |
+
+验收入口：
+
+```bash
+docker compose up -d postgres qdrant
+MEMORYNEXUS_ACCEPTANCE=1 \
+QDRANT_URL=http://localhost:6333 \
+MEMORYNEXUS_EMBEDDING_PROVIDER=local \
+cargo test --test phase1c_acceptance -- --ignored --nocapture
+```
+
+下一步 P1C：
+
+- 摘要生成路径的端到端验收。
+- 将验收环境隔离到独立 test database。
+- 评估是否在 CI 中增加可选 service-based acceptance job。
 
 ---
 

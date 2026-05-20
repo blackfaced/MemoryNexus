@@ -77,6 +77,8 @@ Agent
 - [x] 完成 Embedding -> Qdrant upsert -> Rust search API -> 召回结果返回的端到端路径。
 - [x] 为向量 payload 补齐 `space_id`、`memory_id`、`source_type`、`created_at`、`visibility` 等过滤字段。
 - [ ] 补充注册登录、创建记忆、语义搜索召回、摘要生成的端到端自动化验收。
+  - [x] register -> space -> memory add -> keyword search -> semantic search 的本地 acceptance test。
+  - [ ] 摘要生成路径验收。
 - [x] 更新 API 文档，明确 memory 创建、搜索和摘要接口都以 Cognitive Space 为核心上下文。
 
 ### Phase 1A TODO: Cognitive Space 最小落地
@@ -101,8 +103,18 @@ Agent
 - [x] memory create 使用应用级 embedder，不在接口路径临时创建 provider。
 - [x] memory embedding upsert 写入 `space_id`、`memory_id`、`source_type`、`created_at`、`visibility` 等 provenance 字段。
 - [x] semantic search filter 使用 `space_id`，保持 Cognitive Space 级隔离。
-- [ ] 增加 register -> space -> memory add -> semantic search 的自动化端到端测试。
+- [x] 增加 register -> space -> memory add -> semantic search 的自动化端到端测试。
 - [ ] 将摘要生成接入同一 Space-scoped semantic recall 结果。
+
+### Phase 1C TODO: 自动化验收闭环
+
+目标：把可手动验证的 CLI MVP 固化为可重复运行的本地验收。
+
+- [x] 新增 ignored acceptance test：`tests/phase1c_acceptance.rs`。
+- [x] 验收覆盖 API 启动、注册、Space 创建、memory 创建、keyword search、semantic search。
+- [x] 使用 `MEMORYNEXUS_EMBEDDING_PROVIDER=local`，不依赖外部 embedding API。
+- [ ] 摘要生成路径纳入验收。
+- [ ] 使用独立 test database 和可清理的 Qdrant collection，降低本地状态污染。
 
 ### Phase 1.5 TODO: CLI MVP 试用入口
 
