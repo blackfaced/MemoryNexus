@@ -75,9 +75,9 @@ Agent
 
 - [x] 定义 Cognitive Space 数据模型：空间 ID、成员、权限、默认 Lens、创建者和审计字段。
 - [x] 将现有 memory CRUD 明确绑定到 Cognitive Space，不再以 Agent 作为归属主体。
-- [ ] 完成 Embedding -> Qdrant upsert -> Rust search API -> 召回结果返回的端到端路径。
-- [ ] 为向量 payload 补齐 `space_id`、`memory_id`、`source_type`、`created_at`、`visibility` 等过滤字段。
-- [ ] 补充注册登录、创建记忆、搜索召回、摘要生成的端到端验收。
+- [x] 完成 Embedding -> Qdrant upsert -> Rust search API -> 召回结果返回的端到端路径。
+- [x] 为向量 payload 补齐 `space_id`、`memory_id`、`source_type`、`created_at`、`visibility` 等过滤字段。
+- [ ] 补充注册登录、创建记忆、语义搜索召回、摘要生成的端到端自动化验收。
 - [x] 更新 API 文档，明确 memory 创建、搜索和摘要接口都以 Cognitive Space 为核心上下文。
 
 ### Phase 1A TODO: Cognitive Space 最小落地
@@ -91,7 +91,19 @@ Agent
 - [x] CLI 支持 `space create/list`，并支持 `memory add/list --space`、`search --space`。
 - [x] Qdrant payload 和 filter 加入 `space_id`。
 - [x] 本地 smoke test 覆盖迁移后的 register -> space list -> memory add -> search。
-- [ ] 完成 `source_type`、`created_at`、`visibility` 等更完整的向量 payload 字段。
+- [x] 完成 `source_type`、`created_at`、`visibility` 等更完整的向量 payload 字段。
+
+### Phase 1B TODO: Semantic Index 基础闭环
+
+目标：让 Cognitive Space 内的 memory 能被稳定写入 Semantic Index，并通过 Rust search API 语义召回。
+
+- [x] 新增 deterministic local embedding provider，用于本地和 CI 友好的语义链路验证。
+- [x] Rust 服务启动时根据 `QDRANT_URL` 和 `QDRANT_COLLECTION` 自动确保 collection 存在。
+- [x] memory create 使用应用级 embedder，不在接口路径临时创建 provider。
+- [x] memory embedding upsert 写入 `space_id`、`memory_id`、`source_type`、`created_at`、`visibility` 等 provenance 字段。
+- [x] semantic search filter 使用 `space_id`，保持 Cognitive Space 级隔离。
+- [ ] 增加 register -> space -> memory add -> semantic search 的自动化端到端测试。
+- [ ] 将摘要生成接入同一 Space-scoped semantic recall 结果。
 
 ### Phase 1.5 TODO: CLI MVP 试用入口
 

@@ -53,6 +53,28 @@ pub struct OpenAIEmbedder {
     client: reqwest::Client,
 }
 
+/// Deterministic local embedder for development and smoke tests.
+///
+/// This is not intended to match production embedding quality. It makes the
+/// Embedding -> Qdrant -> search path testable without an external API key.
+pub struct LocalHashEmbedder {
+    dimensions: usize,
+}
+
+impl Default for LocalHashEmbedder {
+    fn default() -> Self {
+        Self {
+            dimensions: EMBEDDING_DIM,
+        }
+    }
+}
+
+impl LocalHashEmbedder {
+    pub fn new(dimensions: usize) -> Self {
+        Self { dimensions }
+    }
+}
+
 impl OpenAIEmbedder {
     pub fn new(api_key: String) -> Self {
         Self {
@@ -66,6 +88,58 @@ impl OpenAIEmbedder {
         self.model = model;
         self
     }
+}
+
+#[async_trait::async_trait]
+impl Embedder for LocalHashEmbedder {
+    async fn embed(&self, text: &str) -> Result<EmbeddingResult, EmbeddingError> {
+        if text.trim().is_empty() {
+            return Err(EmbeddingError::EmptyContent);
+        }
+
+        let mut embedding = vec![0.0; self.dimensions];
+        for token in text.split_whitespace().map(str::to_lowercase) {
+            let index = stable_hash(&token) % self.dimensions;
+            embedding[index] += 1.0;
+        }
+
+        let norm = embedding
+            .iter()
+            .map(|value| value * value)
+            .sum::<f32>()
+            .sqrt();
+        if norm > 0.0 {
+            for value in &mut embedding {
+                *value /= norm;
+            }
+        }
+
+        Ok(EmbeddingResult {
+            embedding,
+            model: "local-hash".to_string(),
+            tokens: text.split_whitespace().count(),
+        })
+    }
+
+    async fn embed_batch(
+        &self,
+        texts: Vec<String>,
+    ) -> Result<Vec<EmbeddingResult>, EmbeddingError> {
+        let mut results = Vec::with_capacity(texts.len());
+        for text in texts {
+            results.push(self.embed(&text).await?);
+        }
+        Ok(results)
+    }
+}
+
+fn stable_hash(text: &str) -> usize {
+    let mut hash = 14_695_981_039_346_656_037u64;
+    for byte in text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(1_099_511_628_211);
+    }
+    hash as usize
 }
 
 #[async_trait::async_trait]
@@ -237,5 +311,16 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"model\":\"test-model\""));
         assert!(json.contains("\"tokens\":10"));
+    }
+
+    #[tokio::test]
+    async fn local_hash_embedder_is_deterministic() {
+        let embedder = LocalHashEmbedder::new(8);
+        let first = embedder.embed("cognitive space memory").await.unwrap();
+        let second = embedder.embed("cognitive space memory").await.unwrap();
+
+        assert_eq!(first.embedding, second.embedding);
+        assert_eq!(first.embedding.len(), 8);
+        assert_eq!(first.model, "local-hash");
     }
 }

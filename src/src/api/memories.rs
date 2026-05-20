@@ -8,7 +8,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::ai::{Embedder, OpenAIEmbedder};
 use crate::auth::AuthenticatedUser;
 use crate::db::memory::{CreateMemory, MemoryDb, MemoryType};
 use crate::error::{ApiResponse, AppError};
@@ -204,15 +203,10 @@ async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
         return;
     };
 
-    let Ok(api_key) = std::env::var("OPENAI_API_KEY") else {
-        tracing::warn!("跳过记忆向量索引：OPENAI_API_KEY 未配置");
+    let Some(embedder) = state.ai.embedder.as_ref() else {
+        tracing::warn!("跳过记忆向量索引：embedding provider 未配置");
         return;
     };
-
-    let model = std::env::var("OPENAI_EMBEDDING_MODEL")
-        .or_else(|_| std::env::var("EMBEDDING_MODEL"))
-        .unwrap_or_else(|_| "text-embedding-ada-002".to_string());
-    let embedder = OpenAIEmbedder::new(api_key).with_model(model);
 
     let embedding = match embedder.embed(&memory.content).await {
         Ok(result) => result,
@@ -229,6 +223,13 @@ async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
             memory_id: memory.id,
             user_id: memory.user_id,
             space_id: memory.space_id,
+            source_type: "memory".to_string(),
+            created_at: memory.created_at.to_rfc3339(),
+            visibility: if memory.is_shared {
+                "shared".to_string()
+            } else {
+                "private".to_string()
+            },
             title: memory.title.clone(),
             memory_type: memory.memory_type.clone(),
             is_shared: memory.is_shared,

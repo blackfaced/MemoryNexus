@@ -106,6 +106,13 @@ impl VectorRepository for QdrantVectorRepository {
                 memory_id: vector.memory_id,
                 user_id: vector.user_id,
                 space_id: vector.space_id,
+                source_type: "memory".to_string(),
+                created_at: vector
+                    .payload
+                    .as_ref()
+                    .map(|p| p.created_at.to_rfc3339())
+                    .unwrap_or_else(|| Utc::now().to_rfc3339()),
+                visibility: "private".to_string(),
                 title: vector.payload.as_ref().and_then(|p| p.title.clone()),
                 memory_type: vector
                     .payload

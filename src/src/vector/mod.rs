@@ -26,6 +26,9 @@ pub struct MemoryVectorPayload {
     pub memory_id: Uuid,
     pub user_id: Uuid,
     pub space_id: Uuid,
+    pub source_type: String,
+    pub created_at: String,
+    pub visibility: String,
     pub title: Option<String>,
     pub memory_type: String,
     pub is_shared: bool,
@@ -46,6 +49,7 @@ pub struct VectorSearchMatch {
 
 #[async_trait::async_trait]
 pub trait VectorStore: Send + Sync {
+    async fn ensure_collection(&self, vector_size: usize) -> Result<(), VectorError>;
     async fn upsert_memory(&self, point: MemoryVectorPoint) -> Result<(), VectorError>;
     async fn search_memories(
         &self,
@@ -79,6 +83,10 @@ impl QdrantVectorStore {
         Some(Self::new(base_url, collection))
     }
 
+    fn collection_url(&self) -> String {
+        format!("{}/collections/{}", self.base_url, self.collection)
+    }
+
     fn upsert_url(&self) -> String {
         format!(
             "{}/collections/{}/points?wait=true",
@@ -91,6 +99,28 @@ impl QdrantVectorStore {
             "{}/collections/{}/points/search",
             self.base_url, self.collection
         )
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct QdrantCreateCollectionRequest {
+    vectors: QdrantVectorConfig,
+}
+
+#[derive(Debug, Serialize)]
+struct QdrantVectorConfig {
+    size: usize,
+    distance: &'static str,
+}
+
+impl QdrantCreateCollectionRequest {
+    fn new(size: usize) -> Self {
+        Self {
+            vectors: QdrantVectorConfig {
+                size,
+                distance: "Cosine",
+            },
+        }
     }
 }
 
@@ -170,6 +200,43 @@ impl QdrantSearchRequest {
 
 #[async_trait::async_trait]
 impl VectorStore for QdrantVectorStore {
+    async fn ensure_collection(&self, vector_size: usize) -> Result<(), VectorError> {
+        let get_response = self
+            .client
+            .get(self.collection_url())
+            .send()
+            .await
+            .map_err(|e| VectorError::Request(e.to_string()))?;
+
+        if get_response.status().is_success() {
+            return Ok(());
+        }
+
+        if get_response.status() != reqwest::StatusCode::NOT_FOUND {
+            let status = get_response.status();
+            let text = get_response.text().await.unwrap_or_default();
+            return Err(VectorError::Response(format!("{} {}", status, text)));
+        }
+
+        let create_response = self
+            .client
+            .put(self.collection_url())
+            .json(&QdrantCreateCollectionRequest::new(vector_size))
+            .send()
+            .await
+            .map_err(|e| VectorError::Request(e.to_string()))?;
+
+        if create_response.status().is_success()
+            || create_response.status() == reqwest::StatusCode::CONFLICT
+        {
+            return Ok(());
+        }
+
+        let status = create_response.status();
+        let text = create_response.text().await.unwrap_or_default();
+        Err(VectorError::Response(format!("{} {}", status, text)))
+    }
+
     async fn upsert_memory(&self, point: MemoryVectorPoint) -> Result<(), VectorError> {
         let body = QdrantUpsertRequest {
             points: vec![point],
@@ -269,6 +336,10 @@ mod tests {
             QdrantVectorStore::new("http://localhost:6333/".to_string(), "memories".to_string());
 
         assert_eq!(
+            store.collection_url(),
+            "http://localhost:6333/collections/memories"
+        );
+        assert_eq!(
             store.upsert_url(),
             "http://localhost:6333/collections/memories/points?wait=true"
         );
@@ -276,5 +347,34 @@ mod tests {
             store.search_url(),
             "http://localhost:6333/collections/memories/points/search"
         );
+    }
+
+    #[test]
+    fn qdrant_create_collection_request_uses_cosine_distance() {
+        let request = QdrantCreateCollectionRequest::new(1536);
+        let json = serde_json::to_value(request).unwrap();
+
+        assert_eq!(json["vectors"]["size"], 1536);
+        assert_eq!(json["vectors"]["distance"], "Cosine");
+    }
+
+    #[test]
+    fn memory_vector_payload_includes_space_provenance_and_visibility() {
+        let payload = MemoryVectorPayload {
+            memory_id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
+            source_type: "memory".to_string(),
+            created_at: "2026-05-20T00:00:00Z".to_string(),
+            visibility: "private".to_string(),
+            title: Some("Phase 1B".to_string()),
+            memory_type: "text".to_string(),
+            is_shared: false,
+        };
+        let json = serde_json::to_value(payload).unwrap();
+
+        assert_eq!(json["source_type"], "memory");
+        assert_eq!(json["created_at"], "2026-05-20T00:00:00Z");
+        assert_eq!(json["visibility"], "private");
     }
 }

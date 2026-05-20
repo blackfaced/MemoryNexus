@@ -120,4 +120,13 @@ If `space_id` is omitted, the default Cognitive Space is used.
 
 Semantic search uses the Embedding -> Qdrant -> PostgreSQL recall path when
 Qdrant and an embedding provider are configured. Vector payloads include
-`space_id` so semantic retrieval can stay inside the Cognitive Space boundary.
+`space_id`, `memory_id`, `source_type`, `created_at`, and `visibility` so
+semantic retrieval can stay inside the Cognitive Space boundary and preserve
+basic provenance.
+
+When `QDRANT_URL` is set, the Rust API ensures the configured Qdrant collection
+exists during startup. Local development can set
+`MEMORYNEXUS_EMBEDDING_PROVIDER=local` to use a deterministic embedding provider
+for semantic smoke tests without external API credentials. Production-like
+deployments should keep the default OpenAI embedding provider and configure
+`OPENAI_API_KEY`.

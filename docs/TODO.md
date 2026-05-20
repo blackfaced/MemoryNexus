@@ -22,6 +22,7 @@
 | P1.3 | 搜索与过滤 | P1 | 2026-05-17 | b118427 |
 | P1.4 | AI 摘要与智能标签 | P1 | 2026-05-17 | 99619bf |
 | P1A.1 | Cognitive Space 基础模型与 CLI 入口 | P0 | 2026-05-20 | - |
+| P1B.1 | 本地语义检索基础链路 | P0 | 2026-05-20 | - |
 
 ---
 
@@ -29,9 +30,9 @@
 
 | ID | 任务 | 状态 | 优先级 | 负责人 |
 |----|------|------|--------|--------|
-| P2.1 | Embedding 集成 | 🔄 In Progress | P0 | Codex |
-| P2.2 | Qdrant 向量存储 | 🔄 In Progress | P0 | Codex |
-| P2.3 | 语义搜索实现 | 🔄 In Progress | P0 | Codex |
+| P2.1 | Embedding 集成 | ✅ Done | P0 | Codex |
+| P2.2 | Qdrant 向量存储 | ✅ Done | P0 | Codex |
+| P2.3 | 语义搜索实现 | ✅ Done | P0 | Codex |
 | P2.4 | AI 摘要完善 | 🟡 Todo | P1 | - |
 | P2.5 | 智能标签生成 | 🟡 Todo | P1 | - |
 
@@ -51,11 +52,21 @@
 | P1A.6 | CLI 支持 `space create/list` 与 `--space` 参数 | ✅ Done | P0 | Codex |
 | P1A.7 | 本地数据库迁移 smoke test | ✅ Done | P0 | Codex |
 
-下一步 P1B：
+---
 
-- 启动 Qdrant，验证 memory create 后的 embedding upsert。
-- 让 `search --semantic --space <SPACE_ID>` 命中同空间 memory。
-- 补注册、space、memory、search 的端到端自动化验收。
+## 🔴 P1B — Semantic Index 基础闭环
+
+目标：让 memory create 后可以进入向量索引，并通过同一 Cognitive Space 内的 semantic search 被召回。
+
+| ID | 任务 | 状态 | 优先级 | 负责人 |
+|----|------|------|--------|--------|
+| P1B.1 | 新增 deterministic local embedding provider，支持无外部 API 的本地烟测 | ✅ Done | P0 | Codex |
+| P1B.2 | Rust 服务启动时确保 Qdrant collection 存在 | ✅ Done | P0 | Codex |
+| P1B.3 | memory create 复用全局 embedder 并 upsert 到 Qdrant | ✅ Done | P0 | Codex |
+| P1B.4 | 向量 payload 补齐 `space_id`、`memory_id`、`source_type`、`created_at`、`visibility` | ✅ Done | P0 | Codex |
+| P1B.5 | `search --semantic --space <SPACE_ID>` 保持空间隔离过滤 | ✅ Done | P0 | Codex |
+| P1B.6 | 本地 Qdrant + CLI semantic smoke test | ✅ Done | P0 | Codex |
+| P1B.7 | 注册、space、memory、semantic search 的端到端自动化验收 | 🟡 Todo | P0 | Codex |
 
 ---
 

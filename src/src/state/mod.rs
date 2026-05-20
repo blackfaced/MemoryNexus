@@ -2,7 +2,7 @@
 use sqlx::PgPool;
 use std::sync::Arc;
 
-use crate::ai::embedding::{Embedder, OpenAIEmbedder};
+use crate::ai::embedding::{Embedder, LocalHashEmbedder, OpenAIEmbedder};
 use crate::vector::repository::VectorRepository;
 use crate::vector::VectorStore;
 
@@ -15,11 +15,25 @@ pub struct AiConfig {
 
 impl Default for AiConfig {
     fn default() -> Self {
+        let local_embedding = std::env::var("MEMORYNEXUS_EMBEDDING_PROVIDER")
+            .or_else(|_| std::env::var("EMBEDDING_PROVIDER"))
+            .map(|provider| provider.eq_ignore_ascii_case("local"))
+            .unwrap_or(false);
+        let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
+        let embedder = if local_embedding {
+            Some(Arc::new(LocalHashEmbedder::default()) as Arc<dyn Embedder>)
+        } else {
+            openai_api_key.clone().map(|key| {
+                let model = std::env::var("OPENAI_EMBEDDING_MODEL")
+                    .or_else(|_| std::env::var("EMBEDDING_MODEL"))
+                    .unwrap_or_else(|_| "text-embedding-ada-002".to_string());
+                Arc::new(OpenAIEmbedder::new(key).with_model(model)) as Arc<dyn Embedder>
+            })
+        };
+
         Self {
-            openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
-            embedder: std::env::var("OPENAI_API_KEY")
-                .ok()
-                .map(|key| Arc::new(OpenAIEmbedder::new(key)) as Arc<dyn Embedder>),
+            openai_api_key,
+            embedder,
         }
     }
 }

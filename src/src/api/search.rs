@@ -17,7 +17,11 @@ pub async fn search(
     auth_user: AuthenticatedUser,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<ApiResponse<SearchResult>>, AppError> {
-    let engine = SearchEngine::with_vector_store(state.db.clone(), state.vector_store.clone());
+    let engine = SearchEngine::with_semantic_dependencies(
+        state.db.clone(),
+        state.vector_store.clone(),
+        state.ai.embedder.clone(),
+    );
     let space = resolve_space(&state, auth_user.user_id, query.space_id).await?;
 
     let result = if query.semantic {
@@ -67,8 +71,8 @@ fn map_semantic_search_error(error: SemanticSearchError) -> AppError {
         SemanticSearchError::VectorStoreMissing => {
             AppError::BadRequest("Qdrant 向量存储未配置".to_string())
         }
-        SemanticSearchError::EmbeddingKeyMissing => {
-            AppError::BadRequest("OPENAI_API_KEY 未配置".to_string())
+        SemanticSearchError::EmbeddingProviderMissing => {
+            AppError::BadRequest("Embedding provider 未配置".to_string())
         }
         SemanticSearchError::Database(error) => AppError::Database(error),
         SemanticSearchError::Embedding(error) => AppError::Internal(error.to_string()),

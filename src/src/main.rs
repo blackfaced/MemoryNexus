@@ -59,9 +59,15 @@ async fn main() -> anyhow::Result<()> {
     db::run_migrations(&pool).await?;
 
     // 创建应用状态
+    use ai::embedding::EMBEDDING_DIM;
     use vector::repository::QdrantVectorRepository;
     let vector_store = vector::QdrantVectorStore::from_env()
         .map(|store| Arc::new(store) as Arc<dyn vector::VectorStore>);
+
+    if let Some(store) = vector_store.as_ref() {
+        tracing::info!("🧭 初始化 Qdrant collection...");
+        store.ensure_collection(EMBEDDING_DIM).await?;
+    }
 
     let vector_repo: Arc<dyn vector::repository::VectorRepository> = match &vector_store {
         Some(store) => Arc::new(QdrantVectorRepository::new(

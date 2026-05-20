@@ -45,6 +45,9 @@ cargo run --bin memorynexus-cli -- health
 |----------|----------|---------|---------|
 | `MEMORYNEXUS_API_URL` | No | `http://localhost:8080` | Rust API base URL |
 | `MEMORYNEXUS_TOKEN` | Yes, except `health` and `auth` | - | JWT bearer token returned by login/register |
+| `MEMORYNEXUS_EMBEDDING_PROVIDER` | Backend only | `openai` | Set to `local` for deterministic local semantic smoke tests |
+| `QDRANT_URL` | Backend only | - | Enables Qdrant vector indexing and semantic search |
+| `QDRANT_COLLECTION` | Backend only | `memorynexus_memories` | Qdrant collection used by the Rust API |
 
 ## Quick Start
 
@@ -161,17 +164,60 @@ cargo run --bin memorynexus-cli -- search "Cognitive Space" --space "$MEMORYNEXU
 ```
 
 Semantic search is intentionally a separate check because it requires Qdrant
-and an embedding provider:
+and an embedding provider. For local development, use the deterministic
+`local` provider so no external embedding API key is required.
+
+Terminal 1, start PostgreSQL and Qdrant:
 
 ```bash
-docker compose up -d qdrant
-export OPENAI_API_KEY=<your-key>
-
-cargo run --bin memorynexus-cli -- search "cognitive lens" --semantic --limit 5
+docker compose up -d postgres qdrant
 ```
 
-Without Qdrant or an embedding key, `--semantic` should return a JSON error
-from the API instead of a keyword result.
+Terminal 2, start the Rust API with vector search enabled:
+
+```bash
+cd src
+export QDRANT_URL=http://localhost:6333
+export QDRANT_COLLECTION=memorynexus_local
+export MEMORYNEXUS_EMBEDDING_PROVIDER=local
+
+cargo run --bin memorynexus
+```
+
+Terminal 3, create data and run a space-scoped semantic search:
+
+```bash
+cd src
+export MEMORYNEXUS_API_URL=http://localhost:8080
+
+cargo run --bin memorynexus-cli -- auth register \
+  --email semantic-smoke@example.com \
+  --name SemanticSmoke \
+  --password secret123
+
+export MEMORYNEXUS_TOKEN=<token-from-auth-response>
+
+cargo run --bin memorynexus-cli -- space create \
+  --name "Semantic Smoke Space" \
+  --description "Local Qdrant verification"
+
+export MEMORYNEXUS_SPACE_ID=<space-id-from-space-create>
+
+cargo run --bin memorynexus-cli -- memory add \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --title "Semantic smoke memory" \
+  --content "phase1b semantic qdrant smoke memory" \
+  --tags "phase1b,semantic"
+
+cargo run --bin memorynexus-cli -- search "phase1b semantic qdrant" \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --semantic \
+  --limit 5
+```
+
+Expected result: semantic search returns the memory created in the same
+Cognitive Space. Without Qdrant or an embedding provider, `--semantic` should
+return a JSON error from the API instead of a keyword result.
 
 ## Commands
 

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::ai::{Embedder, EmbeddingError, OpenAIEmbedder};
+use crate::ai::{Embedder, EmbeddingError};
 use crate::db::memory::MemoryDb;
 use crate::vector::{VectorError, VectorStore};
 
@@ -116,6 +116,7 @@ impl From<MemoryDb> for MemorySearchItem {
 pub struct SearchEngine {
     pool: PgPool,
     vector_store: Option<Arc<dyn VectorStore>>,
+    embedder: Option<Arc<dyn Embedder>>,
 }
 
 impl SearchEngine {
@@ -123,11 +124,28 @@ impl SearchEngine {
         Self {
             pool,
             vector_store: None,
+            embedder: None,
         }
     }
 
     pub fn with_vector_store(pool: PgPool, vector_store: Option<Arc<dyn VectorStore>>) -> Self {
-        Self { pool, vector_store }
+        Self {
+            pool,
+            vector_store,
+            embedder: None,
+        }
+    }
+
+    pub fn with_semantic_dependencies(
+        pool: PgPool,
+        vector_store: Option<Arc<dyn VectorStore>>,
+        embedder: Option<Arc<dyn Embedder>>,
+    ) -> Self {
+        Self {
+            pool,
+            vector_store,
+            embedder,
+        }
     }
 
     /// 执行搜索
@@ -279,12 +297,10 @@ impl SearchEngine {
             .as_ref()
             .ok_or(SemanticSearchError::VectorStoreMissing)?;
 
-        let api_key = std::env::var("OPENAI_API_KEY")
-            .map_err(|_| SemanticSearchError::EmbeddingKeyMissing)?;
-        let model = std::env::var("OPENAI_EMBEDDING_MODEL")
-            .or_else(|_| std::env::var("EMBEDDING_MODEL"))
-            .unwrap_or_else(|_| "text-embedding-ada-002".to_string());
-        let embedder = OpenAIEmbedder::new(api_key).with_model(model);
+        let embedder = self
+            .embedder
+            .as_ref()
+            .ok_or(SemanticSearchError::EmbeddingProviderMissing)?;
         let embedding = embedder.embed(text).await?;
 
         let matches = vector_store
@@ -385,8 +401,8 @@ pub enum SemanticSearchError {
     #[error("Qdrant 向量存储未配置")]
     VectorStoreMissing,
 
-    #[error("OPENAI_API_KEY 未配置")]
-    EmbeddingKeyMissing,
+    #[error("Embedding provider 未配置")]
+    EmbeddingProviderMissing,
 
     #[error("Embedding 失败: {0}")]
     Embedding(#[from] EmbeddingError),
