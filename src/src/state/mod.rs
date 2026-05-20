@@ -37,6 +37,7 @@ pub struct AppState {
 #[derive(Clone)]
 pub struct Repositories {
     pub memories: Arc<dyn super::db::memory::MemoryRepository>,
+    pub spaces: Arc<dyn super::db::space::CognitiveSpaceRepository>,
     pub tags: Arc<dyn super::db::tag::TagRepository>,
     pub users: Arc<dyn super::db::user::UserRepository>,
     pub vectors: Arc<dyn VectorRepository>,

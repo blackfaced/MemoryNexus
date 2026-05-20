@@ -15,6 +15,9 @@ use crate::vector::{VectorError, VectorStore};
 /// 搜索查询参数
 #[derive(Debug, Clone, Deserialize)]
 pub struct SearchQuery {
+    /// Cognitive Space boundary
+    pub space_id: Option<Uuid>,
+
     /// 搜索关键词
     pub q: Option<String>,
 
@@ -51,6 +54,7 @@ impl Default for SearchQuery {
     fn default() -> Self {
         Self {
             q: None,
+            space_id: None,
             tags: None,
             memory_type: None,
             from: None,
@@ -79,6 +83,7 @@ pub struct SearchResult {
 pub struct MemorySearchItem {
     pub id: Uuid,
     pub user_id: Uuid,
+    pub space_id: Uuid,
     pub title: Option<String>,
     pub content: String,
     pub memory_type: String,
@@ -94,6 +99,7 @@ impl From<MemoryDb> for MemorySearchItem {
         Self {
             id: m.id,
             user_id: m.user_id,
+            space_id: m.space_id,
             title: m.title,
             content: m.content,
             memory_type: m.memory_type,
@@ -129,6 +135,7 @@ impl SearchEngine {
         &self,
         query: &SearchQuery,
         user_id: Uuid,
+        space_id: Uuid,
     ) -> Result<SearchResult, sqlx::Error> {
         // 构建 SQL 查询
         let mut sql = String::from(
@@ -142,12 +149,13 @@ impl SearchEngine {
             LEFT JOIN memory_tags mt ON m.id = mt.memory_id
             LEFT JOIN tags t ON mt.tag_id = t.id
             WHERE 1=1
+            AND m.space_id = $3::uuid
             "#,
         );
 
         let mut params: Vec<String> = Vec::new();
         let keyword = query.q.clone().unwrap_or_default();
-        let mut param_idx = 3;
+        let mut param_idx = 4;
 
         // 关键词搜索
         if let Some(ref q) = query.q {
@@ -204,7 +212,18 @@ impl SearchEngine {
         if query.own_only {
             sql.push_str(" AND m.user_id = $1");
         } else {
-            sql.push_str(" AND (m.user_id = $1 OR m.is_shared = true)");
+            sql.push_str(
+                r#"
+                AND (
+                    m.user_id = $1
+                    OR m.is_shared = true
+                    OR EXISTS (
+                        SELECT 1 FROM cognitive_space_members csm
+                        WHERE csm.space_id = m.space_id AND csm.user_id = $1
+                    )
+                )
+                "#,
+            );
         }
 
         // 排序
@@ -222,6 +241,7 @@ impl SearchEngine {
         let mut builder = sqlx::query_as::<_, MemoryDb>(&sql);
         builder = builder.bind(user_id); // $1
         builder = builder.bind(keyword); // $2
+        builder = builder.bind(space_id); // $3
 
         for param in &params {
             builder = builder.bind(param);
@@ -245,6 +265,7 @@ impl SearchEngine {
         &self,
         query: &SearchQuery,
         user_id: Uuid,
+        space_id: Uuid,
     ) -> Result<SearchResult, SemanticSearchError> {
         let text = query
             .q
@@ -267,7 +288,7 @@ impl SearchEngine {
         let embedding = embedder.embed(text).await?;
 
         let matches = vector_store
-            .search_memories(user_id, embedding.embedding, query.limit as usize)
+            .search_memories(space_id, user_id, embedding.embedding, query.limit as usize)
             .await?;
 
         if matches.is_empty() {
@@ -285,11 +306,21 @@ impl SearchEngine {
         let memories = sqlx::query_as::<_, MemoryDb>(
             r#"
             SELECT * FROM memories
-            WHERE id = ANY($1) AND (user_id = $2 OR is_shared = true)
+            WHERE id = ANY($1)
+              AND space_id = $3
+              AND (
+                user_id = $2
+                OR is_shared = true
+                OR EXISTS (
+                    SELECT 1 FROM cognitive_space_members csm
+                    WHERE csm.space_id = memories.space_id AND csm.user_id = $2
+                )
+              )
             "#,
         )
         .bind(&ids)
         .bind(user_id)
+        .bind(space_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -319,17 +350,26 @@ impl SearchEngine {
     }
 
     /// 全文搜索建议（简单实现）
-    pub async fn suggest(&self, prefix: &str, user_id: Uuid) -> Result<Vec<String>, sqlx::Error> {
+    pub async fn suggest(
+        &self,
+        prefix: &str,
+        user_id: Uuid,
+        space_id: Uuid,
+    ) -> Result<Vec<String>, sqlx::Error> {
         let suggestions = sqlx::query_scalar::<_, String>(
             r#"
             SELECT DISTINCT title FROM memories
-            WHERE user_id = $1 AND title ILIKE $2 AND title IS NOT NULL
+            WHERE space_id = $3
+              AND user_id = $1
+              AND title ILIKE $2
+              AND title IS NOT NULL
             ORDER BY created_at DESC
             LIMIT 10
             "#,
         )
         .bind(user_id)
         .bind(format!("{}%", prefix))
+        .bind(space_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -390,10 +430,20 @@ mod tests {
     }
 
     #[test]
+    fn test_search_query_space_deserialize() {
+        let space_id = Uuid::new_v4();
+        let json = format!(r#"{{"q":"Rust","space_id":"{}"}}"#, space_id);
+        let query: SearchQuery = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(query.space_id, Some(space_id));
+    }
+
+    #[test]
     fn test_memory_search_item_from_memorydb() {
         let memory = MemoryDb {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
             title: Some("Test".to_string()),
             content: "Content".to_string(),
             memory_type: "text".to_string(),

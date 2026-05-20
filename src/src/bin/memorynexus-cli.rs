@@ -14,7 +14,13 @@ enum Command {
         email: String,
         password: String,
     },
+    SpaceCreate {
+        name: String,
+        description: Option<String>,
+    },
+    SpaceList,
     MemoryAdd {
+        space_id: Option<String>,
         content: String,
         title: Option<String>,
         tags: Vec<String>,
@@ -22,6 +28,7 @@ enum Command {
         is_shared: bool,
     },
     MemoryList {
+        space_id: Option<String>,
         limit: usize,
         offset: usize,
     },
@@ -32,6 +39,7 @@ enum Command {
         id: String,
     },
     Search {
+        space_id: Option<String>,
         query: String,
         semantic: bool,
         limit: usize,
@@ -134,6 +142,7 @@ where
     match command {
         "health" => Ok(Command::Health),
         "auth" => parse_auth_command(&args[2..]),
+        "space" => parse_space_command(&args[2..]),
         "memory" => parse_memory_command(&args[2..]),
         "search" => parse_search_command(&args[2..]),
         _ => Err(CliError::new(usage())),
@@ -166,6 +175,21 @@ fn parse_auth_command(args: &[String]) -> Result<Command, CliError> {
     }
 }
 
+fn parse_space_command(args: &[String]) -> Result<Command, CliError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(CliError::new("space subcommand is required"));
+    };
+
+    match subcommand {
+        "create" => Ok(Command::SpaceCreate {
+            name: required_flag(args, "--name")?,
+            description: optional_flag(args, "--description"),
+        }),
+        "list" => Ok(Command::SpaceList),
+        _ => Err(CliError::new("unknown space subcommand")),
+    }
+}
+
 fn parse_memory_command(args: &[String]) -> Result<Command, CliError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(CliError::new("memory subcommand is required"));
@@ -173,6 +197,7 @@ fn parse_memory_command(args: &[String]) -> Result<Command, CliError> {
 
     match subcommand {
         "add" => Ok(Command::MemoryAdd {
+            space_id: optional_flag(args, "--space"),
             content: required_flag(args, "--content")?,
             title: optional_flag(args, "--title"),
             tags: optional_flag(args, "--tags")
@@ -182,6 +207,7 @@ fn parse_memory_command(args: &[String]) -> Result<Command, CliError> {
             is_shared: has_flag(args, "--shared"),
         }),
         "list" => Ok(Command::MemoryList {
+            space_id: optional_flag(args, "--space"),
             limit: parse_usize_flag(args, "--limit", 20)?,
             offset: parse_usize_flag(args, "--offset", 0)?,
         }),
@@ -211,6 +237,7 @@ fn parse_search_command(args: &[String]) -> Result<Command, CliError> {
         .ok_or_else(|| CliError::new("search query is required"))?;
 
     Ok(Command::Search {
+        space_id: optional_flag(args, "--space"),
         query,
         semantic: has_flag(args, "--semantic"),
         limit: parse_usize_flag(args, "--limit", 20)?,
@@ -250,7 +277,23 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             })),
             token: None,
         }),
+        Command::SpaceCreate { name, description } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/spaces"),
+            body: Some(json!({
+                "name": name,
+                "description": description,
+            })),
+            token: Some(require_token(config)?),
+        }),
+        Command::SpaceList => Ok(RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{base_url}/api/v1/spaces"),
+            body: None,
+            token: Some(require_token(config)?),
+        }),
         Command::MemoryAdd {
+            space_id,
             content,
             title,
             tags,
@@ -265,21 +308,28 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
                 "memory_type": memory_type,
                 "tags": tags,
                 "is_shared": is_shared,
+                "space_id": space_id,
             })),
             token: Some(require_token(config)?),
         }),
-        Command::MemoryList { limit, offset } => Ok(RequestSpec {
-            method: HttpMethod::Get,
-            url: with_query(
-                &format!("{base_url}/api/v1/memories"),
-                &[
-                    ("limit", &limit.to_string()),
-                    ("offset", &offset.to_string()),
-                ],
-            )?,
-            body: None,
-            token: Some(require_token(config)?),
-        }),
+        Command::MemoryList {
+            space_id,
+            limit,
+            offset,
+        } => {
+            let limit = limit.to_string();
+            let offset = offset.to_string();
+            let mut pairs = vec![("limit", limit.as_str()), ("offset", offset.as_str())];
+            if let Some(space_id) = space_id {
+                pairs.push(("space_id", space_id.as_str()));
+            }
+            Ok(RequestSpec {
+                method: HttpMethod::Get,
+                url: with_query(&format!("{base_url}/api/v1/memories"), &pairs)?,
+                body: None,
+                token: Some(require_token(config)?),
+            })
+        }
         Command::MemoryGet { id } => Ok(RequestSpec {
             method: HttpMethod::Get,
             url: format!("{base_url}/api/v1/memories/{id}"),
@@ -293,22 +343,28 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             token: Some(require_token(config)?),
         }),
         Command::Search {
+            space_id,
             query,
             semantic,
             limit,
-        } => Ok(RequestSpec {
-            method: HttpMethod::Get,
-            url: with_query(
-                &format!("{base_url}/api/v1/search"),
-                &[
-                    ("q", query),
-                    ("semantic", &semantic.to_string()),
-                    ("limit", &limit.to_string()),
-                ],
-            )?,
-            body: None,
-            token: Some(require_token(config)?),
-        }),
+        } => {
+            let semantic = semantic.to_string();
+            let limit = limit.to_string();
+            let mut pairs = vec![
+                ("q", query.as_str()),
+                ("semantic", semantic.as_str()),
+                ("limit", limit.as_str()),
+            ];
+            if let Some(space_id) = space_id {
+                pairs.push(("space_id", space_id.as_str()));
+            }
+            Ok(RequestSpec {
+                method: HttpMethod::Get,
+                url: with_query(&format!("{base_url}/api/v1/search"), &pairs)?,
+                body: None,
+                token: Some(require_token(config)?),
+            })
+        }
     }
 }
 
@@ -409,7 +465,7 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, CliError
 }
 
 fn usage() -> &'static str {
-    "usage: memorynexus-cli <health|auth|memory|search> ..."
+    "usage: memorynexus-cli <health|auth|space|memory|search> ..."
 }
 
 #[cfg(test)]
@@ -487,9 +543,60 @@ mod tests {
         assert_eq!(
             command,
             Command::MemoryAdd {
+                space_id: None,
                 content: "today I practiced Rust".to_string(),
                 title: Some("learning".to_string()),
                 tags: vec!["rust".to_string(), "learning".to_string()],
+                memory_type: "text".to_string(),
+                is_shared: false,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_space_create_and_list_commands() {
+        let create = parse_command([
+            "memorynexus-cli",
+            "space",
+            "create",
+            "--name",
+            "Personal Space",
+            "--description",
+            "Private cognitive space",
+        ])
+        .unwrap();
+        let list = parse_command(["memorynexus-cli", "space", "list"]).unwrap();
+
+        assert_eq!(
+            create,
+            Command::SpaceCreate {
+                name: "Personal Space".to_string(),
+                description: Some("Private cognitive space".to_string()),
+            }
+        );
+        assert_eq!(list, Command::SpaceList);
+    }
+
+    #[test]
+    fn parses_memory_add_with_space_id() {
+        let command = parse_command([
+            "memorynexus-cli",
+            "memory",
+            "add",
+            "--space",
+            "space-123",
+            "--content",
+            "today I practiced Rust",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            command,
+            Command::MemoryAdd {
+                space_id: Some("space-123".to_string()),
+                content: "today I practiced Rust".to_string(),
+                title: None,
+                tags: vec![],
                 memory_type: "text".to_string(),
                 is_shared: false,
             }
@@ -530,6 +637,7 @@ mod tests {
         assert_eq!(
             command,
             Command::Search {
+                space_id: None,
                 query: "Rust cognitive memory".to_string(),
                 semantic: true,
                 limit: 5,
@@ -547,6 +655,7 @@ mod tests {
         let error = build_request(
             &config,
             &Command::MemoryList {
+                space_id: None,
                 limit: 20,
                 offset: 0,
             },
@@ -565,6 +674,7 @@ mod tests {
         let request = build_request(
             &config,
             &Command::MemoryAdd {
+                space_id: Some("space-123".to_string()),
                 content: "today I practiced Rust".to_string(),
                 title: Some("learning".to_string()),
                 tags: vec!["rust".to_string()],
@@ -585,6 +695,34 @@ mod tests {
                 "memory_type": "text",
                 "tags": ["rust"],
                 "is_shared": true,
+                "space_id": "space-123",
+            }))
+        );
+    }
+
+    #[test]
+    fn builds_space_create_request() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+        let request = build_request(
+            &config,
+            &Command::SpaceCreate {
+                name: "Personal Space".to_string(),
+                description: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/spaces");
+        assert_eq!(request.token, Some("jwt-token".to_string()));
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "name": "Personal Space",
+                "description": null,
             }))
         );
     }
@@ -598,6 +736,7 @@ mod tests {
         let request = build_request(
             &config,
             &Command::Search {
+                space_id: Some("space-123".to_string()),
                 query: "Rust cognitive memory".to_string(),
                 semantic: true,
                 limit: 5,
@@ -609,7 +748,7 @@ mod tests {
         assert_eq!(request.token, Some("jwt-token".to_string()));
         assert_eq!(
             request.url,
-            "http://localhost:8080/api/v1/search?q=Rust+cognitive+memory&semantic=true&limit=5"
+            "http://localhost:8080/api/v1/search?q=Rust+cognitive+memory&semantic=true&limit=5&space_id=space-123"
         );
     }
 }

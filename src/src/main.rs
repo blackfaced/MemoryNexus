@@ -80,6 +80,9 @@ async fn main() -> anyhow::Result<()> {
 
     let repositories = state::Repositories {
         memories: Arc::new(db::memory::PostgresMemoryRepository::new(pool.clone())),
+        spaces: Arc::new(db::space::PostgresCognitiveSpaceRepository::new(
+            pool.clone(),
+        )),
         tags: Arc::new(db::tag::PostgresTagRepository::new(pool.clone())),
         users: Arc::new(db::user::PostgresUserRepository::new(pool.clone())),
         vectors: vector_repo,

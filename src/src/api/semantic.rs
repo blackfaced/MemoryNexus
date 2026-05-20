@@ -17,6 +17,9 @@ use crate::vector::repository::VectorSearchResult;
 /// 语义搜索请求
 #[derive(Debug, Deserialize)]
 pub struct SemanticSearchRequest {
+    /// Cognitive Space boundary
+    pub space_id: Option<Uuid>,
+
     /// 搜索查询文本
     pub q: String,
 
@@ -81,6 +84,8 @@ pub async fn semantic_search(
     auth_user: AuthenticatedUser,
     Json(req): Json<SemanticSearchRequest>,
 ) -> Result<Json<ApiResponse<SemanticSearchResponse>>, AppError> {
+    let space = resolve_space(&state, auth_user.user_id, req.space_id).await?;
+
     // 检查 AI 功能是否可用
     let embedder = state
         .ai
@@ -101,6 +106,7 @@ pub async fn semantic_search(
         .search(
             &embedding_result.embedding,
             auth_user.user_id,
+            space.id,
             req.limit,
             req.threshold,
         )
@@ -134,6 +140,8 @@ async fn semantic_search_impl(
     auth_user: &AuthenticatedUser,
     req: SemanticSearchRequest,
 ) -> Result<Json<ApiResponse<SemanticSearchResponse>>, AppError> {
+    let space = resolve_space(state, auth_user.user_id, req.space_id).await?;
+
     // 检查 AI 功能是否可用
     let embedder = state
         .ai
@@ -154,6 +162,7 @@ async fn semantic_search_impl(
         .search(
             &embedding_result.embedding,
             auth_user.user_id,
+            space.id,
             req.limit,
             req.threshold,
         )
@@ -173,6 +182,30 @@ async fn semantic_search_impl(
     Ok(Json(ApiResponse::success(response)))
 }
 
+async fn resolve_space(
+    state: &AppState,
+    user_id: Uuid,
+    requested_space_id: Option<Uuid>,
+) -> Result<crate::db::space::CognitiveSpaceDb, AppError> {
+    if let Some(space_id) = requested_space_id {
+        return state
+            .repositories
+            .spaces
+            .find_for_user(space_id, user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized);
+    }
+
+    state
+        .repositories
+        .spaces
+        .default_for_user(user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +214,7 @@ mod tests {
     fn test_semantic_search_request_deserialize() {
         let json = r#"{"q":"周末旅行","limit":10}"#;
         let req: SemanticSearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.space_id, None);
         assert_eq!(req.q, "周末旅行");
         assert_eq!(req.limit, 10);
     }

@@ -15,6 +15,7 @@ use super::{MemoryVectorPayload, MemoryVectorPoint, VectorError, VectorStore};
 pub struct MemoryVector {
     pub memory_id: Uuid,
     pub user_id: Uuid,
+    pub space_id: Uuid,
     pub vector: Vec<f32>,
     pub payload: Option<VectorPayload>,
 }
@@ -70,6 +71,7 @@ pub trait VectorRepository: Send + Sync {
         &self,
         vector: &[f32],
         user_id: Uuid,
+        space_id: Uuid,
         limit: usize,
         threshold: Option<f32>,
     ) -> Result<Vec<VectorSearchResult>, RepositoryError>;
@@ -103,6 +105,7 @@ impl VectorRepository for QdrantVectorRepository {
             payload: MemoryVectorPayload {
                 memory_id: vector.memory_id,
                 user_id: vector.user_id,
+                space_id: vector.space_id,
                 title: vector.payload.as_ref().and_then(|p| p.title.clone()),
                 memory_type: vector
                     .payload
@@ -147,12 +150,13 @@ impl VectorRepository for QdrantVectorRepository {
         &self,
         vector: &[f32],
         user_id: Uuid,
+        space_id: Uuid,
         limit: usize,
         _threshold: Option<f32>,
     ) -> Result<Vec<VectorSearchResult>, RepositoryError> {
         let matches = self
             .inner
-            .search_memories(user_id, vector.to_vec(), limit)
+            .search_memories(space_id, user_id, vector.to_vec(), limit)
             .await
             .map_err(RepositoryError::from)?;
 
@@ -181,6 +185,7 @@ mod tests {
         let vector = MemoryVector {
             memory_id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
             vector: vec![0.1, 0.2, 0.3],
             payload: Some(VectorPayload {
                 title: Some("测试记忆".to_string()),

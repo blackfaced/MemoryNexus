@@ -73,12 +73,25 @@ Agent
 
 目标：把“记忆归属于空间”落成最小可用模型，并完成语义检索闭环。
 
-- [ ] 定义 Cognitive Space 数据模型：空间 ID、成员、权限、默认 Lens、创建者和审计字段。
-- [ ] 将现有 memory CRUD 明确绑定到 Cognitive Space，不再以 Agent 作为归属主体。
+- [x] 定义 Cognitive Space 数据模型：空间 ID、成员、权限、默认 Lens、创建者和审计字段。
+- [x] 将现有 memory CRUD 明确绑定到 Cognitive Space，不再以 Agent 作为归属主体。
 - [ ] 完成 Embedding -> Qdrant upsert -> Rust search API -> 召回结果返回的端到端路径。
 - [ ] 为向量 payload 补齐 `space_id`、`memory_id`、`source_type`、`created_at`、`visibility` 等过滤字段。
 - [ ] 补充注册登录、创建记忆、搜索召回、摘要生成的端到端验收。
-- [ ] 更新 API 文档，明确 memory 创建、搜索和摘要接口都以 Cognitive Space 为核心上下文。
+- [x] 更新 API 文档，明确 memory 创建、搜索和摘要接口都以 Cognitive Space 为核心上下文。
+
+### Phase 1A TODO: Cognitive Space 最小落地
+
+目标：先让 Space 成为可创建、可列出、可用于 memory/search 的真实边界。
+
+- [x] 新增 `cognitive_spaces` 和 `cognitive_space_members`。
+- [x] 注册用户时自动创建默认 personal Cognitive Space。
+- [x] `memories` 增加 `space_id`，创建、列表、搜索默认使用用户默认空间。
+- [x] Space REST API 支持 create/list/get。
+- [x] CLI 支持 `space create/list`，并支持 `memory add/list --space`、`search --space`。
+- [x] Qdrant payload 和 filter 加入 `space_id`。
+- [x] 本地 smoke test 覆盖迁移后的 register -> space list -> memory add -> search。
+- [ ] 完成 `source_type`、`created_at`、`visibility` 等更完整的向量 payload 字段。
 
 ### Phase 1.5 TODO: CLI MVP 试用入口
 
@@ -88,7 +101,7 @@ Agent
 - [x] 支持 `health`、`auth register/login`、`memory add/list/get/delete`、`search --semantic`。
 - [x] 默认输出 JSON，便于人类调试，也便于 Agent 调用和解析。
 - [x] 使用 `MEMORYNEXUS_API_URL` 和 `MEMORYNEXUS_TOKEN` 配置，不在第一版持久化 token。
-- [x] CLI v0 先不引入 Space/Lens 命令；等 Phase 1A/1B API 落地后再扩展为 `space` 和 `--space` 参数。
+- [x] CLI v0 先不引入 Lens 命令；Phase 1A 已扩展 `space` 和 `--space` 参数。
 
 ## Phase 2 TODO: Lens 最小模型
 

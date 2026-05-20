@@ -2,6 +2,7 @@
 use sqlx::{postgres::PgPoolOptions, Error, PgPool};
 
 pub mod memory;
+pub mod space;
 pub mod tag;
 pub mod user;
 

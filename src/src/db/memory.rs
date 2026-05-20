@@ -36,6 +36,7 @@ impl std::fmt::Display for MemoryType {
 pub struct MemoryDb {
     pub id: Uuid,
     pub user_id: Uuid,
+    pub space_id: Uuid,
     pub title: Option<String>,
     pub content: String,
     pub memory_type: String,
@@ -50,6 +51,7 @@ pub struct MemoryDb {
 #[derive(Debug, Clone)]
 pub struct CreateMemory {
     pub user_id: Uuid,
+    pub space_id: Uuid,
     pub title: Option<String>,
     pub content: String,
     pub memory_type: MemoryType,
@@ -79,6 +81,14 @@ pub trait MemoryRepository: Send + Sync {
         offset: i64,
     ) -> Result<Vec<MemoryDb>, sqlx::Error>;
     async fn count_by_user(&self, user_id: Uuid) -> Result<i64, sqlx::Error>;
+    async fn list_by_space(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<MemoryDb>, sqlx::Error>;
+    async fn count_by_space(&self, user_id: Uuid, space_id: Uuid) -> Result<i64, sqlx::Error>;
     async fn update(
         &self,
         id: Uuid,
@@ -105,12 +115,13 @@ impl MemoryRepository for PostgresMemoryRepository {
     async fn create(&self, memory: CreateMemory) -> Result<MemoryDb, sqlx::Error> {
         let result = sqlx::query_as::<_, MemoryDb>(
             r#"
-            INSERT INTO memories (user_id, title, content, memory_type, file_path, is_shared)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO memories (user_id, space_id, title, content, memory_type, file_path, is_shared)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
             "#,
         )
         .bind(memory.user_id)
+        .bind(memory.space_id)
         .bind(&memory.title)
         .bind(&memory.content)
         .bind(memory.memory_type.to_string())
@@ -164,6 +175,61 @@ impl MemoryRepository for PostgresMemoryRepository {
             "#,
         )
         .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(result.0)
+    }
+
+    async fn list_by_space(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<MemoryDb>, sqlx::Error> {
+        sqlx::query_as::<_, MemoryDb>(
+            r#"
+            SELECT * FROM memories
+            WHERE space_id = $2
+              AND (
+                user_id = $1
+                OR is_shared = true
+                OR EXISTS (
+                    SELECT 1 FROM cognitive_space_members
+                    WHERE cognitive_space_members.space_id = memories.space_id
+                      AND cognitive_space_members.user_id = $1
+                )
+              )
+            ORDER BY created_at DESC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(user_id)
+        .bind(space_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    async fn count_by_space(&self, user_id: Uuid, space_id: Uuid) -> Result<i64, sqlx::Error> {
+        let result: (i64,) = sqlx::query_as(
+            r#"
+            SELECT COUNT(*) FROM memories
+            WHERE space_id = $2
+              AND (
+                user_id = $1
+                OR is_shared = true
+                OR EXISTS (
+                    SELECT 1 FROM cognitive_space_members
+                    WHERE cognitive_space_members.space_id = memories.space_id
+                      AND cognitive_space_members.user_id = $1
+                )
+              )
+            "#,
+        )
+        .bind(user_id)
+        .bind(space_id)
         .fetch_one(&self.pool)
         .await?;
         Ok(result.0)
@@ -249,6 +315,7 @@ mod tests {
     fn test_create_memory_validation() {
         let memory = CreateMemory {
             user_id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
             title: Some("Test".to_string()),
             content: "Content".to_string(),
             memory_type: MemoryType::Text,

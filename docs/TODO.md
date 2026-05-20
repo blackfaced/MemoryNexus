@@ -1,6 +1,6 @@
 # 📋 MemoryNexus 开发计划
 
-> 最后更新: 2026-05-19
+> 最后更新: 2026-05-20
 > 管理方式: GitHub Issues + Markdown 文档
 
 ---
@@ -21,6 +21,7 @@
 | P1.2 | 标签系统 | P1 | 2026-05-17 | 6239d62 |
 | P1.3 | 搜索与过滤 | P1 | 2026-05-17 | b118427 |
 | P1.4 | AI 摘要与智能标签 | P1 | 2026-05-17 | 99619bf |
+| P1A.1 | Cognitive Space 基础模型与 CLI 入口 | P0 | 2026-05-20 | - |
 
 ---
 
@@ -33,6 +34,28 @@
 | P2.3 | 语义搜索实现 | 🔄 In Progress | P0 | Codex |
 | P2.4 | AI 摘要完善 | 🟡 Todo | P1 | - |
 | P2.5 | 智能标签生成 | 🟡 Todo | P1 | - |
+
+---
+
+## 🔴 P1A — Cognitive Space 基础闭环
+
+目标：把 memory 的归属边界从“用户/Agent”推进到 Cognitive Space。
+
+| ID | 任务 | 状态 | 优先级 | 负责人 |
+|----|------|------|--------|--------|
+| P1A.1 | 新增 `cognitive_spaces` 和 `cognitive_space_members` 迁移 | ✅ Done | P0 | Codex |
+| P1A.2 | 注册时创建默认 personal Cognitive Space | ✅ Done | P0 | Codex |
+| P1A.3 | `memories.space_id` 落库并进入 memory 创建/列表/search 路径 | ✅ Done | P0 | Codex |
+| P1A.4 | Qdrant payload/search filter 增加 `space_id` | ✅ Done | P0 | Codex |
+| P1A.5 | 新增 Space REST API：create/list/get | ✅ Done | P0 | Codex |
+| P1A.6 | CLI 支持 `space create/list` 与 `--space` 参数 | ✅ Done | P0 | Codex |
+| P1A.7 | 本地数据库迁移 smoke test | ✅ Done | P0 | Codex |
+
+下一步 P1B：
+
+- 启动 Qdrant，验证 memory create 后的 embedding upsert。
+- 让 `search --semantic --space <SPACE_ID>` 命中同空间 memory。
+- 补注册、space、memory、search 的端到端自动化验收。
 
 ---
 
@@ -51,13 +74,14 @@
 | CLI.7 | 使用 `MEMORYNEXUS_API_URL` 和 `MEMORYNEXUS_TOKEN` 配置 | ✅ Done | P0 | Codex |
 | CLI.8 | 补充 CLI smoke test 或命令解析单元测试 | ✅ Done | P1 | Codex |
 | CLI.9 | 更新 `docs/cli.md` 快速开始为当前可运行命令 | ✅ Done | P1 | Codex |
+| CLI.10 | 支持 `space create/list` 与 memory/search `--space` | ✅ Done | P0 | Codex |
 
 暂不做：
 
 - 本地 token 持久化。
 - 交互式配置向导。
 - 表格/CSV 输出。
-- Lens/Space 命令。等 Cognitive Space API 落地后再追加。
+- Lens 命令。等 Lens API 落地后再追加。
 
 ---
 

@@ -1,6 +1,6 @@
 # MemoryNexus CLI
 
-> Current status: CLI MVP v0. The CLI is a thin, stateless client for the Rust REST API.
+> Current status: CLI MVP v0.1. The CLI is a thin, stateless client for the Rust REST API.
 
 ## Goals
 
@@ -9,7 +9,7 @@
 | Machine-first | Output is JSON by default for Agent consumption. |
 | Stateless | Server owns state; the CLI only sends API requests. |
 | Rust-first | The CLI lives in the Rust crate as `memorynexus-cli`. |
-| MVP-scoped | Space and Lens commands come after Cognitive Space APIs land. |
+| Space-scoped | Space commands and `--space` options exercise the Cognitive Space boundary. |
 
 ## Run Locally
 
@@ -64,6 +64,12 @@ cargo run --bin memorynexus-cli -- auth login \
 
 export MEMORYNEXUS_TOKEN=<token-from-auth-response>
 
+cargo run --bin memorynexus-cli -- space list
+
+cargo run --bin memorynexus-cli -- space create \
+  --name "Learning Space" \
+  --description "Rust and cognitive memory practice"
+
 cargo run --bin memorynexus-cli -- memory add \
   --title "Rust practice" \
   --content "Today I practiced Rust cognitive memory." \
@@ -112,6 +118,12 @@ cargo run --bin memorynexus-cli -- auth login \
 
 export MEMORYNEXUS_TOKEN=<token-from-auth-response>
 
+cargo run --bin memorynexus-cli -- space list
+
+cargo run --bin memorynexus-cli -- space create \
+  --name "CLI Smoke Space" \
+  --description "Local CLI verification"
+
 cargo run --bin memorynexus-cli -- memory add \
   --title "CLI smoke memory" \
   --content "Rust cognitive lens memory CLI smoke test" \
@@ -126,9 +138,27 @@ Expected results:
 
 - `health` returns `{"status":"healthy","version":"0.1.0"}`.
 - `auth register` and `auth login` return `ok: true` and `data.token`.
+- `space list` returns the default personal Cognitive Space created during registration.
+- `space create` returns a new Cognitive Space with `data.id`.
 - `memory add` returns the created memory.
 - `memory list` includes that memory.
 - keyword `search` returns the matching memory.
+
+To target a specific space, pass the `data.id` returned by `space create` or
+`space list`:
+
+```bash
+export MEMORYNEXUS_SPACE_ID=<space-id>
+
+cargo run --bin memorynexus-cli -- memory add \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --title "Space scoped memory" \
+  --content "This memory belongs to one Cognitive Space."
+
+cargo run --bin memorynexus-cli -- memory list --space "$MEMORYNEXUS_SPACE_ID"
+
+cargo run --bin memorynexus-cli -- search "Cognitive Space" --space "$MEMORYNEXUS_SPACE_ID"
+```
 
 Semantic search is intentionally a separate check because it requires Qdrant
 and an embedding provider:
@@ -178,17 +208,36 @@ Calls:
 
 The response includes `data.token`. Export it as `MEMORYNEXUS_TOKEN` before running authenticated commands.
 
+### Space
+
+```bash
+memorynexus-cli space create \
+  --name <NAME> \
+  [--description <TEXT>]
+
+memorynexus-cli space list
+```
+
+Calls:
+
+- `POST /api/v1/spaces`
+- `GET /api/v1/spaces`
+
+Registration creates a default personal Cognitive Space. Use `space list` to
+discover its `data.items[].id`.
+
 ### Memory
 
 ```bash
 memorynexus-cli memory add \
   --content <TEXT> \
+  [--space <SPACE_ID>] \
   [--title <TEXT>] \
   [--tags <COMMA_SEPARATED_TAGS>] \
   [--type text|image|audio|video] \
   [--shared]
 
-memorynexus-cli memory list [--limit <N>] [--offset <N>]
+memorynexus-cli memory list [--space <SPACE_ID>] [--limit <N>] [--offset <N>]
 
 memorynexus-cli memory get <MEMORY_ID>
 
@@ -205,7 +254,7 @@ Calls:
 ### Search
 
 ```bash
-memorynexus-cli search <QUERY> [--semantic] [--limit <N>]
+memorynexus-cli search <QUERY> [--space <SPACE_ID>] [--semantic] [--limit <N>]
 ```
 
 Calls `GET /api/v1/search`.

@@ -55,6 +55,7 @@ impl From<MemoryType> for ApiMemoryType {
 /// 创建记忆请求
 #[derive(Debug, Deserialize)]
 pub struct CreateMemoryRequest {
+    pub space_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     #[serde(default)]
@@ -81,6 +82,7 @@ pub struct UpdateMemoryRequest {
 /// 列表查询参数
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
+    pub space_id: Option<Uuid>,
     #[serde(default = "default_limit")]
     pub limit: i64,
     #[serde(default)]
@@ -110,17 +112,19 @@ pub async fn list(
     auth_user: AuthenticatedUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<MemoryListResponse>>, AppError> {
+    let space = resolve_space(&state, auth_user.user_id, params.space_id).await?;
+
     let memories = state
         .repositories
         .memories
-        .list_by_user(auth_user.user_id, params.limit, params.offset)
+        .list_by_space(auth_user.user_id, space.id, params.limit, params.offset)
         .await
         .map_err(AppError::Database)?;
 
     let total = state
         .repositories
         .memories
-        .count_by_user(auth_user.user_id)
+        .count_by_space(auth_user.user_id, space.id)
         .await
         .map_err(AppError::Database)?;
 
@@ -146,9 +150,11 @@ pub async fn create(
     let content = req.content;
     let title = req.title;
     let memory_type: MemoryType = req.memory_type.into();
+    let space = resolve_space(&state, auth_user.user_id, req.space_id).await?;
 
     let create_memory = CreateMemory {
         user_id: auth_user.user_id,
+        space_id: space.id,
         title: title.clone(),
         content: content.clone(),
         memory_type,
@@ -167,6 +173,30 @@ pub async fn create(
     index_memory_embedding(&state, &memory).await;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::success(memory))))
+}
+
+async fn resolve_space(
+    state: &AppState,
+    user_id: Uuid,
+    requested_space_id: Option<Uuid>,
+) -> Result<crate::db::space::CognitiveSpaceDb, AppError> {
+    if let Some(space_id) = requested_space_id {
+        return state
+            .repositories
+            .spaces
+            .find_for_user(space_id, user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized);
+    }
+
+    state
+        .repositories
+        .spaces
+        .default_for_user(user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))
 }
 
 async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
@@ -198,6 +228,7 @@ async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
         payload: MemoryVectorPayload {
             memory_id: memory.id,
             user_id: memory.user_id,
+            space_id: memory.space_id,
             title: memory.title.clone(),
             memory_type: memory.memory_type.clone(),
             is_shared: memory.is_shared,
@@ -322,6 +353,7 @@ mod tests {
     fn test_create_memory_request_serde() {
         let json = r#"{"content":"test","memory_type":"text"}"#;
         let req: CreateMemoryRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.space_id, None);
         assert_eq!(req.content, "test");
         assert_eq!(req.memory_type, ApiMemoryType::Text);
     }
@@ -338,6 +370,7 @@ mod tests {
     fn test_list_query_defaults() {
         let json = r#"{}"#;
         let query: ListQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.space_id, None);
         assert_eq!(query.limit, 20);
         assert_eq!(query.offset, 0);
     }

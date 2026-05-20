@@ -124,6 +124,13 @@ pub async fn register(
         .await
         .map_err(AppError::Database)?;
 
+    state
+        .repositories
+        .spaces
+        .ensure_default_for_user(user.id, &user.username)
+        .await
+        .map_err(AppError::Database)?;
+
     // 生成 JWT
     let jwt = JwtAuth::default();
     let token = jwt

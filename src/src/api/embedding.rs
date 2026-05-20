@@ -17,6 +17,9 @@ use crate::vector::repository::{MemoryVector, VectorPayload};
 /// 创建向量请求
 #[derive(Debug, Deserialize)]
 pub struct CreateEmbeddingRequest {
+    /// Cognitive Space boundary
+    pub space_id: Option<Uuid>,
+
     /// 记忆 ID
     pub memory_id: Uuid,
 
@@ -52,6 +55,7 @@ pub struct BatchCreateEmbeddingRequest {
 /// 批量向量项
 #[derive(Debug, Deserialize)]
 pub struct BatchEmbeddingItem {
+    pub space_id: Option<Uuid>,
     pub memory_id: Uuid,
     pub content: String,
     pub title: Option<String>,
@@ -111,11 +115,13 @@ pub async fn create_embedding(
         .embed(&req.content)
         .await
         .map_err(|e| AppError::BadRequest(format!("嵌入生成失败: {}", e)))?;
+    let space = resolve_space(&state, auth_user.user_id, req.space_id).await?;
 
     // 构建向量
     let memory_vector = MemoryVector {
         memory_id: req.memory_id,
         user_id: auth_user.user_id,
+        space_id: space.id,
         vector: embedding_result.embedding.clone(),
         payload: Some(VectorPayload {
             title: req.title,
@@ -184,6 +190,9 @@ pub async fn batch_create_embeddings(
         vectors.push(MemoryVector {
             memory_id: item.memory_id,
             user_id: auth_user.user_id,
+            space_id: resolve_space(&state, auth_user.user_id, item.space_id)
+                .await?
+                .id,
             vector: embedding.embedding.clone(),
             payload: Some(VectorPayload {
                 title: item.title.clone(),
@@ -212,6 +221,30 @@ pub async fn batch_create_embeddings(
         failed,
         errors,
     })))
+}
+
+async fn resolve_space(
+    state: &AppState,
+    user_id: Uuid,
+    requested_space_id: Option<Uuid>,
+) -> Result<crate::db::space::CognitiveSpaceDb, AppError> {
+    if let Some(space_id) = requested_space_id {
+        return state
+            .repositories
+            .spaces
+            .find_for_user(space_id, user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized);
+    }
+
+    state
+        .repositories
+        .spaces
+        .default_for_user(user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))
 }
 
 /// DELETE /api/v1/embeddings - 删除记忆向量

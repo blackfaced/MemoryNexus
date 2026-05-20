@@ -25,6 +25,7 @@ pub enum VectorError {
 pub struct MemoryVectorPayload {
     pub memory_id: Uuid,
     pub user_id: Uuid,
+    pub space_id: Uuid,
     pub title: Option<String>,
     pub memory_type: String,
     pub is_shared: bool,
@@ -48,6 +49,7 @@ pub trait VectorStore: Send + Sync {
     async fn upsert_memory(&self, point: MemoryVectorPoint) -> Result<(), VectorError>;
     async fn search_memories(
         &self,
+        space_id: Uuid,
         user_id: Uuid,
         vector: Vec<f32>,
         limit: usize,
@@ -107,6 +109,7 @@ struct QdrantSearchRequest {
 
 #[derive(Debug, Serialize)]
 struct QdrantFilter {
+    must: Vec<QdrantCondition>,
     should: Vec<QdrantCondition>,
 }
 
@@ -134,11 +137,17 @@ struct QdrantScoredPoint {
 }
 
 impl QdrantSearchRequest {
-    fn for_user(user_id: Uuid, vector: Vec<f32>, limit: usize) -> Self {
+    fn for_space(space_id: Uuid, user_id: Uuid, vector: Vec<f32>, limit: usize) -> Self {
         Self {
             vector,
             limit,
             filter: QdrantFilter {
+                must: vec![QdrantCondition {
+                    key: "space_id".to_string(),
+                    r#match: Some(QdrantMatch {
+                        value: serde_json::Value::String(space_id.to_string()),
+                    }),
+                }],
                 should: vec![
                     QdrantCondition {
                         key: "user_id".to_string(),
@@ -185,11 +194,12 @@ impl VectorStore for QdrantVectorStore {
 
     async fn search_memories(
         &self,
+        space_id: Uuid,
         user_id: Uuid,
         vector: Vec<f32>,
         limit: usize,
     ) -> Result<Vec<VectorSearchMatch>, VectorError> {
-        let body = QdrantSearchRequest::for_user(user_id, vector, limit);
+        let body = QdrantSearchRequest::for_space(space_id, user_id, vector, limit);
 
         let response = self
             .client
@@ -231,13 +241,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn semantic_search_request_filters_to_user_or_shared_memories() {
+    fn semantic_search_request_filters_to_space_and_user_or_shared_memories() {
+        let space_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
-        let request = QdrantSearchRequest::for_user(user_id, vec![0.1, 0.2], 5);
+        let request = QdrantSearchRequest::for_space(space_id, user_id, vec![0.1, 0.2], 5);
         let json = serde_json::to_value(request).unwrap();
 
         assert_eq!(json["limit"], 5);
         assert_eq!(json["with_payload"], true);
+        assert_eq!(json["filter"]["must"][0]["key"], "space_id");
+        assert_eq!(
+            json["filter"]["must"][0]["match"]["value"],
+            space_id.to_string()
+        );
         assert_eq!(json["filter"]["should"][0]["key"], "user_id");
         assert_eq!(
             json["filter"]["should"][0]["match"]["value"],

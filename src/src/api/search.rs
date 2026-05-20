@@ -18,20 +18,45 @@ pub async fn search(
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<ApiResponse<SearchResult>>, AppError> {
     let engine = SearchEngine::with_vector_store(state.db.clone(), state.vector_store.clone());
+    let space = resolve_space(&state, auth_user.user_id, query.space_id).await?;
 
     let result = if query.semantic {
         engine
-            .semantic_search(&query, auth_user.user_id)
+            .semantic_search(&query, auth_user.user_id, space.id)
             .await
             .map_err(map_semantic_search_error)?
     } else {
         engine
-            .search(&query, auth_user.user_id)
+            .search(&query, auth_user.user_id, space.id)
             .await
             .map_err(AppError::Database)?
     };
 
     Ok(Json(ApiResponse::success(result)))
+}
+
+async fn resolve_space(
+    state: &AppState,
+    user_id: uuid::Uuid,
+    requested_space_id: Option<uuid::Uuid>,
+) -> Result<crate::db::space::CognitiveSpaceDb, AppError> {
+    if let Some(space_id) = requested_space_id {
+        return state
+            .repositories
+            .spaces
+            .find_for_user(space_id, user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized);
+    }
+
+    state
+        .repositories
+        .spaces
+        .default_for_user(user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))
 }
 
 fn map_semantic_search_error(error: SemanticSearchError) -> AppError {
@@ -58,9 +83,10 @@ pub async fn suggest(
     Query(params): Query<SuggestQuery>,
 ) -> Result<Json<ApiResponse<SuggestResponse>>, AppError> {
     let engine = SearchEngine::new(state.db.clone());
+    let space = resolve_space(&state, auth_user.user_id, params.space_id).await?;
 
     let suggestions = engine
-        .suggest(&params.q, auth_user.user_id)
+        .suggest(&params.q, auth_user.user_id, space.id)
         .await
         .map_err(AppError::Database)?;
 
@@ -71,6 +97,7 @@ pub async fn suggest(
 #[derive(Debug, Deserialize)]
 pub struct SuggestQuery {
     pub q: String,
+    pub space_id: Option<uuid::Uuid>,
 }
 
 /// 搜索建议响应
@@ -88,6 +115,7 @@ mod tests {
         let json = r#"{"q":"旅"}"#;
         let query: SuggestQuery = serde_json::from_str(json).unwrap();
         assert_eq!(query.q, "旅");
+        assert_eq!(query.space_id, None);
     }
 
     #[test]
