@@ -13,24 +13,31 @@
 
 ## Run Locally
 
-```bash
-cd src
-cargo run --bin memorynexus-cli -- health
-```
+The CLI is an API client, so the Rust backend must be running separately before
+API commands such as `health` can succeed.
 
-The backend must be running separately for API commands.
-
-For a full local smoke test, start PostgreSQL first and run the Rust API in a
-second terminal:
+For a local check, start PostgreSQL first:
 
 ```bash
 docker compose up -d postgres
+```
 
+Then run the Rust API in one terminal and keep it running. This command starts
+the HTTP server and does not exit by itself; stop it with `Ctrl-C` when you are
+done:
+
+```bash
 cd src
 cargo run --bin memorynexus
 ```
 
-Then run CLI commands from `src/` in another terminal.
+After the server prints a line like `监听地址: http://0.0.0.0:8080`, run CLI
+commands from `src/` in another terminal:
+
+```bash
+cd src
+cargo run --bin memorynexus-cli -- health
+```
 
 ## Configuration
 
@@ -76,12 +83,15 @@ The examples avoid semantic search so they only require PostgreSQL.
 docker compose up -d postgres
 ```
 
-Terminal 1:
+Terminal 1, keep this running while you use the CLI:
 
 ```bash
 cd src
 cargo run --bin memorynexus
 ```
+
+When it prints `监听地址: http://0.0.0.0:8080`, leave this terminal open and run
+the following commands in Terminal 2.
 
 Terminal 2:
 
@@ -226,10 +236,23 @@ CLI-side errors are also JSON:
 
 ## Local Cleanup
 
-Some local Rust toolchain builds may leave LLVM profile files named like
-`default_*.profraw`. They are temporary profiling artifacts and are safe to
-delete. The repository root ignores `*.profraw`, but cleanup keeps `src/`
-readable:
+Older checkouts may have enabled Rust LLVM coverage instrumentation by default
+through `src/.cargo/config.toml`. In that case, normal `cargo run` commands can
+print errors like `LLVM Profile Error: Failed to write file "default_*.profraw"`
+when the current directory cannot create profiling files.
+
+Current checkouts do not enable coverage instrumentation for normal CLI usage.
+If you still see this locally, unset any coverage-related shell variables before
+running the CLI:
+
+```bash
+unset LLVM_PROFILE_FILE
+unset RUSTFLAGS
+```
+
+Any existing `default_*.profraw` files are temporary profiling artifacts and are
+safe to delete. The repository root ignores `*.profraw`, but cleanup keeps
+`src/` readable:
 
 ```bash
 find src -name 'default_*.profraw' -delete
