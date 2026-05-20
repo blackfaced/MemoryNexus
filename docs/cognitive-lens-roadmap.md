@@ -124,18 +124,23 @@ Agent
 - [x] 支持 `health`、`auth register/login`、`memory add/list/get/delete`、`search --semantic`。
 - [x] 默认输出 JSON，便于人类调试，也便于 Agent 调用和解析。
 - [x] 使用 `MEMORYNEXUS_API_URL` 和 `MEMORYNEXUS_TOKEN` 配置，不在第一版持久化 token。
-- [x] CLI v0 先不引入 Lens 命令；Phase 1A 已扩展 `space` 和 `--space` 参数。
+- [x] CLI 支持 `space`、`memory --space`、`search --space`，Phase 2A 已追加 Lens create/list/get。
 
 ## Phase 2 TODO: Lens 最小模型
 
 目标：把 Lens 从 prompt 概念收敛为可配置、可复用、可审计的解释策略。
 
-- [ ] 定义 Lens 数据模型：名称、适用空间、关注范围、检索策略、输出格式、默认模型配置。
+- [x] 定义 Lens 最小数据模型：名称、适用空间、策略、检索模式、输出格式、创建者和审计字段。
+- [x] 新增 `lenses` 持久化表，并预留 `lens_runs` 作为后续运行 provenance 的存储边界。
+- [x] 新增 Lens repository 与 REST API：create/list/get，访问控制仍以 Cognitive Space membership 为准。
+- [x] 新增 CLI 命令：`lens create`、`lens list`、`lens get`。
+- [x] 端到端验收覆盖 CLI 驱动的 Lens create/list/get。
 - [ ] 支持内置 Lens：默认回顾、家庭成长、学习复盘、项目上下文。
 - [ ] 在 search/summarize 路径中引入 `lens_id`，由 Lens 决定检索过滤、排序和摘要风格。
-- [ ] 记录 Lens 运行 provenance：输入 query、命中的 memory、使用的策略版本、生成时间。
+- [ ] 记录 Lens 运行 provenance：输入 query、命中的 memory、使用的策略版本、生成时间和输出。
 - [ ] 区分 Lens 配置与 Lens 运行结果，避免把派生解释误当作原始 memory。
-- [ ] 为 Lens 解析增加单元测试和端到端验收。
+- [x] 为 Lens CLI 解析、API serde 和 repository 增加基础测试。
+- [ ] 为 Lens Run execution 增加单元测试和端到端验收。
 
 ## Phase 3 TODO: Cognitive Lens 工作流
 

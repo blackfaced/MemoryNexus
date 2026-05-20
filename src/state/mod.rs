@@ -50,6 +50,7 @@ pub struct AppState {
 /// 仓储聚合
 #[derive(Clone)]
 pub struct Repositories {
+    pub lenses: Arc<dyn super::db::lens::LensRepository>,
     pub memories: Arc<dyn super::db::memory::MemoryRepository>,
     pub spaces: Arc<dyn super::db::space::CognitiveSpaceRepository>,
     pub tags: Arc<dyn super::db::tag::TagRepository>,

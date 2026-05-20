@@ -72,6 +72,43 @@ Returns spaces where the current user is a member.
 
 Returns a space only if the current user is a member.
 
+## Lenses
+
+Lens is a reusable interpretation strategy scoped to a Cognitive Space. It does
+not own or copy memory; it describes how later retrieval and interpretation
+should read the space.
+
+### Create Lens
+
+`POST /api/v1/lenses`
+
+```json
+{
+  "space_id": "space-uuid",
+  "name": "Project Context",
+  "description": "Interpret project memory for planning",
+  "strategy": "project_context",
+  "output_format": "brief",
+  "retrieval_mode": "semantic"
+}
+```
+
+`strategy`, `output_format`, and `retrieval_mode` are persisted as explicit
+configuration strings for now. Lens Run execution will give them stricter
+semantics in the next phase.
+
+### List Lenses
+
+`GET /api/v1/lenses?space_id=<SPACE_ID>`
+
+Returns lenses in the requested space if the current user is a member.
+
+### Get Lens
+
+`GET /api/v1/lenses/:id`
+
+Returns a lens only if the current user can access its Cognitive Space.
+
 ## Memories
 
 ### Create Memory

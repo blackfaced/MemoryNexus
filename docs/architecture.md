@@ -13,7 +13,7 @@ CLI / HTTP clients
 Rust Axum API
       |
       +--> PostgreSQL
-      |      users, cognitive spaces, memories, tags
+      |      users, cognitive spaces, memories, tags, lenses, lens runs
       |
       +--> Qdrant
       |      memory embeddings scoped by space_id
@@ -95,4 +95,6 @@ architecture.
   configured.
 - `MEMORYNEXUS_EMBEDDING_PROVIDER=local` is intended for deterministic local
   smoke tests.
-- Lens persistence and Lens runs are roadmap work, not current runtime API.
+- Lens persistence is available through REST and CLI create/list/get commands.
+- Lens Run execution, strategy compilation, and provenance-rich generated output
+  are the next runtime layer.

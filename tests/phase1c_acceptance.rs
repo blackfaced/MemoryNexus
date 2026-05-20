@@ -130,6 +130,46 @@ fn run_acceptance_flow(run_id: &str) {
         Some(&token),
     );
     assert_search_hit(&semantic, "semantic", &space_id);
+
+    let lens = cli(
+        [
+            "lens",
+            "create",
+            "--space",
+            &space_id,
+            "--name",
+            "Phase 2A Lens",
+            "--description",
+            "Acceptance Lens",
+            "--strategy",
+            "project_context",
+            "--output",
+            "brief",
+            "--retrieval",
+            "semantic",
+        ],
+        Some(&token),
+    );
+    assert_ok(&lens);
+    let lens_id = lens["data"]["id"]
+        .as_str()
+        .expect("lens response should include data.id")
+        .to_string();
+    assert_eq!(lens["data"]["space_id"], Value::String(space_id.clone()));
+
+    let lens_list = cli(["lens", "list", "--space", &space_id], Some(&token));
+    assert_ok(&lens_list);
+    let lenses = lens_list["data"]["items"]
+        .as_array()
+        .expect("lens list response should include data.items");
+    assert!(
+        lenses.iter().any(|lens| lens["id"] == lens_id),
+        "lens list should include created lens: {lens_list}"
+    );
+
+    let lens_get = cli(["lens", "get", &lens_id], Some(&token));
+    assert_ok(&lens_get);
+    assert_eq!(lens_get["data"]["id"], Value::String(lens_id));
 }
 
 fn start_server(collection: &str) -> Child {

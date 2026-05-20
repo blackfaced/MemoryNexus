@@ -63,7 +63,8 @@ cargo test --test phase1c_acceptance -- --ignored --nocapture
 ```
 
 The test starts the API, registers a user, creates a Cognitive Space, creates a
-memory, verifies keyword search, and verifies `search --semantic --space`.
+memory, verifies keyword search, verifies `search --semantic --space`, and
+exercises Lens create/list/get through the CLI.
 
 ## Structure
 

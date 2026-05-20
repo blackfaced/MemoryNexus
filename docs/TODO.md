@@ -24,6 +24,7 @@
 | P1A.1 | Cognitive Space 基础模型与 CLI 入口 | P0 | 2026-05-20 | - |
 | P1B.1 | 本地语义检索基础链路 | P0 | 2026-05-20 | - |
 | P1C.1 | Space-scoped CLI 端到端验收 | P0 | 2026-05-20 | - |
+| P2A.1 | Lens 最小模型与 CLI 入口 | P0 | 2026-05-20 | - |
 
 ---
 
@@ -87,6 +88,24 @@ cargo test --test phase1c_acceptance -- --ignored --nocapture
 
 ---
 
+## 🔴 P2A — Lens 最小模型
+
+目标：先把 Lens 从理论概念变成可创建、可列出、可审计的空间级解释策略配置。
+
+| ID | 任务 | 状态 | 优先级 | 负责人 |
+|----|------|------|--------|--------|
+| P2A.1 | 新增 `lenses` 和 `lens_runs` 迁移 | ✅ Done | P0 | Codex |
+| P2A.2 | 新增 Lens repository，所有访问经 Cognitive Space membership 校验 | ✅ Done | P0 | Codex |
+| P2A.3 | 新增 Lens REST API：create/list/get | ✅ Done | P0 | Codex |
+| P2A.4 | CLI 支持 `lens create/list/get` | ✅ Done | P0 | Codex |
+| P2A.5 | acceptance 覆盖 Lens create/list/get | ✅ Done | P0 | Codex |
+| P2A.6 | Lens Run execution API | 🟡 Todo | P0 | - |
+| P2A.7 | search/summarize 支持 `lens_id` | 🟡 Todo | P0 | - |
+| P2A.8 | 内置 Lens 模板：默认回顾、家庭成长、学习复盘、项目上下文 | 🟡 Todo | P1 | - |
+| P2A.9 | Lens Run provenance 输出：query、命中 memory、策略版本、生成时间 | 🟡 Todo | P1 | - |
+
+---
+
 ## 🟠 P2.5 — CLI MVP（最小试用入口）
 
 目标：先用一个很薄的 Rust CLI 验证后端 API 手感，不等待前端完成。
@@ -103,13 +122,14 @@ cargo test --test phase1c_acceptance -- --ignored --nocapture
 | CLI.8 | 补充 CLI smoke test 或命令解析单元测试 | ✅ Done | P1 | Codex |
 | CLI.9 | 更新 `docs/cli.md` 快速开始为当前可运行命令 | ✅ Done | P1 | Codex |
 | CLI.10 | 支持 `space create/list` 与 memory/search `--space` | ✅ Done | P0 | Codex |
+| CLI.11 | 支持 `lens create/list/get` | ✅ Done | P0 | Codex |
 
 暂不做：
 
 - 本地 token 持久化。
 - 交互式配置向导。
 - 表格/CSV 输出。
-- Lens 命令。等 Lens API 落地后再追加。
+- Lens Run 命令。等 Lens Run API 落地后再追加。
 
 ---
 

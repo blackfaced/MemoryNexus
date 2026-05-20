@@ -19,6 +19,20 @@ enum Command {
         description: Option<String>,
     },
     SpaceList,
+    LensCreate {
+        space_id: String,
+        name: String,
+        description: Option<String>,
+        strategy: String,
+        output_format: String,
+        retrieval_mode: String,
+    },
+    LensList {
+        space_id: String,
+    },
+    LensGet {
+        id: String,
+    },
     MemoryAdd {
         space_id: Option<String>,
         content: String,
@@ -143,6 +157,7 @@ where
         "health" => Ok(Command::Health),
         "auth" => parse_auth_command(&args[2..]),
         "space" => parse_space_command(&args[2..]),
+        "lens" => parse_lens_command(&args[2..]),
         "memory" => parse_memory_command(&args[2..]),
         "search" => parse_search_command(&args[2..]),
         _ => Err(CliError::new(usage())),
@@ -187,6 +202,35 @@ fn parse_space_command(args: &[String]) -> Result<Command, CliError> {
         }),
         "list" => Ok(Command::SpaceList),
         _ => Err(CliError::new("unknown space subcommand")),
+    }
+}
+
+fn parse_lens_command(args: &[String]) -> Result<Command, CliError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(CliError::new("lens subcommand is required"));
+    };
+
+    match subcommand {
+        "create" => Ok(Command::LensCreate {
+            space_id: required_flag(args, "--space")?,
+            name: required_flag(args, "--name")?,
+            description: optional_flag(args, "--description"),
+            strategy: optional_flag(args, "--strategy").unwrap_or_else(|| "default".to_string()),
+            output_format: optional_flag(args, "--output").unwrap_or_else(|| "summary".to_string()),
+            retrieval_mode: optional_flag(args, "--retrieval")
+                .unwrap_or_else(|| "semantic".to_string()),
+        }),
+        "list" => Ok(Command::LensList {
+            space_id: required_flag(args, "--space")?,
+        }),
+        "get" => Ok(Command::LensGet {
+            id: args
+                .get(1)
+                .filter(|id| !id.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| CliError::new("lens id is required"))?,
+        }),
+        _ => Err(CliError::new("unknown lens subcommand")),
     }
 }
 
@@ -289,6 +333,41 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
         Command::SpaceList => Ok(RequestSpec {
             method: HttpMethod::Get,
             url: format!("{base_url}/api/v1/spaces"),
+            body: None,
+            token: Some(require_token(config)?),
+        }),
+        Command::LensCreate {
+            space_id,
+            name,
+            description,
+            strategy,
+            output_format,
+            retrieval_mode,
+        } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/lenses"),
+            body: Some(json!({
+                "space_id": space_id,
+                "name": name,
+                "description": description,
+                "strategy": strategy,
+                "output_format": output_format,
+                "retrieval_mode": retrieval_mode,
+            })),
+            token: Some(require_token(config)?),
+        }),
+        Command::LensList { space_id } => Ok(RequestSpec {
+            method: HttpMethod::Get,
+            url: with_query(
+                &format!("{base_url}/api/v1/lenses"),
+                &[("space_id", space_id.as_str())],
+            )?,
+            body: None,
+            token: Some(require_token(config)?),
+        }),
+        Command::LensGet { id } => Ok(RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{base_url}/api/v1/lenses/{id}"),
             body: None,
             token: Some(require_token(config)?),
         }),
@@ -465,7 +544,7 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, CliError
 }
 
 fn usage() -> &'static str {
-    "usage: memorynexus-cli <health|auth|space|memory|search> ..."
+    "usage: memorynexus-cli <health|auth|space|lens|memory|search> ..."
 }
 
 #[cfg(test)]
@@ -575,6 +654,55 @@ mod tests {
             }
         );
         assert_eq!(list, Command::SpaceList);
+    }
+
+    #[test]
+    fn parses_lens_create_list_and_get_commands() {
+        let create = parse_command([
+            "memorynexus-cli",
+            "lens",
+            "create",
+            "--space",
+            "space-123",
+            "--name",
+            "Project Context",
+            "--description",
+            "Interpret project memory",
+            "--strategy",
+            "project_context",
+            "--output",
+            "brief",
+            "--retrieval",
+            "semantic",
+        ])
+        .unwrap();
+        let list =
+            parse_command(["memorynexus-cli", "lens", "list", "--space", "space-123"]).unwrap();
+        let get = parse_command(["memorynexus-cli", "lens", "get", "lens-123"]).unwrap();
+
+        assert_eq!(
+            create,
+            Command::LensCreate {
+                space_id: "space-123".to_string(),
+                name: "Project Context".to_string(),
+                description: Some("Interpret project memory".to_string()),
+                strategy: "project_context".to_string(),
+                output_format: "brief".to_string(),
+                retrieval_mode: "semantic".to_string(),
+            }
+        );
+        assert_eq!(
+            list,
+            Command::LensList {
+                space_id: "space-123".to_string(),
+            }
+        );
+        assert_eq!(
+            get,
+            Command::LensGet {
+                id: "lens-123".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -723,6 +851,41 @@ mod tests {
             Some(json!({
                 "name": "Personal Space",
                 "description": null,
+            }))
+        );
+    }
+
+    #[test]
+    fn builds_lens_create_request() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+        let request = build_request(
+            &config,
+            &Command::LensCreate {
+                space_id: "space-123".to_string(),
+                name: "Project Context".to_string(),
+                description: None,
+                strategy: "project_context".to_string(),
+                output_format: "brief".to_string(),
+                retrieval_mode: "semantic".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/lenses");
+        assert_eq!(request.token, Some("jwt-token".to_string()));
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "space_id": "space-123",
+                "name": "Project Context",
+                "description": null,
+                "strategy": "project_context",
+                "output_format": "brief",
+                "retrieval_mode": "semantic",
             }))
         );
     }

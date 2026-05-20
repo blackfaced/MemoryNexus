@@ -1,6 +1,7 @@
 //! 数据库模块
 use sqlx::{postgres::PgPoolOptions, Error, PgPool};
 
+pub mod lens;
 pub mod memory;
 pub mod space;
 pub mod tag;

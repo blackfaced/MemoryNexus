@@ -71,6 +71,19 @@ cargo run --bin memorynexus-cli -- memory list \
 cargo run --bin memorynexus-cli -- search "cognitive lens" \
   --space "$MEMORYNEXUS_SPACE_ID" \
   --limit 5
+
+cargo run --bin memorynexus-cli -- lens create \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --name "Project Context" \
+  --description "Interpret project memory for planning" \
+  --strategy project_context \
+  --output brief \
+  --retrieval semantic
+
+cargo run --bin memorynexus-cli -- lens list \
+  --space "$MEMORYNEXUS_SPACE_ID"
+
+cargo run --bin memorynexus-cli -- lens get <lens-id>
 ```
 
 ## Semantic Smoke Test
@@ -123,6 +136,11 @@ memorynexus-cli auth login --email <EMAIL> --password <PASSWORD>
 
 memorynexus-cli space create --name <NAME> [--description <TEXT>]
 memorynexus-cli space list
+
+memorynexus-cli lens create --space <SPACE_ID> --name <NAME> \
+  [--description <TEXT>] [--strategy <NAME>] [--output <FORMAT>] [--retrieval <MODE>]
+memorynexus-cli lens list --space <SPACE_ID>
+memorynexus-cli lens get <LENS_ID>
 
 memorynexus-cli memory add --content <TEXT> [--space <SPACE_ID>] [--title <TEXT>] \
   [--tags <COMMA_SEPARATED_TAGS>] [--type text|image|audio|video] [--shared]
