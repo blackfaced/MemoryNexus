@@ -1,8 +1,13 @@
 # MemoryNexus
 
-MemoryNexus is a Rust-first cognitive lens memory system. It is not an
-agent-owned memory plugin. Memories belong to a Cognitive Space, and agents or
-users interpret that space through Lens-style strategies.
+MemoryNexus is a personal cognitive substrate where one memory universe can be
+interpreted by many minds.
+
+一个记忆宇宙，多种心智视角。
+
+It is a Rust-first cognitive lens memory system, not an agent-owned memory
+plugin. Memories belong to a Cognitive Space, and agents or users interpret that
+space through Lens-style strategies.
 
 ## Current Shape
 
