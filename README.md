@@ -65,7 +65,10 @@ cargo run --bin memorynexus-cli -- lens run <lens-id-from-lens-create> --query "
 ```
 
 Lens Run returns a persisted, traceable interpretation result with the query,
-Lens metadata, matched memory IDs, and MVP summary.
+Lens metadata, matched memory IDs, and summary provenance. Configure
+`OPENAI_API_KEY`, or set `OPENROUTER_API_KEY` to auto-select OpenRouter, to use
+AI-generated summaries; without credentials it falls back to a deterministic
+local summary.
 
 ## Verification
 

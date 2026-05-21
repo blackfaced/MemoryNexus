@@ -130,6 +130,7 @@ pub trait Summarizer: Send + Sync {
 pub struct OpenAISummarizer {
     api_key: String,
     model: String,
+    base_url: String,
     client: reqwest::Client,
 }
 
@@ -138,6 +139,7 @@ impl OpenAISummarizer {
         Self {
             api_key,
             model: "gpt-3.5-turbo".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
             client: reqwest::Client::new(),
         }
     }
@@ -145,6 +147,15 @@ impl OpenAISummarizer {
     pub fn with_model(mut self, model: String) -> Self {
         self.model = model;
         self
+    }
+
+    pub fn with_base_url(mut self, base_url: String) -> Self {
+        self.base_url = normalize_openai_base_url(&base_url);
+        self
+    }
+
+    fn chat_completions_url(&self) -> String {
+        format!("{}/chat/completions", self.base_url)
     }
 
     fn build_prompt(&self, content: &str, options: &SummaryOptions) -> String {
@@ -200,7 +211,7 @@ impl Summarizer for OpenAISummarizer {
 
         let response = self
             .client
-            .post("https://api.openai.com/v1/chat/completions")
+            .post(self.chat_completions_url())
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -218,11 +229,7 @@ impl Summarizer for OpenAISummarizer {
             .await
             .map_err(|e| SummaryError::ApiError(e.to_string()))?;
 
-        let summary = response_json["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let summary = extract_chat_completion_text(&response_json);
 
         // 提取关键词（简单实现）
         let keywords = if options.include_keywords {
@@ -256,6 +263,55 @@ impl Summarizer for OpenAISummarizer {
         }
 
         Ok(results)
+    }
+}
+
+fn extract_chat_completion_text(response_json: &serde_json::Value) -> String {
+    let choice = &response_json["choices"][0];
+    let message = &choice["message"];
+    let content = &message["content"];
+
+    if let Some(text) = content.as_str() {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    if let Some(parts) = content.as_array() {
+        let text = parts
+            .iter()
+            .filter_map(|part| {
+                part.as_str()
+                    .or_else(|| part["text"].as_str())
+                    .or_else(|| part["content"].as_str())
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    for fallback in [&message["reasoning"], &message["refusal"], &choice["text"]] {
+        if let Some(text) = fallback.as_str() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+
+    String::new()
+}
+
+fn normalize_openai_base_url(base_url: &str) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    if trimmed.ends_with("/chat/completions") {
+        trimmed.trim_end_matches("/chat/completions").to_string()
+    } else {
+        trimmed.to_string()
     }
 }
 
@@ -323,6 +379,7 @@ mod tests {
     fn test_openai_summarizer_creation() {
         let summarizer = OpenAISummarizer::new("test-key".to_string());
         assert_eq!(summarizer.model, "gpt-3.5-turbo");
+        assert_eq!(summarizer.base_url, "https://api.openai.com/v1");
     }
 
     #[test]
@@ -330,5 +387,66 @@ mod tests {
         let summarizer =
             OpenAISummarizer::new("test-key".to_string()).with_model("gpt-4".to_string());
         assert_eq!(summarizer.model, "gpt-4");
+    }
+
+    #[test]
+    fn test_openai_summarizer_with_base_url() {
+        let summarizer = OpenAISummarizer::new("test-key".to_string())
+            .with_base_url("https://openrouter.ai/api/v1/".to_string());
+        assert_eq!(summarizer.base_url, "https://openrouter.ai/api/v1");
+        assert_eq!(
+            summarizer.chat_completions_url(),
+            "https://openrouter.ai/api/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn test_openai_summarizer_normalizes_chat_completions_url() {
+        let summarizer = OpenAISummarizer::new("test-key".to_string())
+            .with_base_url("https://example.com/v1/chat/completions".to_string());
+        assert_eq!(summarizer.base_url, "https://example.com/v1");
+    }
+
+    #[test]
+    fn extracts_chat_completion_text_from_string_content() {
+        let response = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": "  real summary  "
+                }
+            }]
+        });
+
+        assert_eq!(extract_chat_completion_text(&response), "real summary");
+    }
+
+    #[test]
+    fn extracts_chat_completion_text_from_content_parts() {
+        let response = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "part one "},
+                        {"type": "text", "text": "part two"}
+                    ]
+                }
+            }]
+        });
+
+        assert_eq!(extract_chat_completion_text(&response), "part one part two");
+    }
+
+    #[test]
+    fn extracts_chat_completion_text_from_reasoning_fallback() {
+        let response = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": "",
+                    "reasoning": "reasoning text"
+                }
+            }]
+        });
+
+        assert_eq!(extract_chat_completion_text(&response), "reasoning text");
     }
 }

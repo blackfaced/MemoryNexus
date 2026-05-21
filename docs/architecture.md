@@ -97,7 +97,11 @@ architecture.
   smoke tests.
 - Lens persistence is available through REST and CLI create/list/get commands.
 - Lens Run execution is synchronous in the MVP: it retrieves memories inside the
-  Lens's Cognitive Space, persists matched memory IDs, and stores deterministic
-  traceable output.
-- Strategy compilation, richer LLM-generated interpretation, and multi-step
-  Lens workflows are the next runtime layer.
+  Lens's Cognitive Space, persists matched memory IDs, and stores traceable
+  output with summary provider provenance.
+- Lens Run uses an OpenAI-compatible chat summarizer when summary credentials
+  are configured; `MEMORYNEXUS_AI_BASE_URL` / `OPENAI_BASE_URL` can point at
+  providers such as OpenRouter. Without credentials, it records a deterministic
+  fallback summary.
+- Strategy compilation, richer multi-step interpretation, and async Lens
+  workflows are the next runtime layer.

@@ -128,9 +128,26 @@ memory IDs, and stores a traceable JSON output.
 ```
 
 The response is a completed `lens_runs` record. `output` contains the Lens
-metadata, query, retrieval mode, matched memory summaries, and deterministic MVP
-summary. If semantic dependencies are not configured, Lens Run falls back to
-keyword retrieval so local CLI usage still works.
+metadata, query, retrieval mode, matched memory summaries, summary provider
+provenance, and the generated interpretation. When a summary API key is
+configured, Lens Run uses the configured OpenAI-compatible chat model to
+summarize the retrieved memories. Without a summary provider, or if provider
+generation fails, it stores a deterministic fallback summary and records
+`summary_fallback_reason`. If semantic dependencies are not configured, Lens Run
+falls back to keyword retrieval so local CLI usage still works.
+
+Summary provider configuration:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MEMORYNEXUS_SUMMARY_PROVIDER` | inferred from keys, else `openai` | `openai`, `openrouter`, or `none` |
+| `MEMORYNEXUS_SUMMARY_API_KEY` | `OPENAI_API_KEY` / `OPENROUTER_API_KEY` | Summary-only key override |
+| `MEMORYNEXUS_SUMMARY_MODEL` | `OPENAI_MODEL` or provider default | Chat model used by Lens Run |
+| `MEMORYNEXUS_AI_BASE_URL` | `OPENAI_BASE_URL` or provider default | OpenAI-compatible API base URL |
+| `LENS_RUN_SUMMARY_MAX_WORDS` | output-format based | Summary length override |
+
+If `MEMORYNEXUS_SUMMARY_PROVIDER` is not set and only `OPENROUTER_API_KEY` is
+present, the provider is inferred as `openrouter`.
 
 Example response shape:
 
@@ -155,7 +172,10 @@ Example response shape:
       "search_mode": "semantic",
       "memory_count": 1,
       "memories": [],
-      "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'."
+      "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'.",
+      "summary_provider": "deterministic",
+      "summary_model": null,
+      "summary_fallback_reason": "summary provider not configured"
     },
     "status": "completed",
     "created_by": "user-uuid",

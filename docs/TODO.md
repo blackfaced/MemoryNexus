@@ -105,6 +105,9 @@ cargo test --test phase1c_acceptance -- --ignored --nocapture
 | P2A.8 | 内置 Lens 模板：默认回顾、家庭成长、学习复盘、项目上下文 | 🟡 Todo | P1 | - |
 | P2A.9 | Lens Run provenance 输出：query、命中 memory、策略、生成时间、输出 | ✅ Done | P1 | Codex |
 | P2A.10 | CLI 支持 `lens run` 和 `lens run get` | ✅ Done | P0 | Codex |
+| P2A.11 | Lens Run 接入 AI summary provider，并保留 deterministic fallback | ✅ Done | P0 | Codex |
+| P2A.12 | Lens Run summary 支持 OpenAI-compatible base URL、provider/model/长度配置 | ✅ Done | P0 | Codex |
+| P2A.13 | 仅设置 `OPENROUTER_API_KEY` 时自动推断 OpenRouter summary provider | ✅ Done | P0 | Codex |
 
 ---
 

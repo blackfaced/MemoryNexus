@@ -18,6 +18,16 @@ Backend-only variables for semantic search:
 | `QDRANT_COLLECTION` | `memorynexus_memories` | Qdrant collection |
 | `MEMORYNEXUS_EMBEDDING_PROVIDER` | `openai` | Use `local` for deterministic smoke tests |
 
+Backend-only variables for Lens Run summaries:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MEMORYNEXUS_SUMMARY_PROVIDER` | `openai` | Use `openai`, `openrouter`, or `none` |
+| `MEMORYNEXUS_SUMMARY_API_KEY` | `OPENAI_API_KEY` / `OPENROUTER_API_KEY` | Summary-only API key override |
+| `MEMORYNEXUS_SUMMARY_MODEL` | `OPENAI_MODEL` or provider default | Chat model for Lens Run summaries |
+| `MEMORYNEXUS_AI_BASE_URL` | `OPENAI_BASE_URL` or provider default | OpenAI-compatible API base URL |
+| `LENS_RUN_SUMMARY_MAX_WORDS` | output-format based | Override Lens Run summary length |
+
 ## Run Locally
 
 Start PostgreSQL and Qdrant:
@@ -35,6 +45,27 @@ export MEMORYNEXUS_EMBEDDING_PROVIDER=local
 
 cargo run --bin memorynexus
 ```
+
+Optional: use an OpenAI-compatible provider for Lens Run summaries. For example,
+OpenRouter exposes a compatible chat-completions API and may offer free-tier
+models. Model availability changes, so check OpenRouter's model list before
+choosing one:
+
+```bash
+export OPENROUTER_API_KEY=<your-openrouter-key>
+export MEMORYNEXUS_SUMMARY_MODEL=openrouter/free
+export LENS_RUN_SUMMARY_MAX_WORDS=120
+
+cargo run --bin memorynexus
+```
+
+When `MEMORYNEXUS_SUMMARY_PROVIDER` is unset, `OPENROUTER_API_KEY` automatically
+selects the OpenRouter provider and `https://openrouter.ai/api/v1` base URL. Set
+`MEMORYNEXUS_SUMMARY_PROVIDER=openai` only if you intentionally want OpenAI
+provider semantics with explicit base URL/model overrides.
+
+If no summary key is configured, Lens Run still works with a deterministic
+fallback summary.
 
 Run the CLI in another terminal:
 
@@ -118,7 +149,8 @@ Expected Lens Run signs:
 - `data.output.query` echoes your query.
 - `data.output.lens` records the Lens configuration used.
 - `data.output.memories` contains the retrieved memory snippets.
-- `data.output.summary` is a deterministic MVP summary.
+- `data.output.summary` is AI-generated when `OPENAI_API_KEY` is configured; otherwise it is a deterministic fallback summary.
+- `data.output.summary_provider`, `summary_model`, and `summary_fallback_reason` record summary provenance.
 
 ## Semantic Smoke Test
 
@@ -194,7 +226,10 @@ The exact IDs and timestamps will differ, but the shape should look like:
           "relevance": 0.83
         }
       ],
-      "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'."
+      "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'.",
+      "summary_provider": "deterministic",
+      "summary_model": null,
+      "summary_fallback_reason": "summary provider not configured"
     }
   }
 }
