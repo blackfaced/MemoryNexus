@@ -49,9 +49,9 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 
 ## Acceptance
 
-The Phase 1C acceptance test drives the real API through the CLI and requires
-local PostgreSQL and Qdrant. It is ignored by default, so normal CI and
-`cargo test` stay fast.
+The local acceptance test drives the real API through the CLI and requires local
+PostgreSQL and Qdrant. It is ignored by default, so normal CI and `cargo test`
+stay fast.
 
 ```bash
 docker compose up -d postgres qdrant
@@ -63,8 +63,8 @@ cargo test --test phase1c_acceptance -- --ignored --nocapture
 ```
 
 The test starts the API, registers a user, creates a Cognitive Space, creates a
-memory, verifies keyword search, verifies `search --semantic --space`, and
-exercises Lens create/list/get through the CLI.
+memory, verifies keyword search, verifies `search --semantic --space`, creates a
+Lens, runs it, and fetches the persisted Lens Run through the CLI.
 
 ## Structure
 

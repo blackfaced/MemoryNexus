@@ -8,6 +8,7 @@ mod ai;
 mod auth;
 mod embedding;
 mod health;
+mod lens_runs;
 mod lenses;
 mod memories;
 mod search;
@@ -33,6 +34,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/lenses", axum::routing::get(lenses::list))
         .route("/api/v1/lenses", axum::routing::post(lenses::create))
         .route("/api/v1/lenses/:id", axum::routing::get(lenses::get))
+        .route("/api/v1/lens-runs", axum::routing::post(lens_runs::create))
+        .route("/api/v1/lens-runs/:id", axum::routing::get(lens_runs::get))
         // 记忆 CRUD
         .route("/api/v1/memories", axum::routing::get(memories::list))
         .route("/api/v1/memories", axum::routing::post(memories::create))

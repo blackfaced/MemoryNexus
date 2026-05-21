@@ -8,4 +8,4 @@ pub mod query;
 
 #[allow(unused_imports)]
 pub use filter::{DateRange, MemoryFilter, SortOrder};
-pub use query::{SearchEngine, SearchQuery, SearchResult, SemanticSearchError};
+pub use query::{MemorySearchItem, SearchEngine, SearchQuery, SearchResult, SemanticSearchError};

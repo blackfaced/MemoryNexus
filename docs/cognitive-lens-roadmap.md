@@ -135,18 +135,21 @@ Agent
 - [x] 新增 Lens repository 与 REST API：create/list/get，访问控制仍以 Cognitive Space membership 为准。
 - [x] 新增 CLI 命令：`lens create`、`lens list`、`lens get`。
 - [x] 端到端验收覆盖 CLI 驱动的 Lens create/list/get。
+- [x] 新增同步 Lens Run execution API：`POST /api/v1/lens-runs`、`GET /api/v1/lens-runs/:id`。
+- [x] Lens Run 根据 Lens 所属 Cognitive Space 检索 memory，并把命中的 memory IDs 写入 provenance。
+- [x] CLI 支持 `lens run <LENS_ID> --query ...` 与 `lens run get <RUN_ID>`。
 - [ ] 支持内置 Lens：默认回顾、家庭成长、学习复盘、项目上下文。
 - [ ] 在 search/summarize 路径中引入 `lens_id`，由 Lens 决定检索过滤、排序和摘要风格。
-- [ ] 记录 Lens 运行 provenance：输入 query、命中的 memory、使用的策略版本、生成时间和输出。
-- [ ] 区分 Lens 配置与 Lens 运行结果，避免把派生解释误当作原始 memory。
+- [x] 记录 Lens 运行 provenance：输入 query、命中的 memory、使用的策略、生成时间和输出。
+- [x] 区分 Lens 配置与 Lens 运行结果，避免把派生解释误当作原始 memory。
 - [x] 为 Lens CLI 解析、API serde 和 repository 增加基础测试。
-- [ ] 为 Lens Run execution 增加单元测试和端到端验收。
+- [x] 为 Lens Run execution 增加单元测试和端到端验收。
 
 ## Phase 3 TODO: Cognitive Lens 工作流
 
-目标：让 Lens 能组织多步认知流程，而不把流程状态绑定到某个 Agent。
+目标：把 Phase 2 的同步 Lens Run 扩展为多步认知流程，而不把流程状态绑定到某个 Agent。
 
-- [ ] 增加 Lens Run 概念，表示一次可追踪的解释过程。
+- [ ] 扩展 Lens Run 状态机，支持 pending/running/completed/failed 和异步执行。
 - [ ] 支持多步骤解释：检索、聚类、冲突检查、摘要、行动建议。
 - [ ] 支持多 Lens 对同一 Cognitive Space 给出不同解释，并展示差异来源。
 - [ ] 增加派生洞察存储：结论、置信度、引用 memory、生成策略版本。

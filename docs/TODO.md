@@ -1,6 +1,6 @@
 # 📋 MemoryNexus 开发计划
 
-> 最后更新: 2026-05-20
+> 最后更新: 2026-05-21
 > 管理方式: GitHub Issues + Markdown 文档
 
 ---
@@ -25,6 +25,7 @@
 | P1B.1 | 本地语义检索基础链路 | P0 | 2026-05-20 | - |
 | P1C.1 | Space-scoped CLI 端到端验收 | P0 | 2026-05-20 | - |
 | P2A.1 | Lens 最小模型与 CLI 入口 | P0 | 2026-05-20 | - |
+| P2B.1 | Lens Run 同步执行闭环 | P0 | 2026-05-21 | - |
 
 ---
 
@@ -99,10 +100,11 @@ cargo test --test phase1c_acceptance -- --ignored --nocapture
 | P2A.3 | 新增 Lens REST API：create/list/get | ✅ Done | P0 | Codex |
 | P2A.4 | CLI 支持 `lens create/list/get` | ✅ Done | P0 | Codex |
 | P2A.5 | acceptance 覆盖 Lens create/list/get | ✅ Done | P0 | Codex |
-| P2A.6 | Lens Run execution API | 🟡 Todo | P0 | - |
+| P2A.6 | Lens Run execution API | ✅ Done | P0 | Codex |
 | P2A.7 | search/summarize 支持 `lens_id` | 🟡 Todo | P0 | - |
 | P2A.8 | 内置 Lens 模板：默认回顾、家庭成长、学习复盘、项目上下文 | 🟡 Todo | P1 | - |
-| P2A.9 | Lens Run provenance 输出：query、命中 memory、策略版本、生成时间 | 🟡 Todo | P1 | - |
+| P2A.9 | Lens Run provenance 输出：query、命中 memory、策略、生成时间、输出 | ✅ Done | P1 | Codex |
+| P2A.10 | CLI 支持 `lens run` 和 `lens run get` | ✅ Done | P0 | Codex |
 
 ---
 
@@ -123,13 +125,14 @@ cargo test --test phase1c_acceptance -- --ignored --nocapture
 | CLI.9 | 更新 `docs/cli.md` 快速开始为当前可运行命令 | ✅ Done | P1 | Codex |
 | CLI.10 | 支持 `space create/list` 与 memory/search `--space` | ✅ Done | P0 | Codex |
 | CLI.11 | 支持 `lens create/list/get` | ✅ Done | P0 | Codex |
+| CLI.12 | 支持 `lens run` 和 `lens run get` | ✅ Done | P0 | Codex |
 
 暂不做：
 
 - 本地 token 持久化。
 - 交互式配置向导。
 - 表格/CSV 输出。
-- Lens Run 命令。等 Lens Run API 落地后再追加。
+- 交互式 Lens Run 向导。
 
 ---
 

@@ -94,8 +94,8 @@ should read the space.
 ```
 
 `strategy`, `output_format`, and `retrieval_mode` are persisted as explicit
-configuration strings for now. Lens Run execution will give them stricter
-semantics in the next phase.
+configuration strings. Lens Run currently uses `retrieval_mode` to choose the
+space-scoped retrieval path and records the rest as provenance.
 
 ### List Lenses
 
@@ -108,6 +108,35 @@ Returns lenses in the requested space if the current user is a member.
 `GET /api/v1/lenses/:id`
 
 Returns a lens only if the current user can access its Cognitive Space.
+
+## Lens Runs
+
+Lens Run is one synchronous interpretation pass over a Lens and a query. The
+server retrieves memories inside the Lens's Cognitive Space, records the matched
+memory IDs, and stores a traceable JSON output.
+
+### Run Lens
+
+`POST /api/v1/lens-runs`
+
+```json
+{
+  "lens_id": "lens-uuid",
+  "query": "Summarize the current project direction",
+  "limit": 5
+}
+```
+
+The response is a completed `lens_runs` record. `output` contains the Lens
+metadata, query, retrieval mode, matched memory summaries, and deterministic MVP
+summary. If semantic dependencies are not configured, Lens Run falls back to
+keyword retrieval so local CLI usage still works.
+
+### Get Lens Run
+
+`GET /api/v1/lens-runs/:id`
+
+Returns a run only if the current user can access its Cognitive Space.
 
 ## Memories
 

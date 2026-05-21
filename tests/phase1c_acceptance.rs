@@ -1,4 +1,4 @@
-//! Phase 1C local acceptance test.
+//! Local CLI acceptance test.
 //!
 //! This test is ignored by default because it requires local PostgreSQL and
 //! Qdrant. Run it with:
@@ -22,7 +22,7 @@ use serde_json::Value;
 
 #[test]
 #[ignore = "requires local PostgreSQL and Qdrant"]
-fn phase1c_cli_drives_space_memory_and_semantic_search() {
+fn cli_drives_space_memory_semantic_search_and_lens_run() {
     require_acceptance_env();
 
     let run_id = unique_run_id();
@@ -42,7 +42,7 @@ fn require_acceptance_env() {
     assert_eq!(
         std::env::var("MEMORYNEXUS_ACCEPTANCE").as_deref(),
         Ok("1"),
-        "set MEMORYNEXUS_ACCEPTANCE=1 to run the Phase 1C acceptance test"
+        "set MEMORYNEXUS_ACCEPTANCE=1 to run the local acceptance test"
     );
 }
 
@@ -169,7 +169,50 @@ fn run_acceptance_flow(run_id: &str) {
 
     let lens_get = cli(["lens", "get", &lens_id], Some(&token));
     assert_ok(&lens_get);
-    assert_eq!(lens_get["data"]["id"], Value::String(lens_id));
+    assert_eq!(lens_get["data"]["id"], Value::String(lens_id.clone()));
+
+    let lens_run = cli(
+        [
+            "lens",
+            "run",
+            &lens_id,
+            "--query",
+            "phase1c semantic qdrant",
+            "--limit",
+            "5",
+        ],
+        Some(&token),
+    );
+    assert_ok(&lens_run);
+    assert_eq!(lens_run["data"]["lens_id"], Value::String(lens_id));
+    assert_eq!(lens_run["data"]["space_id"], Value::String(space_id));
+    assert_eq!(
+        lens_run["data"]["status"],
+        Value::String("completed".to_string())
+    );
+    let run_id = lens_run["data"]["id"]
+        .as_str()
+        .expect("lens run response should include data.id")
+        .to_string();
+    let input_memory_ids = lens_run["data"]["input_memory_ids"]
+        .as_array()
+        .expect("lens run response should include input_memory_ids");
+    assert!(
+        !input_memory_ids.is_empty(),
+        "lens run should record recalled memories: {lens_run}"
+    );
+    assert_eq!(
+        lens_run["data"]["output"]["query"],
+        Value::String("phase1c semantic qdrant".to_string())
+    );
+    assert_eq!(
+        lens_run["data"]["output"]["search_mode"],
+        Value::String("semantic".to_string())
+    );
+
+    let lens_run_get = cli(["lens", "run", "get", &run_id], Some(&token));
+    assert_ok(&lens_run_get);
+    assert_eq!(lens_run_get["data"]["id"], Value::String(run_id));
 }
 
 fn start_server(collection: &str) -> Child {

@@ -96,5 +96,8 @@ architecture.
 - `MEMORYNEXUS_EMBEDDING_PROVIDER=local` is intended for deterministic local
   smoke tests.
 - Lens persistence is available through REST and CLI create/list/get commands.
-- Lens Run execution, strategy compilation, and provenance-rich generated output
-  are the next runtime layer.
+- Lens Run execution is synchronous in the MVP: it retrieves memories inside the
+  Lens's Cognitive Space, persists matched memory IDs, and stores deterministic
+  traceable output.
+- Strategy compilation, richer LLM-generated interpretation, and multi-step
+  Lens workflows are the next runtime layer.

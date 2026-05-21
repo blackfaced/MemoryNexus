@@ -86,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
 
     let repositories = state::Repositories {
         lenses: Arc::new(db::lens::PostgresLensRepository::new(pool.clone())),
+        lens_runs: Arc::new(db::lens_run::PostgresLensRunRepository::new(pool.clone())),
         memories: Arc::new(db::memory::PostgresMemoryRepository::new(pool.clone())),
         spaces: Arc::new(db::space::PostgresCognitiveSpaceRepository::new(
             pool.clone(),

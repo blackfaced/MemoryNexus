@@ -33,6 +33,14 @@ enum Command {
     LensGet {
         id: String,
     },
+    LensRun {
+        lens_id: String,
+        query: String,
+        limit: usize,
+    },
+    LensRunGet {
+        id: String,
+    },
     MemoryAdd {
         space_id: Option<String>,
         content: String,
@@ -230,8 +238,31 @@ fn parse_lens_command(args: &[String]) -> Result<Command, CliError> {
                 .cloned()
                 .ok_or_else(|| CliError::new("lens id is required"))?,
         }),
+        "run" => parse_lens_run_command(&args[1..]),
         _ => Err(CliError::new("unknown lens subcommand")),
     }
+}
+
+fn parse_lens_run_command(args: &[String]) -> Result<Command, CliError> {
+    if args.first().map(String::as_str) == Some("get") {
+        return Ok(Command::LensRunGet {
+            id: args
+                .get(1)
+                .filter(|id| !id.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| CliError::new("lens run id is required"))?,
+        });
+    }
+
+    Ok(Command::LensRun {
+        lens_id: args
+            .first()
+            .filter(|id| !id.starts_with("--"))
+            .cloned()
+            .ok_or_else(|| CliError::new("lens id is required"))?,
+        query: required_flag(args, "--query")?,
+        limit: parse_usize_flag(args, "--limit", 5)?,
+    })
 }
 
 fn parse_memory_command(args: &[String]) -> Result<Command, CliError> {
@@ -368,6 +399,26 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
         Command::LensGet { id } => Ok(RequestSpec {
             method: HttpMethod::Get,
             url: format!("{base_url}/api/v1/lenses/{id}"),
+            body: None,
+            token: Some(require_token(config)?),
+        }),
+        Command::LensRun {
+            lens_id,
+            query,
+            limit,
+        } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/lens-runs"),
+            body: Some(json!({
+                "lens_id": lens_id,
+                "query": query,
+                "limit": limit,
+            })),
+            token: Some(require_token(config)?),
+        }),
+        Command::LensRunGet { id } => Ok(RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{base_url}/api/v1/lens-runs/{id}"),
             body: None,
             token: Some(require_token(config)?),
         }),
@@ -706,6 +757,37 @@ mod tests {
     }
 
     #[test]
+    fn parses_lens_run_and_run_get_commands() {
+        let run = parse_command([
+            "memorynexus-cli",
+            "lens",
+            "run",
+            "lens-123",
+            "--query",
+            "Summarize the current project direction",
+            "--limit",
+            "3",
+        ])
+        .unwrap();
+        let get = parse_command(["memorynexus-cli", "lens", "run", "get", "run-123"]).unwrap();
+
+        assert_eq!(
+            run,
+            Command::LensRun {
+                lens_id: "lens-123".to_string(),
+                query: "Summarize the current project direction".to_string(),
+                limit: 3,
+            }
+        );
+        assert_eq!(
+            get,
+            Command::LensRunGet {
+                id: "run-123".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn parses_memory_add_with_space_id() {
         let command = parse_command([
             "memorynexus-cli",
@@ -886,6 +968,35 @@ mod tests {
                 "strategy": "project_context",
                 "output_format": "brief",
                 "retrieval_mode": "semantic",
+            }))
+        );
+    }
+
+    #[test]
+    fn builds_lens_run_request() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+        let request = build_request(
+            &config,
+            &Command::LensRun {
+                lens_id: "lens-123".to_string(),
+                query: "Summarize the current project direction".to_string(),
+                limit: 3,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/lens-runs");
+        assert_eq!(request.token, Some("jwt-token".to_string()));
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "lens_id": "lens-123",
+                "query": "Summarize the current project direction",
+                "limit": 3,
             }))
         );
     }

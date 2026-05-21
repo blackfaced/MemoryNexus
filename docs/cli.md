@@ -84,6 +84,12 @@ cargo run --bin memorynexus-cli -- lens list \
   --space "$MEMORYNEXUS_SPACE_ID"
 
 cargo run --bin memorynexus-cli -- lens get <lens-id>
+
+cargo run --bin memorynexus-cli -- lens run <lens-id> \
+  --query "Summarize the current project direction" \
+  --limit 5
+
+cargo run --bin memorynexus-cli -- lens run get <run-id>
 ```
 
 ## Semantic Smoke Test
@@ -141,6 +147,8 @@ memorynexus-cli lens create --space <SPACE_ID> --name <NAME> \
   [--description <TEXT>] [--strategy <NAME>] [--output <FORMAT>] [--retrieval <MODE>]
 memorynexus-cli lens list --space <SPACE_ID>
 memorynexus-cli lens get <LENS_ID>
+memorynexus-cli lens run <LENS_ID> --query <TEXT> [--limit <N>]
+memorynexus-cli lens run get <RUN_ID>
 
 memorynexus-cli memory add --content <TEXT> [--space <SPACE_ID>] [--title <TEXT>] \
   [--tags <COMMA_SEPARATED_TAGS>] [--type text|image|audio|video] [--shared]
