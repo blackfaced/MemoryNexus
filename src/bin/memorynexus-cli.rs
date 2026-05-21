@@ -2,9 +2,55 @@ use serde_json::{json, Value};
 
 const DEFAULT_API_URL: &str = "http://localhost:8080";
 
+#[derive(Debug, Clone, Copy)]
+struct LensTemplate {
+    id: &'static str,
+    name: &'static str,
+    description: &'static str,
+    strategy: &'static str,
+    output_format: &'static str,
+    retrieval_mode: &'static str,
+}
+
+const LENS_TEMPLATES: &[LensTemplate] = &[
+    LensTemplate {
+        id: "project_context",
+        name: "Project Context",
+        description: "Interpret project memories for planning and direction.",
+        strategy: "project_context",
+        output_format: "brief",
+        retrieval_mode: "semantic",
+    },
+    LensTemplate {
+        id: "learning_review",
+        name: "Learning Review",
+        description: "Review learning memories and extract progress, gaps, and next steps.",
+        strategy: "learning_review",
+        output_format: "bullets",
+        retrieval_mode: "semantic",
+    },
+    LensTemplate {
+        id: "family_growth",
+        name: "Family Growth",
+        description: "Interpret family memories as growth moments and continuity signals.",
+        strategy: "family_growth",
+        output_format: "brief",
+        retrieval_mode: "semantic",
+    },
+    LensTemplate {
+        id: "risk_review",
+        name: "Risk Review",
+        description: "Read memories through risks, contradictions, and unresolved concerns.",
+        strategy: "risk_review",
+        output_format: "bullets",
+        retrieval_mode: "semantic",
+    },
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
     Health,
+    Config,
     AuthRegister {
         email: String,
         username: String,
@@ -27,6 +73,7 @@ enum Command {
         output_format: String,
         retrieval_mode: String,
     },
+    LensTemplates,
     LensList {
         space_id: String,
     },
@@ -40,6 +87,11 @@ enum Command {
     },
     LensRunGet {
         id: String,
+    },
+    LensRunList {
+        lens_id: Option<String>,
+        space_id: Option<String>,
+        limit: usize,
     },
     MemoryAdd {
         space_id: Option<String>,
@@ -163,6 +215,7 @@ where
 
     match command {
         "health" => Ok(Command::Health),
+        "config" => Ok(Command::Config),
         "auth" => parse_auth_command(&args[2..]),
         "space" => parse_space_command(&args[2..]),
         "lens" => parse_lens_command(&args[2..]),
@@ -219,15 +272,8 @@ fn parse_lens_command(args: &[String]) -> Result<Command, CliError> {
     };
 
     match subcommand {
-        "create" => Ok(Command::LensCreate {
-            space_id: required_flag(args, "--space")?,
-            name: required_flag(args, "--name")?,
-            description: optional_flag(args, "--description"),
-            strategy: optional_flag(args, "--strategy").unwrap_or_else(|| "default".to_string()),
-            output_format: optional_flag(args, "--output").unwrap_or_else(|| "summary".to_string()),
-            retrieval_mode: optional_flag(args, "--retrieval")
-                .unwrap_or_else(|| "semantic".to_string()),
-        }),
+        "templates" => Ok(Command::LensTemplates),
+        "create" => parse_lens_create_command(args),
         "list" => Ok(Command::LensList {
             space_id: required_flag(args, "--space")?,
         }),
@@ -243,7 +289,52 @@ fn parse_lens_command(args: &[String]) -> Result<Command, CliError> {
     }
 }
 
+fn parse_lens_create_command(args: &[String]) -> Result<Command, CliError> {
+    let template = optional_flag(args, "--template")
+        .map(|id| {
+            lens_template(&id)
+                .copied()
+                .ok_or_else(|| CliError::new(format!("unknown lens template: {id}")))
+        })
+        .transpose()?;
+
+    Ok(Command::LensCreate {
+        space_id: required_flag(args, "--space")?,
+        name: optional_flag(args, "--name")
+            .or_else(|| template.map(|template| template.name.to_string()))
+            .ok_or_else(|| CliError::new("--name is required"))?,
+        description: optional_flag(args, "--description")
+            .or_else(|| template.map(|template| template.description.to_string())),
+        strategy: optional_flag(args, "--strategy")
+            .or_else(|| template.map(|template| template.strategy.to_string()))
+            .unwrap_or_else(|| "default".to_string()),
+        output_format: optional_flag(args, "--output")
+            .or_else(|| template.map(|template| template.output_format.to_string()))
+            .unwrap_or_else(|| "summary".to_string()),
+        retrieval_mode: optional_flag(args, "--retrieval")
+            .or_else(|| template.map(|template| template.retrieval_mode.to_string()))
+            .unwrap_or_else(|| "semantic".to_string()),
+    })
+}
+
+fn lens_template(id: &str) -> Option<&'static LensTemplate> {
+    LENS_TEMPLATES.iter().find(|template| template.id == id)
+}
+
 fn parse_lens_run_command(args: &[String]) -> Result<Command, CliError> {
+    if args.first().map(String::as_str) == Some("list") {
+        let lens_id = optional_flag(args, "--lens");
+        let space_id = optional_flag(args, "--space");
+        if lens_id.is_none() && space_id.is_none() {
+            return Err(CliError::new("--lens or --space is required"));
+        }
+        return Ok(Command::LensRunList {
+            lens_id,
+            space_id,
+            limit: parse_usize_flag(args, "--limit", 20)?,
+        });
+    }
+
     if args.first().map(String::as_str) == Some("get") {
         return Ok(Command::LensRunGet {
             id: args
@@ -329,6 +420,12 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             body: None,
             token: None,
         }),
+        Command::Config => Ok(RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{base_url}/api/v1/ai/config"),
+            body: None,
+            token: None,
+        }),
         Command::AuthRegister {
             email,
             username,
@@ -402,6 +499,7 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             body: None,
             token: Some(require_token(config)?),
         }),
+        Command::LensTemplates => Err(CliError::new("lens templates is a local command")),
         Command::LensRun {
             lens_id,
             query,
@@ -422,6 +520,26 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             body: None,
             token: Some(require_token(config)?),
         }),
+        Command::LensRunList {
+            lens_id,
+            space_id,
+            limit,
+        } => {
+            let limit = limit.to_string();
+            let mut pairs = vec![("limit", limit.as_str())];
+            if let Some(lens_id) = lens_id {
+                pairs.push(("lens_id", lens_id.as_str()));
+            }
+            if let Some(space_id) = space_id {
+                pairs.push(("space_id", space_id.as_str()));
+            }
+            Ok(RequestSpec {
+                method: HttpMethod::Get,
+                url: with_query(&format!("{base_url}/api/v1/lens-runs"), &pairs)?,
+                body: None,
+                token: Some(require_token(config)?),
+            })
+        }
         Command::MemoryAdd {
             space_id,
             content,
@@ -499,6 +617,10 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
 }
 
 async fn execute(config: &Config, command: &Command) -> Result<Value, CliError> {
+    if matches!(command, Command::LensTemplates) {
+        return Ok(lens_templates_response());
+    }
+
     let request = build_request(config, command)?;
     let client = reqwest::Client::new();
     let mut builder = match request.method {
@@ -539,6 +661,25 @@ async fn execute(config: &Config, command: &Command) -> Result<Value, CliError> 
     }
 
     Ok(value)
+}
+
+fn lens_templates_response() -> Value {
+    json!({
+        "ok": true,
+        "data": {
+            "items": LENS_TEMPLATES
+                .iter()
+                .map(|template| json!({
+                    "id": template.id,
+                    "name": template.name,
+                    "description": template.description,
+                    "strategy": template.strategy,
+                    "output_format": template.output_format,
+                    "retrieval_mode": template.retrieval_mode,
+                }))
+                .collect::<Vec<_>>()
+        }
+    })
 }
 
 fn require_token(config: &Config) -> Result<String, CliError> {
@@ -595,7 +736,7 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, CliError
 }
 
 fn usage() -> &'static str {
-    "usage: memorynexus-cli <health|auth|space|lens|memory|search> ..."
+    "usage: memorynexus-cli <health|config|auth|space|lens|memory|search> ..."
 }
 
 #[cfg(test)]
@@ -606,6 +747,12 @@ mod tests {
     fn parses_health_command() {
         let command = parse_command(["memorynexus-cli", "health"]).unwrap();
         assert_eq!(command, Command::Health);
+    }
+
+    #[test]
+    fn parses_config_command() {
+        let command = parse_command(["memorynexus-cli", "config"]).unwrap();
+        assert_eq!(command, Command::Config);
     }
 
     #[test]
@@ -757,6 +904,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_lens_templates_and_template_create_commands() {
+        let templates = parse_command(["memorynexus-cli", "lens", "templates"]).unwrap();
+        let create = parse_command([
+            "memorynexus-cli",
+            "lens",
+            "create",
+            "--space",
+            "space-123",
+            "--template",
+            "project_context",
+        ])
+        .unwrap();
+
+        assert_eq!(templates, Command::LensTemplates);
+        assert_eq!(
+            create,
+            Command::LensCreate {
+                space_id: "space-123".to_string(),
+                name: "Project Context".to_string(),
+                description: Some(
+                    "Interpret project memories for planning and direction.".to_string()
+                ),
+                strategy: "project_context".to_string(),
+                output_format: "brief".to_string(),
+                retrieval_mode: "semantic".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn parses_lens_run_and_run_get_commands() {
         let run = parse_command([
             "memorynexus-cli",
@@ -783,6 +960,47 @@ mod tests {
             get,
             Command::LensRunGet {
                 id: "run-123".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_lens_run_list_command() {
+        let by_lens = parse_command([
+            "memorynexus-cli",
+            "lens",
+            "run",
+            "list",
+            "--lens",
+            "lens-123",
+            "--limit",
+            "3",
+        ])
+        .unwrap();
+        let by_space = parse_command([
+            "memorynexus-cli",
+            "lens",
+            "run",
+            "list",
+            "--space",
+            "space-123",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            by_lens,
+            Command::LensRunList {
+                lens_id: Some("lens-123".to_string()),
+                space_id: None,
+                limit: 3,
+            }
+        );
+        assert_eq!(
+            by_space,
+            Command::LensRunList {
+                lens_id: None,
+                space_id: Some("space-123".to_string()),
+                limit: 20,
             }
         );
     }
@@ -938,6 +1156,19 @@ mod tests {
     }
 
     #[test]
+    fn builds_config_request_without_token() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: None,
+        };
+        let request = build_request(&config, &Command::Config).unwrap();
+
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/ai/config");
+        assert_eq!(request.token, None);
+    }
+
+    #[test]
     fn builds_lens_create_request() {
         let config = Config {
             api_url: "http://localhost:8080".to_string(),
@@ -972,6 +1203,22 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn executes_lens_templates_without_token_or_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: None,
+        };
+        let output = execute(&config, &Command::LensTemplates).await.unwrap();
+
+        assert_eq!(output["ok"], true);
+        assert!(output["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|template| template["id"] == "project_context"));
+    }
+
     #[test]
     fn builds_lens_run_request() {
         let config = Config {
@@ -998,6 +1245,30 @@ mod tests {
                 "query": "Summarize the current project direction",
                 "limit": 3,
             }))
+        );
+    }
+
+    #[test]
+    fn builds_lens_run_list_request() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+        let request = build_request(
+            &config,
+            &Command::LensRunList {
+                lens_id: Some("lens-123".to_string()),
+                space_id: None,
+                limit: 3,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(request.token, Some("jwt-token".to_string()));
+        assert_eq!(
+            request.url,
+            "http://localhost:8080/api/v1/lens-runs?limit=3&lens_id=lens-123"
         );
     }
 

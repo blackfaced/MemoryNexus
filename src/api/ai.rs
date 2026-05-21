@@ -50,7 +50,12 @@ pub struct AutoTagResponse {
 pub struct AiConfigResponse {
     pub model: String,
     pub embedding_model: String,
+    pub embedding_provider: String,
     pub enabled: bool,
+    pub summary_enabled: bool,
+    pub summary_provider: Option<String>,
+    pub summary_model: Option<String>,
+    pub summary_max_words: Option<usize>,
 }
 
 /// POST /api/v1/ai/summarize - 生成摘要
@@ -187,14 +192,23 @@ pub async fn auto_tag(
 }
 
 /// GET /api/v1/ai/config - 获取 AI 配置
-pub async fn get_config() -> Result<Json<ApiResponse<AiConfigResponse>>, AppError> {
+pub async fn get_config(
+    State(state): State<AppState>,
+) -> Result<Json<ApiResponse<AiConfigResponse>>, AppError> {
     let enabled = std::env::var("OPENAI_API_KEY").is_ok();
 
     Ok(Json(ApiResponse::success(AiConfigResponse {
         model: std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".to_string()),
         embedding_model: std::env::var("OPENAI_EMBEDDING_MODEL")
             .unwrap_or_else(|_| "text-embedding-ada-002".to_string()),
+        embedding_provider: std::env::var("MEMORYNEXUS_EMBEDDING_PROVIDER")
+            .or_else(|_| std::env::var("EMBEDDING_PROVIDER"))
+            .unwrap_or_else(|_| "openai".to_string()),
         enabled,
+        summary_enabled: state.ai.summarizer.is_some(),
+        summary_provider: state.ai.summary_provider,
+        summary_model: state.ai.summary_model,
+        summary_max_words: state.ai.summary_max_words,
     })))
 }
 
@@ -246,11 +260,17 @@ mod tests {
         let config = AiConfigResponse {
             model: "gpt-4".to_string(),
             embedding_model: "text-embedding-3-small".to_string(),
+            embedding_provider: "local".to_string(),
             enabled: true,
+            summary_enabled: true,
+            summary_provider: Some("openrouter".to_string()),
+            summary_model: Some("openrouter/free".to_string()),
+            summary_max_words: Some(120),
         };
 
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("gpt-4"));
         assert!(json.contains("\"enabled\":true"));
+        assert!(json.contains("\"summary_provider\":\"openrouter\""));
     }
 }

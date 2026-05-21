@@ -18,6 +18,35 @@ memory directly.
 }
 ```
 
+## Runtime Config
+
+### Get AI Config
+
+`GET /api/v1/ai/config`
+
+Returns the AI-related configuration visible to the running API process. This is
+useful when the CLI shell and API shell have different environment variables.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "model": "gpt-3.5-turbo",
+    "embedding_model": "text-embedding-ada-002",
+    "embedding_provider": "local",
+    "enabled": false,
+    "summary_enabled": true,
+    "summary_provider": "openrouter",
+    "summary_model": "openrouter/free",
+    "summary_max_words": 120
+  }
+}
+```
+
+`enabled` only reflects the legacy `OPENAI_API_KEY` chat configuration.
+Lens Run summary availability is represented by `summary_enabled` and the
+summary provider fields.
+
 ## Auth
 
 ### Register
@@ -172,8 +201,13 @@ Example response shape:
       "search_mode": "semantic",
       "memory_count": 1,
       "memories": [],
+      "key_points": [],
+      "open_questions": [],
+      "suggested_next_actions": [],
+      "citations": [],
       "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'.",
       "summary_provider": "deterministic",
+      "summary_source": "deterministic",
       "summary_model": null,
       "summary_fallback_reason": "summary provider not configured"
     },
@@ -190,6 +224,15 @@ Example response shape:
 `GET /api/v1/lens-runs/:id`
 
 Returns a run only if the current user can access its Cognitive Space.
+
+### List Lens Runs
+
+`GET /api/v1/lens-runs?lens_id=<LENS_ID>&limit=20`
+
+`GET /api/v1/lens-runs?space_id=<SPACE_ID>&limit=20`
+
+Returns visible Lens Runs ordered by newest first. At least one of `lens_id` or
+`space_id` is required.
 
 ## Memories
 

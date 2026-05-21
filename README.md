@@ -68,7 +68,8 @@ Lens Run returns a persisted, traceable interpretation result with the query,
 Lens metadata, matched memory IDs, and summary provenance. Configure
 `OPENAI_API_KEY`, or set `OPENROUTER_API_KEY` to auto-select OpenRouter, to use
 AI-generated summaries; without credentials it falls back to a deterministic
-local summary.
+local summary. Provider setup and `SPACE_ID` details are covered in
+[docs/cli.md](docs/cli.md).
 
 ## Verification
 

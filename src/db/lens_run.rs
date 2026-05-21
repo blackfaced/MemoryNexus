@@ -30,10 +30,22 @@ pub struct CreateCompletedLensRun {
     pub created_by: Uuid,
 }
 
+#[derive(Debug, Clone)]
+pub struct LensRunListFilter {
+    pub lens_id: Option<Uuid>,
+    pub space_id: Option<Uuid>,
+    pub limit: i64,
+}
+
 #[async_trait::async_trait]
 pub trait LensRunRepository: Send + Sync {
     async fn create_completed(&self, run: CreateCompletedLensRun) -> Result<LensRunDb, Error>;
     async fn find_for_user(&self, run_id: Uuid, user_id: Uuid) -> Result<Option<LensRunDb>, Error>;
+    async fn list_for_user(
+        &self,
+        filter: LensRunListFilter,
+        user_id: Uuid,
+    ) -> Result<Vec<LensRunDb>, Error>;
 }
 
 pub struct PostgresLensRunRepository {
@@ -89,6 +101,31 @@ impl LensRunRepository for PostgresLensRunRepository {
         .fetch_optional(&self.pool)
         .await
     }
+
+    async fn list_for_user(
+        &self,
+        filter: LensRunListFilter,
+        user_id: Uuid,
+    ) -> Result<Vec<LensRunDb>, Error> {
+        sqlx::query_as::<_, LensRunDb>(
+            r#"
+            SELECT r.*
+            FROM lens_runs r
+            INNER JOIN cognitive_space_members m ON m.space_id = r.space_id
+            WHERE m.user_id = $1
+              AND ($2::uuid IS NULL OR r.lens_id = $2)
+              AND ($3::uuid IS NULL OR r.space_id = $3)
+            ORDER BY r.created_at DESC
+            LIMIT $4
+            "#,
+        )
+        .bind(user_id)
+        .bind(filter.lens_id)
+        .bind(filter.space_id)
+        .bind(filter.limit)
+        .fetch_all(&self.pool)
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -120,5 +157,19 @@ mod tests {
         assert_eq!(run.input_memory_ids, vec![memory_id]);
         assert_eq!(run.created_by, created_by);
         assert_eq!(run.output["memory_count"], 1);
+    }
+
+    #[test]
+    fn lens_run_list_filter_keeps_space_or_lens_scope() {
+        let lens_id = Uuid::new_v4();
+        let filter = LensRunListFilter {
+            lens_id: Some(lens_id),
+            space_id: None,
+            limit: 5,
+        };
+
+        assert_eq!(filter.lens_id, Some(lens_id));
+        assert_eq!(filter.space_id, None);
+        assert_eq!(filter.limit, 5);
     }
 }

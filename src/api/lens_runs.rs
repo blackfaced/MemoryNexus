@@ -1,18 +1,18 @@
 //! Lens Run API
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::ai::{Summarizer, SummaryOptions, SummaryStyle};
 use crate::auth::AuthenticatedUser;
-use crate::db::lens_run::{CreateCompletedLensRun, LensRunDb};
+use crate::db::lens_run::{CreateCompletedLensRun, LensRunDb, LensRunListFilter};
 use crate::error::{ApiResponse, AppError};
 use crate::search::{MemorySearchItem, SearchEngine, SearchQuery, SemanticSearchError};
 use crate::state::AppState;
@@ -22,6 +22,19 @@ pub struct RunLensRequest {
     pub lens_id: Uuid,
     pub query: String,
     pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListLensRunsQuery {
+    pub lens_id: Option<Uuid>,
+    pub space_id: Option<Uuid>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LensRunListResponse {
+    pub items: Vec<LensRunDb>,
+    pub total: usize,
 }
 
 /// POST /api/v1/lens-runs - Execute a Lens synchronously.
@@ -139,6 +152,58 @@ pub async fn get(
     Ok(Json(ApiResponse::success(run)))
 }
 
+/// GET /api/v1/lens-runs?lens_id=<LENS_ID>|space_id=<SPACE_ID> - List visible Lens Runs.
+pub async fn list(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Query(query): Query<ListLensRunsQuery>,
+) -> Result<Json<ApiResponse<LensRunListResponse>>, AppError> {
+    if query.lens_id.is_none() && query.space_id.is_none() {
+        return Err(AppError::BadRequest(
+            "lens_id or space_id is required".to_string(),
+        ));
+    }
+
+    if let Some(lens_id) = query.lens_id {
+        state
+            .repositories
+            .lenses
+            .find_for_user(lens_id, auth_user.user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized)?;
+    }
+
+    if let Some(space_id) = query.space_id {
+        state
+            .repositories
+            .spaces
+            .find_for_user(space_id, auth_user.user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized)?;
+    }
+
+    let runs = state
+        .repositories
+        .lens_runs
+        .list_for_user(
+            LensRunListFilter {
+                lens_id: query.lens_id,
+                space_id: query.space_id,
+                limit: normalize_limit(query.limit),
+            },
+            auth_user.user_id,
+        )
+        .await
+        .map_err(AppError::Database)?;
+
+    Ok(Json(ApiResponse::success(LensRunListResponse {
+        total: runs.len(),
+        items: runs,
+    })))
+}
+
 fn normalize_limit(limit: Option<i64>) -> i64 {
     limit.unwrap_or(5).clamp(1, 20)
 }
@@ -170,6 +235,10 @@ struct LensOutputInput<'a> {
 
 async fn build_lens_output(input: LensOutputInput<'_>) -> Value {
     let memories: Vec<Value> = input.memories.iter().map(memory_output).collect();
+    let key_points = build_key_points(input.memories);
+    let open_questions = build_open_questions(&input);
+    let suggested_next_actions = build_suggested_next_actions(input.strategy, input.memories.len());
+    let citations = build_citations(input.memories);
     let summary = generate_lens_summary(&input).await;
 
     json!({
@@ -185,11 +254,101 @@ async fn build_lens_output(input: LensOutputInput<'_>) -> Value {
         "memory_count": memories.len(),
         "memories": memories,
         "summary": summary.text,
+        "key_points": key_points,
+        "open_questions": open_questions,
+        "suggested_next_actions": suggested_next_actions,
+        "citations": citations,
         "summary_provider": summary.provider,
         "summary_model": summary.model,
         "summary_source": summary.source,
         "summary_fallback_reason": summary.fallback_reason,
     })
+}
+
+fn build_key_points(memories: &[MemorySearchItem]) -> Vec<Value> {
+    memories
+        .iter()
+        .take(5)
+        .map(|memory| {
+            json!({
+                "memory_id": memory.id,
+                "title": memory.title,
+                "point": first_sentence(&memory.content),
+            })
+        })
+        .collect()
+}
+
+fn build_open_questions(input: &LensOutputInput<'_>) -> Vec<String> {
+    if input.memories.is_empty() {
+        return vec![format!(
+            "No memories matched query '{}'; add more context or broaden the query.",
+            input.query
+        )];
+    }
+
+    match input.strategy {
+        "risk_review" => vec![
+            "Which risks are still unsupported by concrete memories?".to_string(),
+            "Which contradictions need a follow-up Lens Run?".to_string(),
+        ],
+        "learning_review" => vec![
+            "Which learning gaps appear repeatedly?".to_string(),
+            "What is the next smallest practice step?".to_string(),
+        ],
+        _ => vec![
+            "What additional memories would make this interpretation more reliable?".to_string(),
+        ],
+    }
+}
+
+fn build_suggested_next_actions(strategy: &str, memory_count: usize) -> Vec<String> {
+    if memory_count == 0 {
+        return vec![
+            "Add at least one memory related to this query, then rerun the Lens.".to_string(),
+        ];
+    }
+
+    match strategy {
+        "risk_review" => vec![
+            "Review the cited memories and mark unresolved risks.".to_string(),
+            "Add mitigation memories for the highest-risk item.".to_string(),
+        ],
+        "learning_review" => vec![
+            "Turn the strongest learning point into a concrete next practice task.".to_string(),
+            "Add a follow-up reflection after the next practice session.".to_string(),
+        ],
+        "family_growth" => vec![
+            "Keep the cited memories as continuity anchors for future reviews.".to_string(),
+            "Add new observations when the same pattern appears again.".to_string(),
+        ],
+        _ => vec![
+            "Review the cited memories before acting on this interpretation.".to_string(),
+            "Run another Lens if you need a different perspective.".to_string(),
+        ],
+    }
+}
+
+fn build_citations(memories: &[MemorySearchItem]) -> Vec<Value> {
+    memories
+        .iter()
+        .map(|memory| {
+            json!({
+                "memory_id": memory.id,
+                "title": memory.title,
+                "relevance": memory.relevance,
+            })
+        })
+        .collect()
+}
+
+fn first_sentence(content: &str) -> String {
+    content
+        .split(['.', '。', '!', '！', '?', '？'])
+        .map(str::trim)
+        .find(|sentence| !sentence.is_empty())
+        .unwrap_or(content.trim())
+        .to_string()
 }
 
 struct LensSummary {
@@ -430,6 +589,20 @@ mod tests {
         assert_eq!(req.limit, Some(3));
     }
 
+    #[test]
+    fn list_lens_runs_query_deserializes() {
+        let lens_id = Uuid::new_v4();
+        let query: ListLensRunsQuery = serde_json::from_value(json!({
+            "lens_id": lens_id,
+            "limit": 3
+        }))
+        .unwrap();
+
+        assert_eq!(query.lens_id, Some(lens_id));
+        assert_eq!(query.space_id, None);
+        assert_eq!(query.limit, Some(3));
+    }
+
     #[tokio::test]
     async fn lens_run_output_keeps_traceable_shape_without_ai() {
         let lens_id = Uuid::new_v4();
@@ -458,6 +631,12 @@ mod tests {
         assert_eq!(output["memories"][0]["id"], memory_id.to_string());
         assert_eq!(output["summary_provider"], "deterministic");
         assert_eq!(output["summary_source"], "deterministic");
+        assert_eq!(output["key_points"].as_array().unwrap().len(), 1);
+        assert_eq!(output["citations"][0]["memory_id"], memory_id.to_string());
+        assert!(!output["suggested_next_actions"]
+            .as_array()
+            .unwrap()
+            .is_empty());
         assert_eq!(
             output["summary_fallback_reason"],
             "summary provider not configured"
