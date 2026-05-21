@@ -132,6 +132,39 @@ metadata, query, retrieval mode, matched memory summaries, and deterministic MVP
 summary. If semantic dependencies are not configured, Lens Run falls back to
 keyword retrieval so local CLI usage still works.
 
+Example response shape:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "run-uuid",
+    "lens_id": "lens-uuid",
+    "space_id": "space-uuid",
+    "query": "Summarize the current project direction",
+    "input_memory_ids": ["memory-uuid"],
+    "output": {
+      "lens": {
+        "id": "lens-uuid",
+        "name": "Project Context",
+        "strategy": "project_context",
+        "output_format": "brief",
+        "retrieval_mode": "semantic"
+      },
+      "query": "Summarize the current project direction",
+      "search_mode": "semantic",
+      "memory_count": 1,
+      "memories": [],
+      "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'."
+    },
+    "status": "completed",
+    "created_by": "user-uuid",
+    "created_at": "2026-05-21T00:00:00Z",
+    "completed_at": "2026-05-21T00:00:00Z"
+  }
+}
+```
+
 ### Get Lens Run
 
 `GET /api/v1/lens-runs/:id`

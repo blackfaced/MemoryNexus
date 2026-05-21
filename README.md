@@ -29,9 +29,13 @@ Start local infrastructure:
 docker compose up -d postgres qdrant
 ```
 
-Run the API:
+Run the API with deterministic local embeddings:
 
 ```bash
+export QDRANT_URL=http://localhost:6333
+export QDRANT_COLLECTION=memorynexus_local
+export MEMORYNEXUS_EMBEDDING_PROVIDER=local
+
 cargo run --bin memorynexus
 ```
 
@@ -43,21 +47,25 @@ cargo run --bin memorynexus-cli -- health
 
 The API listens on `http://localhost:8080`.
 
-## Local Semantic Search
+## Try The Cognitive Lens MVP
 
-Use the deterministic local embedding provider for smoke tests without an
-external API key:
+Follow [docs/cli.md](docs/cli.md) for the full walkthrough. The shortest local
+flow is:
 
 ```bash
-export QDRANT_URL=http://localhost:6333
-export QDRANT_COLLECTION=memorynexus_local
-export MEMORYNEXUS_EMBEDDING_PROVIDER=local
+cargo run --bin memorynexus-cli -- auth register --email you@example.com --name You --password secret123
+export MEMORYNEXUS_TOKEN=<token-from-auth-response>
 
-cargo run --bin memorynexus
+cargo run --bin memorynexus-cli -- space create --name "Project Space"
+export MEMORYNEXUS_SPACE_ID=<space-id-from-space-create>
+
+cargo run --bin memorynexus-cli -- memory add --space "$MEMORYNEXUS_SPACE_ID" --content "MemoryNexus is a Rust-first cognitive lens memory system."
+cargo run --bin memorynexus-cli -- lens create --space "$MEMORYNEXUS_SPACE_ID" --name "Project Context" --strategy project_context
+cargo run --bin memorynexus-cli -- lens run <lens-id-from-lens-create> --query "Summarize the project direction"
 ```
 
-Then follow [docs/cli.md](docs/cli.md) to register, create a space, add memory,
-and run `search --semantic --space <SPACE_ID>`.
+Lens Run returns a persisted, traceable interpretation result with the query,
+Lens metadata, matched memory IDs, and MVP summary.
 
 ## Verification
 

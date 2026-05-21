@@ -20,15 +20,19 @@ Backend-only variables for semantic search:
 
 ## Run Locally
 
-Start PostgreSQL:
+Start PostgreSQL and Qdrant:
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres qdrant
 ```
 
-Run the API in one terminal:
+Run the API in one terminal with deterministic local embeddings:
 
 ```bash
+export QDRANT_URL=http://localhost:6333
+export QDRANT_COLLECTION=memorynexus_local
+export MEMORYNEXUS_EMBEDDING_PROVIDER=local
+
 cargo run --bin memorynexus
 ```
 
@@ -38,31 +42,40 @@ Run the CLI in another terminal:
 cargo run --bin memorynexus-cli -- health
 ```
 
-## Basic Smoke Test
+## Cognitive Lens MVP Walkthrough
+
+The examples below use `jq` to extract IDs from JSON responses. If `jq` is not
+installed, copy the same values manually from each response.
 
 ```bash
 export MEMORYNEXUS_API_URL=http://localhost:8080
 
-cargo run --bin memorynexus-cli -- auth register \
-  --email cli-smoke@example.com \
+AUTH_JSON=$(cargo run --quiet --bin memorynexus-cli -- auth register \
+  --email "cli-smoke-$(date +%s)@example.com" \
   --name CliSmoke \
-  --password secret123
+  --password secret123)
 
-export MEMORYNEXUS_TOKEN=<token-from-auth-response>
+export MEMORYNEXUS_TOKEN=$(printf '%s' "$AUTH_JSON" | jq -r '.data.token')
 
 cargo run --bin memorynexus-cli -- space list
 
-cargo run --bin memorynexus-cli -- space create \
+SPACE_JSON=$(cargo run --quiet --bin memorynexus-cli -- space create \
   --name "CLI Smoke Space" \
-  --description "Local CLI verification"
+  --description "Local CLI verification")
 
-export MEMORYNEXUS_SPACE_ID=<space-id-from-space-create>
+export MEMORYNEXUS_SPACE_ID=$(printf '%s' "$SPACE_JSON" | jq -r '.data.id')
 
 cargo run --bin memorynexus-cli -- memory add \
   --space "$MEMORYNEXUS_SPACE_ID" \
   --title "CLI smoke memory" \
-  --content "Rust cognitive lens memory CLI smoke test" \
-  --tags "cli,smoke"
+  --content "MemoryNexus is a Rust-first cognitive lens memory system. Memory belongs to Cognitive Space, and Lens interprets one memory universe through many minds." \
+  --tags "cli,smoke,lens"
+
+cargo run --bin memorynexus-cli -- memory add \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --title "Phase 2 direction" \
+  --content "Phase 2 turns Lens from configuration into a runnable interpretation strategy with provenance." \
+  --tags "phase2,lens-run"
 
 cargo run --bin memorynexus-cli -- memory list \
   --space "$MEMORYNEXUS_SPACE_ID" \
@@ -72,29 +85,44 @@ cargo run --bin memorynexus-cli -- search "cognitive lens" \
   --space "$MEMORYNEXUS_SPACE_ID" \
   --limit 5
 
-cargo run --bin memorynexus-cli -- lens create \
+LENS_JSON=$(cargo run --quiet --bin memorynexus-cli -- lens create \
   --space "$MEMORYNEXUS_SPACE_ID" \
   --name "Project Context" \
   --description "Interpret project memory for planning" \
   --strategy project_context \
   --output brief \
-  --retrieval semantic
+  --retrieval semantic)
+
+export MEMORYNEXUS_LENS_ID=$(printf '%s' "$LENS_JSON" | jq -r '.data.id')
 
 cargo run --bin memorynexus-cli -- lens list \
   --space "$MEMORYNEXUS_SPACE_ID"
 
-cargo run --bin memorynexus-cli -- lens get <lens-id>
+cargo run --bin memorynexus-cli -- lens get "$MEMORYNEXUS_LENS_ID"
 
-cargo run --bin memorynexus-cli -- lens run <lens-id> \
+RUN_JSON=$(cargo run --quiet --bin memorynexus-cli -- lens run "$MEMORYNEXUS_LENS_ID" \
   --query "Summarize the current project direction" \
-  --limit 5
+  --limit 5)
 
-cargo run --bin memorynexus-cli -- lens run get <run-id>
+printf '%s\n' "$RUN_JSON" | jq
+
+export MEMORYNEXUS_RUN_ID=$(printf '%s' "$RUN_JSON" | jq -r '.data.id')
+
+cargo run --bin memorynexus-cli -- lens run get "$MEMORYNEXUS_RUN_ID"
 ```
+
+Expected Lens Run signs:
+
+- `data.status` is `completed`.
+- `data.input_memory_ids` contains the memories used for the run.
+- `data.output.query` echoes your query.
+- `data.output.lens` records the Lens configuration used.
+- `data.output.memories` contains the retrieved memory snippets.
+- `data.output.summary` is a deterministic MVP summary.
 
 ## Semantic Smoke Test
 
-Start PostgreSQL and Qdrant:
+If you only want to test semantic recall without Lens Run:
 
 ```bash
 docker compose up -d postgres qdrant
@@ -131,6 +159,46 @@ cargo run --bin memorynexus-cli -- search "phase1b semantic qdrant" \
 
 Expected result: semantic search returns the memory created in the same
 Cognitive Space.
+
+## Example Lens Run Response
+
+The exact IDs and timestamps will differ, but the shape should look like:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "run-uuid",
+    "lens_id": "lens-uuid",
+    "space_id": "space-uuid",
+    "query": "Summarize the current project direction",
+    "input_memory_ids": ["memory-uuid"],
+    "status": "completed",
+    "output": {
+      "lens": {
+        "id": "lens-uuid",
+        "name": "Project Context",
+        "strategy": "project_context",
+        "output_format": "brief",
+        "retrieval_mode": "semantic"
+      },
+      "query": "Summarize the current project direction",
+      "search_mode": "semantic",
+      "memory_count": 1,
+      "memories": [
+        {
+          "id": "memory-uuid",
+          "title": "Phase 2 direction",
+          "content": "Phase 2 turns Lens from configuration into a runnable interpretation strategy with provenance.",
+          "memory_type": "text",
+          "relevance": 0.83
+        }
+      ],
+      "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'."
+    }
+  }
+}
+```
 
 ## Commands
 

@@ -31,13 +31,17 @@ The API listens on `http://localhost:8080`.
 cargo run --bin memorynexus-cli -- health
 ```
 
-For semantic search smoke tests:
+For semantic search and Lens Run smoke tests, start the API with:
 
 ```bash
 export QDRANT_URL=http://localhost:6333
 export QDRANT_COLLECTION=memorynexus_local
 export MEMORYNEXUS_EMBEDDING_PROVIDER=local
 ```
+
+Then follow the full [CLI walkthrough](cli.md#cognitive-lens-mvp-walkthrough)
+to register, create a Cognitive Space, add memories, create a Lens, and run a
+traceable Lens interpretation.
 
 ## Verify
 
