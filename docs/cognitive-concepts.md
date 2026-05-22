@@ -10,6 +10,9 @@
 2. **认知加工结果**：Reflection、Concept、Belief、Relation、Contradiction
 3. **系统运行结构**：CognitiveSpace、Lens、CognitiveEvent、CognitiveState
 
+`CognitiveProfile` 是 `CognitiveState` 的对外投影视图，用于 LLM、MCP 和 UI
+消费。它不是新的所有权边界。
+
 最简单的链路是：
 
 ```text
@@ -36,6 +39,14 @@ CognitiveSpace 是容器，
 CognitiveEvent 是变化，
 CognitiveState 是变化后的整体状态。
 ```
+
+再进一步：
+
+```text
+CognitiveProfile = project(CognitiveState, target_use)
+```
+
+Profile 只引用 Memory / Event 的 ID，不拥有 Memory。
 
 ## Memory
 
@@ -238,6 +249,43 @@ CognitiveState 回答的问题是：
 
 ```text
 经过这些变化后，整个认知空间现在是什么样？
+```
+
+## CognitiveProfile
+
+CognitiveProfile 是从 CognitiveState 导出的紧凑上下文。
+
+它面向外部消费场景：
+
+- LLM context
+- MCP tool response
+- UI profile panel
+- Project / Learning / Family / Risk 等目标视图
+
+它包含：
+
+```text
+stable_beliefs
+active_concepts
+current_goals
+unresolved_contradictions
+summary
+source_memory_ids
+source_event_ids
+```
+
+关键边界：
+
+```text
+CognitiveState = 内部完整状态
+CognitiveProfile = 外部可消费投影
+Memory = 仍然只属于 CognitiveSpace
+```
+
+CognitiveProfile 回答的问题是：
+
+```text
+为了当前使用场景，应该把认知状态压缩成什么上下文？
 ```
 
 ## 最小认知闭环

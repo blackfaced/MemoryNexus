@@ -94,6 +94,17 @@ pub fn evolve(state: CognitiveState, event: CognitiveEvent) -> CognitiveState
 
 This makes the system testable without a database, HTTP server, vector store, or LLM.
 
+`CognitiveProfile` is a projection of that state for external consumers:
+
+```text
+CognitiveProfile = project(CognitiveState, target_use)
+```
+
+Profile is for LLM, MCP, and UI context. It can contain stable beliefs, active
+concepts, current goals, unresolved contradictions, a compact summary, and source
+IDs. It does not own memory and does not replace `CognitiveSpace`; it cites
+`source_memory_ids` and `source_event_ids` so the projection remains traceable.
+
 ## Minimal Cognitive Loop
 
 The first real loop should be:

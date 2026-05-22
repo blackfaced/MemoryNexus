@@ -11,6 +11,7 @@ pub type BeliefId = Uuid;
 pub type RelationId = Uuid;
 pub type ContradictionId = Uuid;
 pub type LensId = Uuid;
+pub type CognitiveEventId = Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CognitiveSpace {
@@ -262,6 +263,100 @@ pub fn detect_contradiction(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProfileTarget {
+    LlmContext,
+    Project,
+    Learning,
+    Family,
+    Risk,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CognitiveProfile {
+    pub space_id: SpaceId,
+    pub lens_id: Option<LensId>,
+    pub target: ProfileTarget,
+    pub version: u64,
+    pub stable_beliefs: Vec<Belief>,
+    pub active_concepts: Vec<Concept>,
+    pub current_goals: Vec<String>,
+    pub unresolved_contradictions: Vec<Contradiction>,
+    pub summary: String,
+    pub source_memory_ids: Vec<MemoryId>,
+    pub source_event_ids: Vec<CognitiveEventId>,
+}
+
+pub fn project_profile(
+    state: &CognitiveState,
+    target: ProfileTarget,
+    lens_id: Option<LensId>,
+    source_event_ids: Vec<CognitiveEventId>,
+) -> CognitiveProfile {
+    let stable_beliefs = state
+        .beliefs
+        .iter()
+        .filter(|belief| belief.confidence >= 60)
+        .cloned()
+        .collect::<Vec<_>>();
+    let active_concepts = state.concepts.iter().take(8).cloned().collect::<Vec<_>>();
+    let unresolved_contradictions = state.contradictions.clone();
+    let source_memory_ids = state
+        .memories
+        .iter()
+        .map(|memory| memory.id)
+        .collect::<Vec<_>>();
+    let current_goals = infer_current_goals(&target, &stable_beliefs, &active_concepts);
+
+    CognitiveProfile {
+        space_id: state.space.id,
+        lens_id,
+        target,
+        version: 1,
+        stable_beliefs,
+        active_concepts,
+        current_goals,
+        unresolved_contradictions,
+        summary: profile_summary(state),
+        source_memory_ids,
+        source_event_ids,
+    }
+}
+
+fn infer_current_goals(
+    target: &ProfileTarget,
+    stable_beliefs: &[Belief],
+    active_concepts: &[Concept],
+) -> Vec<String> {
+    match target {
+        ProfileTarget::Project if !stable_beliefs.is_empty() || !active_concepts.is_empty() => {
+            vec!["Use the profile as compact project context for the next Lens run.".to_string()]
+        }
+        ProfileTarget::Learning if !active_concepts.is_empty() => {
+            vec!["Turn active learning concepts into the next smallest practice step.".to_string()]
+        }
+        ProfileTarget::Risk if !stable_beliefs.is_empty() => {
+            vec!["Review stable beliefs for unsupported risk assumptions.".to_string()]
+        }
+        _ => vec![],
+    }
+}
+
+fn profile_summary(state: &CognitiveState) -> String {
+    format!(
+        "Cognitive profile for '{}' with {} memories, {} concepts, {} stable beliefs, and {} unresolved contradictions.",
+        state.space.name,
+        state.memories.len(),
+        state.concepts.len(),
+        state
+            .beliefs
+            .iter()
+            .filter(|belief| belief.confidence >= 60)
+            .count(),
+        state.contradictions.len()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,5 +486,89 @@ mod tests {
             CognitiveObjectRef::Belief(fearing_exposure.id)
         );
         assert!(contradiction.tension.contains("fear of exposure"));
+    }
+
+    #[test]
+    fn profile_projects_state_without_owning_memories() {
+        let space_id = Uuid::new_v4();
+        let actor_id = Uuid::new_v4();
+        let lens_id = Uuid::new_v4();
+        let memory = Memory::new_text(space_id, actor_id, "Ship a small CLI MVP before UI work.");
+        let reflection = Reflection {
+            id: Uuid::new_v4(),
+            memory_id: memory.id,
+            lens_id,
+            meaning: "Project should favor CLI feedback loops.".to_string(),
+        };
+        let concept = Concept {
+            id: Uuid::new_v4(),
+            label: "CLI-first validation".to_string(),
+            evidence: vec![reflection.id],
+        };
+        let belief = Belief {
+            id: Uuid::new_v4(),
+            claim: "Validate the cognitive loop through CLI before UI.".to_string(),
+            confidence: 82,
+        };
+        let event_id = Uuid::new_v4();
+        let state = CognitiveState {
+            space: CognitiveSpace::new(space_id, "Project Space"),
+            memories: vec![memory.clone()],
+            reflections: vec![reflection],
+            concepts: vec![concept.clone()],
+            beliefs: vec![belief.clone()],
+            relations: vec![],
+            contradictions: vec![],
+        };
+
+        let profile = project_profile(
+            &state,
+            ProfileTarget::Project,
+            Some(lens_id),
+            vec![event_id],
+        );
+
+        assert_eq!(profile.space_id, space_id);
+        assert_eq!(profile.lens_id, Some(lens_id));
+        assert_eq!(profile.stable_beliefs, vec![belief]);
+        assert_eq!(profile.active_concepts, vec![concept]);
+        assert_eq!(profile.source_memory_ids, vec![memory.id]);
+        assert_eq!(profile.source_event_ids, vec![event_id]);
+        assert!(profile.summary.contains("Project Space"));
+    }
+
+    #[test]
+    fn profile_keeps_only_stable_beliefs_and_unresolved_contradictions() {
+        let space_id = Uuid::new_v4();
+        let high_confidence = Belief {
+            id: Uuid::new_v4(),
+            claim: "Use Cognitive Space as the ownership boundary.".to_string(),
+            confidence: 80,
+        };
+        let low_confidence = Belief {
+            id: Uuid::new_v4(),
+            claim: "Maybe memory belongs to agents.".to_string(),
+            confidence: 30,
+        };
+        let contradiction = detect_contradiction(
+            &high_confidence,
+            &low_confidence,
+            "ownership boundary remains unresolved",
+        );
+        let state = CognitiveState {
+            space: CognitiveSpace::new(space_id, "Architecture Space"),
+            memories: vec![],
+            reflections: vec![],
+            concepts: vec![],
+            beliefs: vec![low_confidence, high_confidence.clone()],
+            relations: vec![],
+            contradictions: vec![contradiction.clone()],
+        };
+
+        let profile = project_profile(&state, ProfileTarget::LlmContext, None, vec![]);
+
+        assert_eq!(profile.stable_beliefs, vec![high_confidence]);
+        assert_eq!(profile.unresolved_contradictions, vec![contradiction]);
+        assert!(profile.current_goals.is_empty());
     }
 }
