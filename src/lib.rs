@@ -10,6 +10,7 @@ pub mod auth;
 pub mod db;
 pub mod domain;
 pub mod error;
+pub mod eval;
 pub mod search;
 pub mod state;
 pub mod storage;
