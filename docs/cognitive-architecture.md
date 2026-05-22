@@ -105,6 +105,11 @@ concepts, current goals, unresolved contradictions, a compact summary, and sourc
 IDs. It does not own memory and does not replace `CognitiveSpace`; it cites
 `source_memory_ids` and `source_event_ids` so the projection remains traceable.
 
+Memory salience is part of the functional core. Automatic forgetting means
+deprioritizing a Memory for default projections, not deleting it from the
+`CognitiveSpace`. A deprioritized Memory remains available for explicit recall,
+audit, contradiction review, and later reprioritization.
+
 ## Minimal Cognitive Loop
 
 The first real loop should be:
@@ -194,6 +199,7 @@ relations
 contradictions
 lenses
 cognitive_runs
+memory_salience
 ```
 
 Ownership rule:

@@ -159,10 +159,61 @@ pub struct Contradiction {
     pub tension: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MemorySalienceStatus {
+    Active,
+    Deprioritized,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MemoryDeprioritizationReason {
+    Stale,
+    Superseded,
+    LowSignal,
+    Contradicted,
+    UserHidden,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemorySalience {
+    pub memory_id: MemoryId,
+    pub score: u8,
+    pub status: MemorySalienceStatus,
+    pub reason: Option<MemoryDeprioritizationReason>,
+    pub updated_by_event: Option<CognitiveEventId>,
+}
+
+impl MemorySalience {
+    pub fn active(memory_id: MemoryId) -> Self {
+        Self {
+            memory_id,
+            score: 100,
+            status: MemorySalienceStatus::Active,
+            reason: None,
+            updated_by_event: None,
+        }
+    }
+
+    pub fn deprioritized(
+        memory_id: MemoryId,
+        reason: MemoryDeprioritizationReason,
+        event_id: CognitiveEventId,
+    ) -> Self {
+        Self {
+            memory_id,
+            score: 20,
+            status: MemorySalienceStatus::Deprioritized,
+            reason: Some(reason),
+            updated_by_event: Some(event_id),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CognitiveState {
     pub space: CognitiveSpace,
     pub memories: Vec<Memory>,
+    pub memory_salience: Vec<MemorySalience>,
     pub reflections: Vec<Reflection>,
     pub concepts: Vec<Concept>,
     pub beliefs: Vec<Belief>,
@@ -175,6 +226,7 @@ impl CognitiveState {
         Self {
             space,
             memories: Vec::new(),
+            memory_salience: Vec::new(),
             reflections: Vec::new(),
             concepts: Vec::new(),
             beliefs: Vec::new(),
@@ -196,11 +248,23 @@ pub enum CognitiveEvent {
     BeliefUpdated(Belief),
     RelationCreated(Relation),
     ContradictionDetected(Contradiction),
+    MemoryDeprioritized {
+        memory_id: MemoryId,
+        reason: MemoryDeprioritizationReason,
+        event_id: CognitiveEventId,
+    },
+    MemoryReprioritized {
+        memory_id: MemoryId,
+        event_id: CognitiveEventId,
+    },
 }
 
 pub fn evolve(mut state: CognitiveState, event: CognitiveEvent) -> CognitiveState {
     match event {
-        CognitiveEvent::MemoryCaptured(memory) => state.memories.push(memory),
+        CognitiveEvent::MemoryCaptured(memory) => {
+            upsert_memory_salience(&mut state, MemorySalience::active(memory.id));
+            state.memories.push(memory);
+        }
         CognitiveEvent::LensApplied { .. } => {}
         CognitiveEvent::ReflectionGenerated(reflection) => state.reflections.push(reflection),
         CognitiveEvent::ConceptExtracted(concept) => state.concepts.push(concept),
@@ -209,9 +273,74 @@ pub fn evolve(mut state: CognitiveState, event: CognitiveEvent) -> CognitiveStat
         CognitiveEvent::ContradictionDetected(contradiction) => {
             state.contradictions.push(contradiction);
         }
+        CognitiveEvent::MemoryDeprioritized {
+            memory_id,
+            reason,
+            event_id,
+        } => {
+            upsert_memory_salience(
+                &mut state,
+                MemorySalience::deprioritized(memory_id, reason, event_id),
+            );
+        }
+        CognitiveEvent::MemoryReprioritized {
+            memory_id,
+            event_id,
+        } => {
+            upsert_memory_salience(
+                &mut state,
+                MemorySalience {
+                    updated_by_event: Some(event_id),
+                    ..MemorySalience::active(memory_id)
+                },
+            );
+        }
     }
 
     state
+}
+
+pub fn memory_salience(state: &CognitiveState, memory_id: MemoryId) -> MemorySalience {
+    state
+        .memory_salience
+        .iter()
+        .find(|salience| salience.memory_id == memory_id)
+        .cloned()
+        .unwrap_or_else(|| MemorySalience::active(memory_id))
+}
+
+pub fn active_memory_ids(state: &CognitiveState) -> Vec<MemoryId> {
+    state
+        .memories
+        .iter()
+        .filter_map(|memory| {
+            let salience = memory_salience(state, memory.id);
+            (salience.status == MemorySalienceStatus::Active).then_some(memory.id)
+        })
+        .collect()
+}
+
+pub fn deprioritized_memory_ids(state: &CognitiveState) -> Vec<MemoryId> {
+    state
+        .memories
+        .iter()
+        .filter_map(|memory| {
+            let salience = memory_salience(state, memory.id);
+            (salience.status == MemorySalienceStatus::Deprioritized).then_some(memory.id)
+        })
+        .collect()
+}
+
+fn upsert_memory_salience(state: &mut CognitiveState, salience: MemorySalience) {
+    if let Some(existing) = state
+        .memory_salience
+        .iter_mut()
+        .find(|existing| existing.memory_id == salience.memory_id)
+    {
+        *existing = salience;
+    } else {
+        state.memory_salience.push(salience);
+    }
 }
 
 pub fn reflect_with_lens(memory: &Memory, lens: &Lens) -> Reflection {
@@ -301,11 +430,7 @@ pub fn project_profile(
         .collect::<Vec<_>>();
     let active_concepts = state.concepts.iter().take(8).cloned().collect::<Vec<_>>();
     let unresolved_contradictions = state.contradictions.clone();
-    let source_memory_ids = state
-        .memories
-        .iter()
-        .map(|memory| memory.id)
-        .collect::<Vec<_>>();
+    let source_memory_ids = active_memory_ids(state);
     let current_goals = infer_current_goals(&target, &stable_beliefs, &active_concepts);
 
     CognitiveProfile {
@@ -343,10 +468,14 @@ fn infer_current_goals(
 }
 
 fn profile_summary(state: &CognitiveState) -> String {
+    let active_memory_count = active_memory_ids(state).len();
+    let deprioritized_memory_count = deprioritized_memory_ids(state).len();
+
     format!(
-        "Cognitive profile for '{}' with {} memories, {} concepts, {} stable beliefs, and {} unresolved contradictions.",
+        "Cognitive profile for '{}' with {} active memories, {} deprioritized memories, {} concepts, {} stable beliefs, and {} unresolved contradictions.",
         state.space.name,
-        state.memories.len(),
+        active_memory_count,
+        deprioritized_memory_count,
         state.concepts.len(),
         state
             .beliefs
@@ -380,6 +509,7 @@ mod tests {
         let state = CognitiveState::new(CognitiveSpace::new(space_id, "Personal Space"));
         assert_eq!(state.space.id, space_id);
         assert!(state.memories.is_empty());
+        assert!(state.memory_salience.is_empty());
         assert!(state.reflections.is_empty());
         assert!(state.concepts.is_empty());
         assert!(state.beliefs.is_empty());
@@ -397,6 +527,11 @@ mod tests {
 
         let state = evolve(state, CognitiveEvent::MemoryCaptured(memory.clone()));
         assert_eq!(state.memories, vec![memory]);
+        assert_eq!(state.memory_salience.len(), 1);
+        assert_eq!(
+            state.memory_salience[0].status,
+            MemorySalienceStatus::Active
+        );
         assert!(state.contradictions.is_empty());
 
         let contradiction = Contradiction {
@@ -514,6 +649,7 @@ mod tests {
         let state = CognitiveState {
             space: CognitiveSpace::new(space_id, "Project Space"),
             memories: vec![memory.clone()],
+            memory_salience: vec![MemorySalience::active(memory.id)],
             reflections: vec![reflection],
             concepts: vec![concept.clone()],
             beliefs: vec![belief.clone()],
@@ -558,6 +694,7 @@ mod tests {
         let state = CognitiveState {
             space: CognitiveSpace::new(space_id, "Architecture Space"),
             memories: vec![],
+            memory_salience: vec![],
             reflections: vec![],
             concepts: vec![],
             beliefs: vec![low_confidence, high_confidence.clone()],
@@ -570,5 +707,86 @@ mod tests {
         assert_eq!(profile.stable_beliefs, vec![high_confidence]);
         assert_eq!(profile.unresolved_contradictions, vec![contradiction]);
         assert!(profile.current_goals.is_empty());
+    }
+
+    #[test]
+    fn memory_deprioritization_keeps_memory_but_removes_from_default_profile_sources() {
+        let space_id = Uuid::new_v4();
+        let actor_id = Uuid::new_v4();
+        let memory = Memory::new_text(space_id, actor_id, "Temporary scratch note.");
+        let state = CognitiveState::new(CognitiveSpace::new(space_id, "Personal Space"));
+        let state = evolve(state, CognitiveEvent::MemoryCaptured(memory.clone()));
+        let event_id = Uuid::new_v4();
+
+        let state = evolve(
+            state,
+            CognitiveEvent::MemoryDeprioritized {
+                memory_id: memory.id,
+                reason: MemoryDeprioritizationReason::Superseded,
+                event_id,
+            },
+        );
+        let profile = project_profile(&state, ProfileTarget::LlmContext, None, vec![event_id]);
+
+        assert_eq!(state.memories, vec![memory.clone()]);
+        assert_eq!(deprioritized_memory_ids(&state), vec![memory.id]);
+        assert!(profile.source_memory_ids.is_empty());
+    }
+
+    #[test]
+    fn memory_reprioritization_restores_default_profile_recall() {
+        let space_id = Uuid::new_v4();
+        let actor_id = Uuid::new_v4();
+        let memory = Memory::new_text(space_id, actor_id, "A useful project direction note.");
+        let state = CognitiveState::new(CognitiveSpace::new(space_id, "Project Space"));
+        let state = evolve(state, CognitiveEvent::MemoryCaptured(memory.clone()));
+        let state = evolve(
+            state,
+            CognitiveEvent::MemoryDeprioritized {
+                memory_id: memory.id,
+                reason: MemoryDeprioritizationReason::Stale,
+                event_id: Uuid::new_v4(),
+            },
+        );
+        let event_id = Uuid::new_v4();
+
+        let state = evolve(
+            state,
+            CognitiveEvent::MemoryReprioritized {
+                memory_id: memory.id,
+                event_id,
+            },
+        );
+        let profile = project_profile(&state, ProfileTarget::Project, None, vec![event_id]);
+
+        assert_eq!(active_memory_ids(&state), vec![memory.id]);
+        assert_eq!(profile.source_memory_ids, vec![memory.id]);
+    }
+
+    #[test]
+    fn deprioritization_reason_is_traceable() {
+        let space_id = Uuid::new_v4();
+        let actor_id = Uuid::new_v4();
+        let memory = Memory::new_text(space_id, actor_id, "Contradicted assumption.");
+        let state = CognitiveState::new(CognitiveSpace::new(space_id, "Risk Space"));
+        let state = evolve(state, CognitiveEvent::MemoryCaptured(memory.clone()));
+        let event_id = Uuid::new_v4();
+
+        let state = evolve(
+            state,
+            CognitiveEvent::MemoryDeprioritized {
+                memory_id: memory.id,
+                reason: MemoryDeprioritizationReason::Contradicted,
+                event_id,
+            },
+        );
+        let salience = memory_salience(&state, memory.id);
+
+        assert_eq!(salience.status, MemorySalienceStatus::Deprioritized);
+        assert_eq!(
+            salience.reason,
+            Some(MemoryDeprioritizationReason::Contradicted)
+        );
+        assert_eq!(salience.updated_by_event, Some(event_id));
     }
 }

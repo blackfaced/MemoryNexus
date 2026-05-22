@@ -67,6 +67,28 @@ Memory 回答的问题是：
 发生了什么？
 ```
 
+## Memory Salience / Automatic Forgetting
+
+Memory Salience 表示一条 Memory 在默认认知投影中的当前显著性。
+
+MemoryNexus 里的 automatic forgetting 不是物理删除 Memory，而是降低
+salience，让它暂时不进入默认 Profile、搜索排序或 Lens Run 上下文。
+Memory 仍然保留在 CognitiveSpace 中，仍然可以被显式召回、审计和恢复。
+
+常见降权原因包括：
+
+- Stale: 信息已经过时。
+- Superseded: 被更新、更准确的 Memory 取代。
+- LowSignal: 信息噪声较高，默认上下文价值低。
+- Contradicted: 被后续证据或 Belief contradiction 挑战。
+- UserHidden: 用户主动隐藏，但不要求删除。
+
+Memory Salience 回答的问题是：
+
+```text
+这条 memory 当前应该以多高优先级参与默认认知？
+```
+
 ## Reflection
 
 Reflection 是对 Memory 的一次解释。
@@ -218,6 +240,8 @@ enum CognitiveEvent {
     ConceptExtracted,
     BeliefUpdated,
     ContradictionDetected,
+    MemoryDeprioritized,
+    MemoryReprioritized,
 }
 ```
 
@@ -232,6 +256,8 @@ CognitiveEvent 回答的问题是：
 CognitiveState 是某个时刻 CognitiveSpace 的整体状态快照。
 
 它包含当前有哪些 Memory、Reflection、Concept、Belief、Relation、Contradiction 等。
+它也包含 Memory Salience，用于表达哪些 Memory 仍在空间中，但默认不进入当前
+Profile。
 
 函数式地看：
 
@@ -273,6 +299,10 @@ summary
 source_memory_ids
 source_event_ids
 ```
+
+`source_memory_ids` 默认只引用 active memories。被 deprioritized 的 Memory
+仍属于 CognitiveSpace，但不会自动进入 Profile；这让 Profile 成为当前用途的紧凑
+投影，而不是完整存档。
 
 关键边界：
 

@@ -15,7 +15,8 @@ decisions/
 ├── ADR-006-cli-agent-interface.md ✅ CLI + Agent 双模式接口
 ├── ADR-007-development-methodology.md ✅ 开发方法论
 ├── ADR-008-database-design.md    ✅ 数据库设计
-└── ADR-009-rust-first-backend.md ✅ Rust-first 后端主线
+├── ADR-009-rust-first-backend.md ✅ Rust-first 后端主线
+└── ADR-010-memory-salience.md    ✅ Memory salience 与 automatic forgetting
 ```
 
 ## 📖 ADR 是什么？
