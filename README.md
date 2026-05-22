@@ -84,6 +84,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Architecture](docs/architecture.md)
 - [API](docs/api.md)
 - [CLI](docs/cli.md)
+- [MCP Server](docs/mcp.md)
 - [Development](docs/development.md)
 - [Deployment](docs/deployment.md)
 - [Roadmap](docs/TODO.md)
