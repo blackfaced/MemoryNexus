@@ -102,7 +102,10 @@ async fn main() -> anyhow::Result<()> {
     let app = create_app().with_state(app_state);
 
     // 监听地址
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+    let addr = std::env::var("MEMORYNEXUS_BIND_ADDR")
+        .ok()
+        .and_then(|value| value.parse::<SocketAddr>().ok())
+        .unwrap_or_else(|| SocketAddr::from(([0, 0, 0, 0], 8080)));
     tracing::info!("📍 监听地址: http://{}", addr);
 
     // 启动服务器

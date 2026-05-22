@@ -5,7 +5,9 @@
 //!
 //! ```bash
 //! docker compose up -d postgres qdrant
+//! createdb -h localhost -U postgres memorynexus_acceptance
 //! MEMORYNEXUS_OPENROUTER_ACCEPTANCE=1 \
+//! MEMORYNEXUS_ACCEPTANCE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/memorynexus_acceptance \
 //! OPENROUTER_API_KEY=sk-or-v1-... \
 //! QDRANT_URL=http://localhost:6333 \
 //! MEMORYNEXUS_EMBEDDING_PROVIDER=local \
@@ -13,6 +15,7 @@
 //! ```
 
 use std::{
+    net::TcpListener,
     panic,
     process::{Child, Command, Stdio},
     thread,
@@ -28,9 +31,11 @@ fn lens_run_uses_openrouter_summary_provider() {
 
     let run_id = unique_run_id();
     let collection = format!("memorynexus_openrouter_{run_id}");
-    let mut server = start_server(&collection);
+    let api_port = free_port();
+    let api_url = format!("http://127.0.0.1:{api_port}");
+    let mut server = start_server(&collection, api_port);
 
-    let result = panic::catch_unwind(|| run_openrouter_flow(&run_id));
+    let result = panic::catch_unwind(|| run_openrouter_flow(&run_id, &api_url));
     let _ = server.kill();
     let _ = server.wait();
 
@@ -54,8 +59,8 @@ fn require_openrouter_acceptance_env() {
     );
 }
 
-fn run_openrouter_flow(run_id: &str) {
-    wait_for_health();
+fn run_openrouter_flow(run_id: &str, api_url: &str) {
+    wait_for_health(api_url);
 
     let email = format!("openrouter-{run_id}@example.com");
     let auth = cli(
@@ -70,6 +75,7 @@ fn run_openrouter_flow(run_id: &str) {
             "secret123",
         ],
         None,
+        api_url,
     );
     assert_ok(&auth);
     let token = auth["data"]["token"]
@@ -87,6 +93,7 @@ fn run_openrouter_flow(run_id: &str) {
             "Provider-backed Lens Run acceptance",
         ],
         Some(&token),
+        api_url,
     );
     assert_ok(&space);
     let space_id = space["data"]["id"]
@@ -109,6 +116,7 @@ fn run_openrouter_flow(run_id: &str) {
             "openrouter,acceptance,lens",
         ],
         Some(&token),
+        api_url,
     );
     assert_ok(&memory);
 
@@ -128,6 +136,7 @@ fn run_openrouter_flow(run_id: &str) {
             "semantic",
         ],
         Some(&token),
+        api_url,
     );
     assert_ok(&lens);
     let lens_id = lens["data"]["id"]
@@ -146,6 +155,7 @@ fn run_openrouter_flow(run_id: &str) {
             "5",
         ],
         Some(&token),
+        api_url,
     );
     assert_ok(&lens_run);
     assert_eq!(
@@ -173,9 +183,11 @@ fn run_openrouter_flow(run_id: &str) {
     );
 }
 
-fn start_server(collection: &str) -> Child {
+fn start_server(collection: &str, api_port: u16) -> Child {
     let mut command = Command::new(env!("CARGO_BIN_EXE_memorynexus"));
     command
+        .env("DATABASE_URL", acceptance_database_url())
+        .env("MEMORYNEXUS_BIND_ADDR", format!("127.0.0.1:{api_port}"))
         .env("QDRANT_COLLECTION", collection)
         .env("MEMORYNEXUS_EMBEDDING_PROVIDER", "local")
         .env("MEMORYNEXUS_SUMMARY_MODEL", "openrouter/free")
@@ -191,17 +203,14 @@ fn start_server(collection: &str) -> Child {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
-    if let Ok(database_url) = std::env::var("DATABASE_URL") {
-        command.env("DATABASE_URL", database_url);
-    }
-
     command.spawn().expect("failed to start memorynexus API")
 }
 
-fn wait_for_health() {
+fn wait_for_health(api_url: &str) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if let Ok(output) = Command::new(env!("CARGO_BIN_EXE_memorynexus-cli"))
+            .env("MEMORYNEXUS_API_URL", api_url)
             .arg("health")
             .output()
         {
@@ -212,12 +221,13 @@ fn wait_for_health() {
         thread::sleep(Duration::from_millis(250));
     }
 
-    panic!("memorynexus API did not become healthy on http://localhost:8080");
+    panic!("memorynexus API did not become healthy on {api_url}");
 }
 
-fn cli<const N: usize>(args: [&str; N], token: Option<&str>) -> Value {
+fn cli<const N: usize>(args: [&str; N], token: Option<&str>, api_url: &str) -> Value {
     let mut command = Command::new(env!("CARGO_BIN_EXE_memorynexus-cli"));
     command.args(args);
+    command.env("MEMORYNEXUS_API_URL", api_url);
 
     if let Some(token) = token {
         command.env("MEMORYNEXUS_TOKEN", token);
@@ -244,4 +254,20 @@ fn unique_run_id() -> String {
         .expect("system clock before unix epoch")
         .as_millis();
     format!("{millis}")
+}
+
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .expect("should bind a free local port")
+        .local_addr()
+        .expect("should read bound local addr")
+        .port()
+}
+
+fn acceptance_database_url() -> String {
+    std::env::var("MEMORYNEXUS_ACCEPTANCE_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .unwrap_or_else(|_| {
+            "postgresql://postgres:postgres@localhost:5432/memorynexus_acceptance".to_string()
+        })
 }
