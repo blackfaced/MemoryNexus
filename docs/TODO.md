@@ -59,7 +59,6 @@ Current open work:
 - [#7 Reminder and scheduled recall system](https://github.com/blackfaced/MemoryNexus/issues/7)
 - [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8)
 - [#20 Periodic cognitive review reports](https://github.com/blackfaced/MemoryNexus/issues/20)
-- [#31 Contradiction lifecycle and resolution policy](https://github.com/blackfaced/MemoryNexus/issues/31)
 - [#30 Benchmark and evaluation harness for Lens quality](https://github.com/blackfaced/MemoryNexus/issues/30)
 - [#16 CLI commands for family spaces and reminders](https://github.com/blackfaced/MemoryNexus/issues/16)
 

@@ -110,6 +110,12 @@ deprioritizing a Memory for default projections, not deleting it from the
 `CognitiveSpace`. A deprioritized Memory remains available for explicit recall,
 audit, contradiction review, and later reprioritization.
 
+Contradiction is also part of the functional core. It should carry lifecycle
+state, source memory IDs, belief IDs, Lens IDs, confidence, resolution mode, and
+the event that last changed it. `CognitiveProfile` should expose unresolved
+contradictions for LLM, MCP, and UI consumers while keeping resolved or plural
+truth tensions available in `CognitiveState`.
+
 ## Minimal Cognitive Loop
 
 The first real loop should be:

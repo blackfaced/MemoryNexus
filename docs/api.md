@@ -205,6 +205,7 @@ Example response shape:
       "open_questions": [],
       "suggested_next_actions": [],
       "citations": [],
+      "unresolved_contradictions": [],
       "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'.",
       "summary_provider": "deterministic",
       "summary_source": "deterministic",

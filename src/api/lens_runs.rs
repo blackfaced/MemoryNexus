@@ -239,6 +239,7 @@ async fn build_lens_output(input: LensOutputInput<'_>) -> Value {
     let open_questions = build_open_questions(&input);
     let suggested_next_actions = build_suggested_next_actions(input.strategy, input.memories.len());
     let citations = build_citations(input.memories);
+    let unresolved_contradictions = build_unresolved_contradictions();
     let summary = generate_lens_summary(&input).await;
 
     json!({
@@ -258,11 +259,16 @@ async fn build_lens_output(input: LensOutputInput<'_>) -> Value {
         "open_questions": open_questions,
         "suggested_next_actions": suggested_next_actions,
         "citations": citations,
+        "unresolved_contradictions": unresolved_contradictions,
         "summary_provider": summary.provider,
         "summary_model": summary.model,
         "summary_source": summary.source,
         "summary_fallback_reason": summary.fallback_reason,
     })
+}
+
+fn build_unresolved_contradictions() -> Vec<Value> {
+    Vec::new()
 }
 
 fn build_key_points(memories: &[MemorySearchItem]) -> Vec<Value> {
@@ -633,6 +639,13 @@ mod tests {
         assert_eq!(output["summary_source"], "deterministic");
         assert_eq!(output["key_points"].as_array().unwrap().len(), 1);
         assert_eq!(output["citations"][0]["memory_id"], memory_id.to_string());
+        assert_eq!(
+            output["unresolved_contradictions"]
+                .as_array()
+                .expect("Lens Run output should expose unresolved contradictions")
+                .len(),
+            0
+        );
         assert!(!output["suggested_next_actions"]
             .as_array()
             .unwrap()

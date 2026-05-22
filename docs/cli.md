@@ -161,8 +161,9 @@ Expected Lens Run signs:
 - `data.output.query` echoes your query.
 - `data.output.lens` records the Lens configuration used.
 - `data.output.memories` contains the retrieved memory snippets.
-- `data.output.key_points`, `open_questions`, `suggested_next_actions`, and
-  `citations` provide the structured MVP interpretation.
+- `data.output.key_points`, `open_questions`, `suggested_next_actions`,
+  `citations`, and `unresolved_contradictions` provide the structured MVP
+  interpretation.
 - `data.output.summary` is AI-generated when a summary provider is configured; otherwise it is a deterministic fallback summary.
 - `data.output.summary_provider`, `summary_source`, `summary_model`, and `summary_fallback_reason` record summary provenance.
 
@@ -441,6 +442,7 @@ The exact IDs and timestamps will differ, but the shape should look like:
           "relevance": 0.83
         }
       ],
+      "unresolved_contradictions": [],
       "summary": "Lens 'Project Context' interpreted 1 memories for query 'Summarize the current project direction' using strategy 'project_context'.",
       "summary_provider": "deterministic",
       "summary_source": "deterministic",

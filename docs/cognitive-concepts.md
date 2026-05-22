@@ -175,11 +175,32 @@ Belief B: 我害怕暴露真实想法。
 ```
 
 Contradiction 不一定要被消灭。它更像一种 tension，会驱动新的 Reflection、Concept 和 Belief evolution。
+有些 Contradiction 最终会被新证据解决；有些会被接受为 plural truth，也就是在不同
+Lens 下同时成立。
+
+生命周期状态包括：
+
+- Detected: 系统发现了张力。
+- Acknowledged: 系统或用户确认这条张力值得保留观察。
+- Resolved: 新证据或新 Belief 替代了旧冲突。
+- AcceptedAsPlural: 双方可以在不同 Lens 或上下文中同时成立。
+- Ignored: 明确不再作为认知信号参与默认投影。
+
+resolution mode 包括：
+
+- Resolved: 新证据替代旧 Belief。
+- AcceptedAsPlural: 多个视角下都成立。
+- StaleConflict: 旧冲突已经过时，可联动 Memory Salience 降权。
+- NeedsUserJudgment: 需要用户判断。
+- DomainSpecific: 只在特定领域或上下文中冲突。
+
+Contradiction 会记录 source memory IDs、belief IDs、lens IDs、confidence 和
+updated event ID，以便追踪它从哪里来、被哪个事件改变。
 
 Contradiction 回答的问题是：
 
 ```text
-哪里存在尚未解决的认知张力？
+哪里存在认知张力？这条张力现在处于什么生命周期？
 ```
 
 ## CognitiveSpace
@@ -303,6 +324,10 @@ source_event_ids
 `source_memory_ids` 默认只引用 active memories。被 deprioritized 的 Memory
 仍属于 CognitiveSpace，但不会自动进入 Profile；这让 Profile 成为当前用途的紧凑
 投影，而不是完整存档。
+
+`unresolved_contradictions` 默认只包含 Detected 和 Acknowledged 状态的
+Contradiction。Resolved、AcceptedAsPlural 和 Ignored 仍在 CognitiveState 中，
+但不会自动进入当前 Profile。
 
 关键边界：
 

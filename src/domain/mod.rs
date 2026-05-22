@@ -157,6 +157,31 @@ pub struct Contradiction {
     pub left: CognitiveObjectRef,
     pub right: CognitiveObjectRef,
     pub tension: String,
+    pub source_memory_ids: Vec<MemoryId>,
+    pub belief_ids: Vec<BeliefId>,
+    pub lens_ids: Vec<LensId>,
+    pub confidence: u8,
+    pub status: ContradictionStatus,
+    pub resolution: Option<ContradictionResolutionMode>,
+    pub updated_by_event: Option<CognitiveEventId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContradictionStatus {
+    Detected,
+    Acknowledged,
+    Resolved,
+    AcceptedAsPlural,
+    Ignored,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContradictionResolutionMode {
+    Resolved,
+    AcceptedAsPlural,
+    StaleConflict,
+    NeedsUserJudgment,
+    DomainSpecific,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -248,6 +273,19 @@ pub enum CognitiveEvent {
     BeliefUpdated(Belief),
     RelationCreated(Relation),
     ContradictionDetected(Contradiction),
+    ContradictionAcknowledged {
+        contradiction_id: ContradictionId,
+        event_id: CognitiveEventId,
+    },
+    ContradictionResolved {
+        contradiction_id: ContradictionId,
+        resolution: ContradictionResolutionMode,
+        event_id: CognitiveEventId,
+    },
+    ContradictionIgnored {
+        contradiction_id: ContradictionId,
+        event_id: CognitiveEventId,
+    },
     MemoryDeprioritized {
         memory_id: MemoryId,
         reason: MemoryDeprioritizationReason,
@@ -272,6 +310,40 @@ pub fn evolve(mut state: CognitiveState, event: CognitiveEvent) -> CognitiveStat
         CognitiveEvent::RelationCreated(relation) => state.relations.push(relation),
         CognitiveEvent::ContradictionDetected(contradiction) => {
             state.contradictions.push(contradiction);
+        }
+        CognitiveEvent::ContradictionAcknowledged {
+            contradiction_id,
+            event_id,
+        } => {
+            update_contradiction(&mut state, contradiction_id, event_id, |contradiction| {
+                contradiction.status = ContradictionStatus::Acknowledged;
+            });
+        }
+        CognitiveEvent::ContradictionResolved {
+            contradiction_id,
+            resolution,
+            event_id,
+        } => {
+            update_contradiction(&mut state, contradiction_id, event_id, |contradiction| {
+                contradiction.status = match resolution {
+                    ContradictionResolutionMode::AcceptedAsPlural => {
+                        ContradictionStatus::AcceptedAsPlural
+                    }
+                    ContradictionResolutionMode::NeedsUserJudgment => {
+                        ContradictionStatus::Acknowledged
+                    }
+                    _ => ContradictionStatus::Resolved,
+                };
+                contradiction.resolution = Some(resolution);
+            });
+        }
+        CognitiveEvent::ContradictionIgnored {
+            contradiction_id,
+            event_id,
+        } => {
+            update_contradiction(&mut state, contradiction_id, event_id, |contradiction| {
+                contradiction.status = ContradictionStatus::Ignored;
+            });
         }
         CognitiveEvent::MemoryDeprioritized {
             memory_id,
@@ -343,6 +415,22 @@ fn upsert_memory_salience(state: &mut CognitiveState, salience: MemorySalience) 
     }
 }
 
+fn update_contradiction(
+    state: &mut CognitiveState,
+    contradiction_id: ContradictionId,
+    event_id: CognitiveEventId,
+    update: impl FnOnce(&mut Contradiction),
+) {
+    if let Some(contradiction) = state
+        .contradictions
+        .iter_mut()
+        .find(|contradiction| contradiction.id == contradiction_id)
+    {
+        update(contradiction);
+        contradiction.updated_by_event = Some(event_id);
+    }
+}
+
 pub fn reflect_with_lens(memory: &Memory, lens: &Lens) -> Reflection {
     let meaning = match lens.kind {
         LensKind::Detective => {
@@ -384,12 +472,53 @@ pub fn detect_contradiction(
     right: &Belief,
     tension: impl Into<String>,
 ) -> Contradiction {
+    detect_contradiction_with_sources(
+        CognitiveObjectRef::Belief(left.id),
+        CognitiveObjectRef::Belief(right.id),
+        tension,
+        vec![],
+        vec![left.id, right.id],
+        vec![],
+        left.confidence.min(right.confidence),
+    )
+}
+
+pub fn detect_contradiction_with_sources(
+    left: CognitiveObjectRef,
+    right: CognitiveObjectRef,
+    tension: impl Into<String>,
+    source_memory_ids: Vec<MemoryId>,
+    belief_ids: Vec<BeliefId>,
+    lens_ids: Vec<LensId>,
+    confidence: u8,
+) -> Contradiction {
     Contradiction {
         id: Uuid::new_v4(),
-        left: CognitiveObjectRef::Belief(left.id),
-        right: CognitiveObjectRef::Belief(right.id),
+        left,
+        right,
         tension: tension.into(),
+        source_memory_ids,
+        belief_ids,
+        lens_ids,
+        confidence,
+        status: ContradictionStatus::Detected,
+        resolution: None,
+        updated_by_event: None,
     }
+}
+
+pub fn unresolved_contradictions(state: &CognitiveState) -> Vec<Contradiction> {
+    state
+        .contradictions
+        .iter()
+        .filter(|contradiction| {
+            matches!(
+                contradiction.status,
+                ContradictionStatus::Detected | ContradictionStatus::Acknowledged
+            )
+        })
+        .cloned()
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -429,7 +558,7 @@ pub fn project_profile(
         .cloned()
         .collect::<Vec<_>>();
     let active_concepts = state.concepts.iter().take(8).cloned().collect::<Vec<_>>();
-    let unresolved_contradictions = state.contradictions.clone();
+    let unresolved_contradictions = unresolved_contradictions(state);
     let source_memory_ids = active_memory_ids(state);
     let current_goals = infer_current_goals(&target, &stable_beliefs, &active_concepts);
 
@@ -482,7 +611,7 @@ fn profile_summary(state: &CognitiveState) -> String {
             .iter()
             .filter(|belief| belief.confidence >= 60)
             .count(),
-        state.contradictions.len()
+        unresolved_contradictions(state).len()
     )
 }
 
@@ -534,12 +663,15 @@ mod tests {
         );
         assert!(state.contradictions.is_empty());
 
-        let contradiction = Contradiction {
-            id: Uuid::new_v4(),
-            left: CognitiveObjectRef::Memory(state.memories[0].id),
-            right: CognitiveObjectRef::Memory(state.memories[0].id),
-            tension: "The same event can feel both safe and risky.".to_string(),
-        };
+        let contradiction = detect_contradiction_with_sources(
+            CognitiveObjectRef::Memory(state.memories[0].id),
+            CognitiveObjectRef::Memory(state.memories[0].id),
+            "The same event can feel both safe and risky.",
+            vec![state.memories[0].id],
+            vec![],
+            vec![],
+            70,
+        );
 
         let state = evolve(
             state,
@@ -621,6 +753,9 @@ mod tests {
             CognitiveObjectRef::Belief(fearing_exposure.id)
         );
         assert!(contradiction.tension.contains("fear of exposure"));
+        assert_eq!(contradiction.belief_ids.len(), 2);
+        assert_eq!(contradiction.confidence, 70);
+        assert_eq!(contradiction.status, ContradictionStatus::Detected);
     }
 
     #[test]
@@ -707,6 +842,170 @@ mod tests {
         assert_eq!(profile.stable_beliefs, vec![high_confidence]);
         assert_eq!(profile.unresolved_contradictions, vec![contradiction]);
         assert!(profile.current_goals.is_empty());
+    }
+
+    #[test]
+    fn contradiction_lifecycle_tracks_acknowledge_resolve_and_unresolved_projection() {
+        let space_id = Uuid::new_v4();
+        let belief_a = Belief {
+            id: Uuid::new_v4(),
+            claim: "Ship fast.".to_string(),
+            confidence: 90,
+        };
+        let belief_b = Belief {
+            id: Uuid::new_v4(),
+            claim: "Avoid risky releases.".to_string(),
+            confidence: 85,
+        };
+        let contradiction =
+            detect_contradiction(&belief_a, &belief_b, "speed conflicts with release risk");
+        let state = CognitiveState::new(CognitiveSpace::new(space_id, "Project Space"));
+        let state = evolve(
+            state,
+            CognitiveEvent::ContradictionDetected(contradiction.clone()),
+        );
+
+        assert_eq!(
+            unresolved_contradictions(&state),
+            vec![contradiction.clone()]
+        );
+
+        let acknowledge_event = Uuid::new_v4();
+        let state = evolve(
+            state,
+            CognitiveEvent::ContradictionAcknowledged {
+                contradiction_id: contradiction.id,
+                event_id: acknowledge_event,
+            },
+        );
+        assert_eq!(
+            state.contradictions[0].status,
+            ContradictionStatus::Acknowledged
+        );
+        assert_eq!(
+            state.contradictions[0].updated_by_event,
+            Some(acknowledge_event)
+        );
+        assert_eq!(unresolved_contradictions(&state).len(), 1);
+
+        let resolve_event = Uuid::new_v4();
+        let state = evolve(
+            state,
+            CognitiveEvent::ContradictionResolved {
+                contradiction_id: contradiction.id,
+                resolution: ContradictionResolutionMode::Resolved,
+                event_id: resolve_event,
+            },
+        );
+        let profile = project_profile(&state, ProfileTarget::Risk, None, vec![resolve_event]);
+
+        assert_eq!(
+            state.contradictions[0].status,
+            ContradictionStatus::Resolved
+        );
+        assert_eq!(
+            state.contradictions[0].resolution,
+            Some(ContradictionResolutionMode::Resolved)
+        );
+        assert!(profile.unresolved_contradictions.is_empty());
+    }
+
+    #[test]
+    fn contradiction_can_be_accepted_as_plural_across_lenses() {
+        let space_id = Uuid::new_v4();
+        let actor_id = Uuid::new_v4();
+        let emotional_lens_id = Uuid::new_v4();
+        let systems_lens_id = Uuid::new_v4();
+        let memory = Memory::new_text(
+            space_id,
+            actor_id,
+            "The same decision felt kind and costly.",
+        );
+        let belief_a = Belief {
+            id: Uuid::new_v4(),
+            claim: "The decision protected relationship safety.".to_string(),
+            confidence: 80,
+        };
+        let belief_b = Belief {
+            id: Uuid::new_v4(),
+            claim: "The decision increased system cost.".to_string(),
+            confidence: 78,
+        };
+        let contradiction = detect_contradiction_with_sources(
+            CognitiveObjectRef::Belief(belief_a.id),
+            CognitiveObjectRef::Belief(belief_b.id),
+            "relationship safety and system cost can both be true under different lenses",
+            vec![memory.id],
+            vec![belief_a.id, belief_b.id],
+            vec![emotional_lens_id, systems_lens_id],
+            78,
+        );
+        let state = CognitiveState::new(CognitiveSpace::new(space_id, "Plural Truth Space"));
+        let state = evolve(
+            state,
+            CognitiveEvent::ContradictionDetected(contradiction.clone()),
+        );
+        let event_id = Uuid::new_v4();
+
+        let state = evolve(
+            state,
+            CognitiveEvent::ContradictionResolved {
+                contradiction_id: contradiction.id,
+                resolution: ContradictionResolutionMode::AcceptedAsPlural,
+                event_id,
+            },
+        );
+        let updated = &state.contradictions[0];
+
+        assert_eq!(updated.status, ContradictionStatus::AcceptedAsPlural);
+        assert_eq!(
+            updated.resolution,
+            Some(ContradictionResolutionMode::AcceptedAsPlural)
+        );
+        assert_eq!(updated.source_memory_ids, vec![memory.id]);
+        assert_eq!(updated.belief_ids, vec![belief_a.id, belief_b.id]);
+        assert_eq!(updated.lens_ids, vec![emotional_lens_id, systems_lens_id]);
+        assert!(unresolved_contradictions(&state).is_empty());
+    }
+
+    #[test]
+    fn contradiction_can_remain_acknowledged_when_user_judgment_is_needed() {
+        let space_id = Uuid::new_v4();
+        let belief_a = Belief {
+            id: Uuid::new_v4(),
+            claim: "Prefer privacy.".to_string(),
+            confidence: 75,
+        };
+        let belief_b = Belief {
+            id: Uuid::new_v4(),
+            claim: "Prefer shared context.".to_string(),
+            confidence: 75,
+        };
+        let contradiction = detect_contradiction(&belief_a, &belief_b, "privacy vs shared memory");
+        let state = CognitiveState::new(CognitiveSpace::new(space_id, "Family Space"));
+        let state = evolve(
+            state,
+            CognitiveEvent::ContradictionDetected(contradiction.clone()),
+        );
+
+        let state = evolve(
+            state,
+            CognitiveEvent::ContradictionResolved {
+                contradiction_id: contradiction.id,
+                resolution: ContradictionResolutionMode::NeedsUserJudgment,
+                event_id: Uuid::new_v4(),
+            },
+        );
+
+        assert_eq!(
+            state.contradictions[0].status,
+            ContradictionStatus::Acknowledged
+        );
+        assert_eq!(
+            state.contradictions[0].resolution,
+            Some(ContradictionResolutionMode::NeedsUserJudgment)
+        );
+        assert_eq!(unresolved_contradictions(&state).len(), 1);
     }
 
     #[test]
