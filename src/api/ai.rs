@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::ai::{OpenAISummarizer, Summarizer, SummaryOptions, SummaryStyle};
 use crate::auth::AuthenticatedUser;
+use crate::db::lens::LensDb;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
 
@@ -16,6 +17,9 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 pub struct SummarizeRequest {
     pub content: String,
+
+    #[serde(default)]
+    pub lens_id: Option<Uuid>,
 
     #[serde(default)]
     pub options: Option<SummaryOptions>,
@@ -30,6 +34,18 @@ pub struct SummarizeResponse {
     pub original_length: usize,
     pub summary_length: usize,
     pub processing_time_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens: Option<LensSummaryProvenance>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LensSummaryProvenance {
+    pub id: Uuid,
+    pub space_id: Uuid,
+    pub name: String,
+    pub strategy: String,
+    pub output_format: String,
+    pub retrieval_mode: String,
 }
 
 /// 智能标签请求
@@ -61,10 +77,12 @@ pub struct AiConfigResponse {
 /// POST /api/v1/ai/summarize - 生成摘要
 #[allow(dead_code)]
 pub async fn summarize(
-    State(_state): State<AppState>,
-    _auth_user: AuthenticatedUser,
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
     Json(req): Json<SummarizeRequest>,
 ) -> Result<Json<ApiResponse<SummarizeResponse>>, AppError> {
+    let lens = resolve_summary_lens(&state, auth_user.user_id, req.lens_id, None).await?;
+
     // 获取 API Key
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| AppError::BadRequest("AI 功能未配置".to_string()))?;
@@ -72,8 +90,8 @@ pub async fn summarize(
     // 创建摘要器
     let summarizer = OpenAISummarizer::new(api_key);
 
-    // 使用提供的选项或默认值
-    let options = req.options.unwrap_or_default();
+    // 使用提供的选项，或让 Lens 输出格式决定默认摘要风格
+    let options = summary_options_for_lens(req.options, lens.as_ref());
 
     // 生成摘要
     let result = summarizer
@@ -88,6 +106,7 @@ pub async fn summarize(
         original_length: result.original_length,
         summary_length: result.summary_length,
         processing_time_ms: result.processing_time_ms,
+        lens,
     })))
 }
 
@@ -111,6 +130,13 @@ pub async fn summarize_memory(
     if memory.user_id != auth_user.user_id {
         return Err(AppError::Unauthorized);
     }
+    let lens = resolve_summary_lens(
+        &state,
+        auth_user.user_id,
+        req.lens_id,
+        Some(memory.space_id),
+    )
+    .await?;
 
     // 获取 API Key
     let api_key = std::env::var("OPENAI_API_KEY")
@@ -120,7 +146,7 @@ pub async fn summarize_memory(
     let summarizer = OpenAISummarizer::new(api_key);
 
     // 生成摘要
-    let options = req.options.unwrap_or_default();
+    let options = summary_options_for_lens(req.options, lens.as_ref());
     let result = summarizer
         .summarize(&memory.content, &options)
         .await
@@ -136,7 +162,72 @@ pub async fn summarize_memory(
         original_length: result.original_length,
         summary_length: result.summary_length,
         processing_time_ms: result.processing_time_ms,
+        lens,
     })))
+}
+
+async fn resolve_summary_lens(
+    state: &AppState,
+    user_id: Uuid,
+    lens_id: Option<Uuid>,
+    expected_space_id: Option<Uuid>,
+) -> Result<Option<LensSummaryProvenance>, AppError> {
+    let Some(lens_id) = lens_id else {
+        return Ok(None);
+    };
+
+    let lens = state
+        .repositories
+        .lenses
+        .find_for_user(lens_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+
+    if let Some(space_id) = expected_space_id {
+        if lens.space_id != space_id {
+            return Err(AppError::BadRequest(
+                "lens_id must belong to the same Cognitive Space as the memory".to_string(),
+            ));
+        }
+    }
+
+    Ok(Some(summary_lens_provenance(lens)))
+}
+
+fn summary_lens_provenance(lens: LensDb) -> LensSummaryProvenance {
+    LensSummaryProvenance {
+        id: lens.id,
+        space_id: lens.space_id,
+        name: lens.name,
+        strategy: lens.strategy,
+        output_format: lens.output_format,
+        retrieval_mode: lens.retrieval_mode,
+    }
+}
+
+fn summary_options_for_lens(
+    explicit: Option<SummaryOptions>,
+    lens: Option<&LensSummaryProvenance>,
+) -> SummaryOptions {
+    if let Some(options) = explicit {
+        return options;
+    }
+
+    let mut options = SummaryOptions::default();
+    if let Some(lens) = lens {
+        match lens.output_format.as_str() {
+            "brief" => {
+                options.max_words = 80;
+                options.style = SummaryStyle::Concise;
+            }
+            "bullets" | "bullet_points" => {
+                options.style = SummaryStyle::BulletPoints;
+            }
+            _ => {}
+        }
+    }
+    options
 }
 
 /// POST /api/v1/ai/autotag - 智能标签推荐
@@ -233,6 +324,15 @@ mod tests {
     }
 
     #[test]
+    fn test_summarize_request_with_lens_id() {
+        let lens_id = Uuid::new_v4();
+        let json = format!(r#"{{"content":"测试内容","lens_id":"{}"}}"#, lens_id);
+        let req: SummarizeRequest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(req.lens_id, Some(lens_id));
+    }
+
+    #[test]
     fn test_summarize_response_serde() {
         let response = SummarizeResponse {
             summary: "测试摘要".to_string(),
@@ -241,11 +341,38 @@ mod tests {
             original_length: 100,
             summary_length: 50,
             processing_time_ms: 100,
+            lens: None,
         };
 
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("测试摘要"));
         assert!(json.contains("\"keywords\":"));
+    }
+
+    #[test]
+    fn test_summarize_response_can_include_lens_provenance() {
+        let lens_id = Uuid::new_v4();
+        let space_id = Uuid::new_v4();
+        let response = SummarizeResponse {
+            summary: "测试摘要".to_string(),
+            keywords: vec![],
+            language: "zh".to_string(),
+            original_length: 100,
+            summary_length: 50,
+            processing_time_ms: 100,
+            lens: Some(LensSummaryProvenance {
+                id: lens_id,
+                space_id,
+                name: "Project Context".to_string(),
+                strategy: "project_context".to_string(),
+                output_format: "brief".to_string(),
+                retrieval_mode: "semantic".to_string(),
+            }),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"strategy\":\"project_context\""));
+        assert!(json.contains(&lens_id.to_string()));
     }
 
     #[test]
@@ -272,5 +399,65 @@ mod tests {
         assert!(json.contains("gpt-4"));
         assert!(json.contains("\"enabled\":true"));
         assert!(json.contains("\"summary_provider\":\"openrouter\""));
+    }
+
+    #[test]
+    fn summary_lens_provenance_keeps_strategy_and_space() {
+        let lens = LensDb {
+            id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
+            name: "Project Context".to_string(),
+            description: None,
+            strategy: "project_context".to_string(),
+            output_format: "brief".to_string(),
+            retrieval_mode: "semantic".to_string(),
+            created_by: Uuid::new_v4(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let provenance = summary_lens_provenance(lens.clone());
+
+        assert_eq!(provenance.id, lens.id);
+        assert_eq!(provenance.space_id, lens.space_id);
+        assert_eq!(provenance.strategy, "project_context");
+    }
+
+    #[test]
+    fn summary_options_follow_lens_output_format_without_explicit_options() {
+        let lens = LensSummaryProvenance {
+            id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
+            name: "Learning Review".to_string(),
+            strategy: "learning_review".to_string(),
+            output_format: "bullets".to_string(),
+            retrieval_mode: "semantic".to_string(),
+        };
+
+        let options = summary_options_for_lens(None, Some(&lens));
+
+        assert_eq!(options.style, SummaryStyle::BulletPoints);
+    }
+
+    #[test]
+    fn summary_options_keep_explicit_options_over_lens_defaults() {
+        let lens = LensSummaryProvenance {
+            id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
+            name: "Project Context".to_string(),
+            strategy: "project_context".to_string(),
+            output_format: "brief".to_string(),
+            retrieval_mode: "semantic".to_string(),
+        };
+        let explicit = SummaryOptions {
+            max_words: 200,
+            language: "en".to_string(),
+            include_keywords: false,
+            style: SummaryStyle::Detailed,
+        };
+
+        let options = summary_options_for_lens(Some(explicit), Some(&lens));
+
+        assert_eq!(options.max_words, 200);
+        assert_eq!(options.style, SummaryStyle::Detailed);
     }
 }

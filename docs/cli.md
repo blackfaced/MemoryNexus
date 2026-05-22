@@ -135,6 +135,10 @@ cargo run --bin memorynexus-cli -- lens list \
 
 cargo run --bin memorynexus-cli -- lens get "$MEMORYNEXUS_LENS_ID"
 
+cargo run --bin memorynexus-cli -- search "cognitive lens" \
+  --lens "$MEMORYNEXUS_LENS_ID" \
+  --limit 5
+
 RUN_JSON=$(cargo run --quiet --bin memorynexus-cli -- lens run "$MEMORYNEXUS_LENS_ID" \
   --query "Summarize the current project direction" \
   --limit 5)
@@ -242,6 +246,17 @@ cargo run --bin memorynexus-cli -- lens create --space "$MEMORYNEXUS_SPACE_ID" -
 
 `LENS_ID` is the UUID returned by `lens create` or `lens list`. `RUN_ID` is the
 UUID returned by `lens run`.
+
+Search can also use a Lens directly:
+
+```bash
+cargo run --bin memorynexus-cli -- search "project direction" \
+  --lens "$MEMORYNEXUS_LENS_ID" \
+  --limit 5
+```
+
+When `--lens` is used, the API searches inside the Lens's Cognitive Space and
+returns Lens provenance in `data.lens`.
 
 ## Lens Run Troubleshooting
 
@@ -465,7 +480,7 @@ memorynexus-cli memory list [--space <SPACE_ID>] [--limit <N>] [--offset <N>]
 memorynexus-cli memory get <MEMORY_ID>
 memorynexus-cli memory delete <MEMORY_ID>
 
-memorynexus-cli search <QUERY> [--space <SPACE_ID>] [--semantic] [--limit <N>]
+memorynexus-cli search <QUERY> [--space <SPACE_ID>] [--lens <LENS_ID>] [--semantic] [--limit <N>]
 ```
 
 ## Output

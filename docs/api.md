@@ -276,6 +276,36 @@ Memory access is checked against ownership and Cognitive Space membership.
 
 If `space_id` is omitted, the default Cognitive Space is used.
 
+### Lens-Scoped Search
+
+`GET /api/v1/search?q=<QUERY>&lens_id=<LENS_ID>&limit=20`
+
+When `lens_id` is supplied, the server resolves the Lens, enforces membership in
+the Lens's Cognitive Space, and searches inside that space. If `space_id` is
+also supplied, it must match the Lens's space. A Lens with
+`retrieval_mode=semantic` enables semantic search for the request.
+
+The response includes Lens provenance:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "query": "cognitive lens",
+    "search_mode": "semantic",
+    "lens": {
+      "id": "lens-uuid",
+      "space_id": "space-uuid",
+      "name": "Project Context",
+      "strategy": "project_context",
+      "output_format": "brief",
+      "retrieval_mode": "semantic"
+    },
+    "items": []
+  }
+}
+```
+
 ### Semantic Search
 
 `GET /api/v1/search?q=<QUERY>&space_id=<SPACE_ID>&semantic=true&limit=20`
@@ -292,3 +322,36 @@ exists during startup. Local development can set
 for semantic smoke tests without external API credentials. Production-like
 deployments should keep the default OpenAI embedding provider and configure
 `OPENAI_API_KEY`.
+
+## AI
+
+### Summarize Content
+
+`POST /api/v1/ai/summarize`
+
+```json
+{
+  "content": "Text to summarize",
+  "lens_id": "optional-lens-uuid"
+}
+```
+
+When `lens_id` is supplied, the server verifies the user can access the Lens and
+returns Lens provenance in the response. The Lens does not own the content; it
+records the interpretation strategy used for the summary request. If request
+`options` are omitted, the Lens `output_format` influences the default summary
+style: `brief` maps to concise output, and `bullets` maps to bullet points.
+
+### Summarize Memory
+
+`POST /api/v1/memories/:id/summarize`
+
+```json
+{
+  "content": "",
+  "lens_id": "optional-lens-uuid"
+}
+```
+
+For memory summaries, `lens_id` must belong to the same Cognitive Space as the
+memory.

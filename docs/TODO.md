@@ -43,7 +43,6 @@ Space.
 
 Current open work:
 
-- [#18 Support `lens_id` in search and summarize flows](https://github.com/blackfaced/MemoryNexus/issues/18)
 - [#26 MCP server for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/26)
 - [#4 AI summary quality and evaluation](https://github.com/blackfaced/MemoryNexus/issues/4)
 - [#5 Generate smart tags from memory content](https://github.com/blackfaced/MemoryNexus/issues/5)

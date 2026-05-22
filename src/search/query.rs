@@ -18,6 +18,9 @@ pub struct SearchQuery {
     /// Cognitive Space boundary
     pub space_id: Option<Uuid>,
 
+    /// Lens interpretation strategy
+    pub lens_id: Option<Uuid>,
+
     /// 搜索关键词
     pub q: Option<String>,
 
@@ -55,6 +58,7 @@ impl Default for SearchQuery {
         Self {
             q: None,
             space_id: None,
+            lens_id: None,
             tags: None,
             memory_type: None,
             from: None,
@@ -76,6 +80,19 @@ pub struct SearchResult {
     pub offset: i64,
     pub query: Option<String>,
     pub search_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens: Option<SearchLensProvenance>,
+}
+
+/// Lens provenance attached when search is scoped through a Lens.
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchLensProvenance {
+    pub id: Uuid,
+    pub space_id: Uuid,
+    pub name: String,
+    pub strategy: String,
+    pub output_format: String,
+    pub retrieval_mode: String,
 }
 
 /// 单个记忆搜索项（带相关性得分）
@@ -275,6 +292,7 @@ impl SearchEngine {
             offset: query.offset,
             query: query.q.clone(),
             search_mode: "keyword".to_string(),
+            lens: None,
         })
     }
 
@@ -315,6 +333,7 @@ impl SearchEngine {
                 offset: query.offset,
                 query: query.q.clone(),
                 search_mode: "semantic".to_string(),
+                lens: None,
             });
         }
 
@@ -362,6 +381,7 @@ impl SearchEngine {
             offset: query.offset,
             query: query.q.clone(),
             search_mode: "semantic".to_string(),
+            lens: None,
         })
     }
 
@@ -455,6 +475,15 @@ mod tests {
     }
 
     #[test]
+    fn test_search_query_lens_deserialize() {
+        let lens_id = Uuid::new_v4();
+        let json = format!(r#"{{"q":"Rust","lens_id":"{}"}}"#, lens_id);
+        let query: SearchQuery = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(query.lens_id, Some(lens_id));
+    }
+
+    #[test]
     fn test_memory_search_item_from_memorydb() {
         let memory = MemoryDb {
             id: Uuid::new_v4(),
@@ -484,6 +513,7 @@ mod tests {
             offset: 0,
             query: Some("test".to_string()),
             search_mode: "keyword".to_string(),
+            lens: None,
         };
 
         let json = serde_json::to_string(&result).unwrap();

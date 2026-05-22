@@ -139,7 +139,7 @@ Agent
 - [x] Lens Run 根据 Lens 所属 Cognitive Space 检索 memory，并把命中的 memory IDs 写入 provenance。
 - [x] CLI 支持 `lens run <LENS_ID> --query ...` 与 `lens run get <RUN_ID>`。
 - [ ] 支持内置 Lens：默认回顾、家庭成长、学习复盘、项目上下文。
-- [ ] 在 search/summarize 路径中引入 `lens_id`，由 Lens 决定检索过滤、排序和摘要风格。
+- [x] 在 search/summarize 路径中引入 `lens_id`，由 Lens 决定检索过滤、排序和摘要风格。
 - [x] 记录 Lens 运行 provenance：输入 query、命中的 memory、使用的策略、生成时间和输出。
 - [x] 区分 Lens 配置与 Lens 运行结果，避免把派生解释误当作原始 memory。
 - [x] 为 Lens CLI 解析、API serde 和 repository 增加基础测试。

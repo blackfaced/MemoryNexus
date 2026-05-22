@@ -114,6 +114,7 @@ enum Command {
     },
     Search {
         space_id: Option<String>,
+        lens_id: Option<String>,
         query: String,
         semantic: bool,
         limit: usize,
@@ -404,6 +405,7 @@ fn parse_search_command(args: &[String]) -> Result<Command, CliError> {
 
     Ok(Command::Search {
         space_id: optional_flag(args, "--space"),
+        lens_id: optional_flag(args, "--lens"),
         query,
         semantic: has_flag(args, "--semantic"),
         limit: parse_usize_flag(args, "--limit", 20)?,
@@ -592,6 +594,7 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
         }),
         Command::Search {
             space_id,
+            lens_id,
             query,
             semantic,
             limit,
@@ -605,6 +608,9 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             ];
             if let Some(space_id) = space_id {
                 pairs.push(("space_id", space_id.as_str()));
+            }
+            if let Some(lens_id) = lens_id {
+                pairs.push(("lens_id", lens_id.as_str()));
             }
             Ok(RequestSpec {
                 method: HttpMethod::Get,
@@ -1066,9 +1072,33 @@ mod tests {
             command,
             Command::Search {
                 space_id: None,
+                lens_id: None,
                 query: "Rust cognitive memory".to_string(),
                 semantic: true,
                 limit: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_lens_scoped_search_command() {
+        let command = parse_command([
+            "memorynexus-cli",
+            "search",
+            "cognitive lens",
+            "--lens",
+            "lens-123",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            command,
+            Command::Search {
+                space_id: None,
+                lens_id: Some("lens-123".to_string()),
+                query: "cognitive lens".to_string(),
+                semantic: false,
+                limit: 20,
             }
         );
     }
@@ -1282,6 +1312,7 @@ mod tests {
             &config,
             &Command::Search {
                 space_id: Some("space-123".to_string()),
+                lens_id: None,
                 query: "Rust cognitive memory".to_string(),
                 semantic: true,
                 limit: 5,
@@ -1294,6 +1325,32 @@ mod tests {
         assert_eq!(
             request.url,
             "http://localhost:8080/api/v1/search?q=Rust+cognitive+memory&semantic=true&limit=5&space_id=space-123"
+        );
+    }
+
+    #[test]
+    fn builds_lens_scoped_search_request() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+        let request = build_request(
+            &config,
+            &Command::Search {
+                space_id: None,
+                lens_id: Some("lens-123".to_string()),
+                query: "cognitive lens".to_string(),
+                semantic: false,
+                limit: 20,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(request.token, Some("jwt-token".to_string()));
+        assert_eq!(
+            request.url,
+            "http://localhost:8080/api/v1/search?q=cognitive+lens&semantic=false&limit=20&lens_id=lens-123"
         );
     }
 }
