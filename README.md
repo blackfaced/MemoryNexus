@@ -86,6 +86,8 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [CLI](docs/cli.md)
 - [Development](docs/development.md)
 - [Deployment](docs/deployment.md)
+- [Roadmap](docs/TODO.md)
+- [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues)
 - [Cognitive Manifesto](docs/cognitive-manifesto.md)
 - [Cognitive Concepts](docs/cognitive-concepts.md)
 - [Cognitive Lens Roadmap](docs/cognitive-lens-roadmap.md)
