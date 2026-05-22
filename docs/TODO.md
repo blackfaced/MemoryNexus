@@ -44,6 +44,7 @@ Space.
 Current open work:
 
 - [#18 Support `lens_id` in search and summarize flows](https://github.com/blackfaced/MemoryNexus/issues/18)
+- [#26 MCP server for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/26)
 - [#4 AI summary quality and evaluation](https://github.com/blackfaced/MemoryNexus/issues/4)
 - [#5 Generate smart tags from memory content](https://github.com/blackfaced/MemoryNexus/issues/5)
 - [#21 Isolate acceptance tests with a dedicated test database](https://github.com/blackfaced/MemoryNexus/issues/21)
@@ -60,6 +61,10 @@ Current open work:
 - [#7 Reminder and scheduled recall system](https://github.com/blackfaced/MemoryNexus/issues/7)
 - [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8)
 - [#20 Periodic cognitive review reports](https://github.com/blackfaced/MemoryNexus/issues/20)
+- [#27 Cognitive Profile as projection of CognitiveState](https://github.com/blackfaced/MemoryNexus/issues/27)
+- [#28 Memory salience and automatic deprioritization](https://github.com/blackfaced/MemoryNexus/issues/28)
+- [#31 Contradiction lifecycle and resolution policy](https://github.com/blackfaced/MemoryNexus/issues/31)
+- [#30 Benchmark and evaluation harness for Lens quality](https://github.com/blackfaced/MemoryNexus/issues/30)
 - [#16 CLI commands for family spaces and reminders](https://github.com/blackfaced/MemoryNexus/issues/16)
 
 ## Phase 4: User Interface
