@@ -108,6 +108,12 @@ pub struct SummaryResult {
     pub processing_time_ms: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SmartTagSuggestion {
+    pub tag: String,
+    pub category: String,
+}
+
 /// 摘要器 trait
 #[async_trait::async_trait]
 pub trait Summarizer: Send + Sync {
@@ -124,6 +130,95 @@ pub trait Summarizer: Send + Sync {
         contents: Vec<String>,
         options: &SummaryOptions,
     ) -> Result<Vec<SummaryResult>, SummaryError>;
+}
+
+pub fn deterministic_summarize(content: &str, options: &SummaryOptions) -> SummaryResult {
+    let start = std::time::Instant::now();
+    let summary = build_deterministic_summary(content, options);
+    let keywords = if options.include_keywords {
+        extract_keywords_simple(content)
+    } else {
+        vec![]
+    };
+
+    SummaryResult {
+        summary_length: summary.len(),
+        summary,
+        keywords,
+        language: options.language.clone(),
+        original_length: content.len(),
+        processing_time_ms: start.elapsed().as_millis() as u64,
+    }
+}
+
+pub fn suggest_smart_tags(content: &str) -> Vec<SmartTagSuggestion> {
+    let normalized = content.to_lowercase();
+    let mut suggestions = Vec::new();
+
+    let rules = [
+        (
+            "rust",
+            "technology",
+            ["rust", "cargo", "borrow", "ownership", "trait", "axum"].as_slice(),
+        ),
+        (
+            "cognitive-lens",
+            "cognition",
+            ["lens", "cognitive", "reflection", "belief", "contradiction"].as_slice(),
+        ),
+        (
+            "memory-space",
+            "architecture",
+            ["memory", "space", "cognitivespace", "substrate"].as_slice(),
+        ),
+        (
+            "risk",
+            "review",
+            ["risk", "contradiction", "uncertain", "failure", "blocked"].as_slice(),
+        ),
+        (
+            "learning",
+            "personal-growth",
+            ["learn", "learning", "practice", "study", "复盘"].as_slice(),
+        ),
+        (
+            "family",
+            "personal",
+            ["family", "孩子", "家庭", "parent", "child"].as_slice(),
+        ),
+        (
+            "project",
+            "work",
+            ["project", "roadmap", "phase", "mvp", "todo"].as_slice(),
+        ),
+    ];
+
+    for (tag, category, needles) in rules {
+        if needles.iter().any(|needle| normalized.contains(needle)) {
+            suggestions.push(SmartTagSuggestion {
+                tag: tag.to_string(),
+                category: category.to_string(),
+            });
+        }
+    }
+
+    for keyword in extract_keywords_simple(content) {
+        if suggestions.len() >= 5 {
+            break;
+        }
+        if suggestions
+            .iter()
+            .all(|suggestion| suggestion.tag != keyword)
+        {
+            suggestions.push(SmartTagSuggestion {
+                tag: keyword,
+                category: "keyword".to_string(),
+            });
+        }
+    }
+
+    suggestions.truncate(5);
+    suggestions
 }
 
 /// OpenAI 摘要器实现
@@ -179,6 +274,45 @@ impl OpenAISummarizer {
             content
         )
     }
+}
+
+fn build_deterministic_summary(content: &str, options: &SummaryOptions) -> String {
+    let limit = options.max_words.max(20) * 8;
+    let mut sentences = content
+        .split(['.', '。', '!', '！', '?', '？', '\n'])
+        .map(str::trim)
+        .filter(|sentence| !sentence.is_empty())
+        .take(match options.style {
+            SummaryStyle::Detailed => 5,
+            SummaryStyle::BulletPoints => 5,
+            SummaryStyle::QnA => 3,
+            SummaryStyle::Concise => 3,
+        })
+        .collect::<Vec<_>>();
+
+    if sentences.is_empty() {
+        sentences.push(content.trim());
+    }
+
+    let mut summary = match options.style {
+        SummaryStyle::BulletPoints => sentences
+            .iter()
+            .map(|sentence| format!("- {sentence}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        SummaryStyle::QnA => format!(
+            "Q: What is the key information?\nA: {}",
+            sentences.join(" ")
+        ),
+        _ => sentences.join(" "),
+    };
+
+    if summary.len() > limit {
+        summary.truncate(limit);
+        summary = summary.trim_end().to_string();
+    }
+
+    summary
 }
 
 #[async_trait::async_trait]
@@ -326,26 +460,23 @@ fn extract_keywords_simple(text: &str) -> Vec<String> {
         "if", "then", "of", "for", "in", "on", "to",
     ];
 
-    let words: Vec<&str> = text
+    let words: Vec<String> = text
         .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| w.len() > 1 && !stop_words.contains(w))
+        .map(str::to_lowercase)
+        .filter(|w| w.len() > 1 && !stop_words.contains(&w.as_str()))
         .collect();
 
     // 简单词频统计
-    let mut freq: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut freq: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for word in &words {
-        *freq.entry(word).or_insert(0) += 1;
+        *freq.entry(word.clone()).or_insert(0) += 1;
     }
 
     // 返回前5个高频词
     let mut sorted: Vec<_> = freq.into_iter().collect();
     sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
 
-    sorted
-        .into_iter()
-        .take(5)
-        .map(|(w, _)| w.to_string())
-        .collect()
+    sorted.into_iter().take(5).map(|(w, _)| w).collect()
 }
 
 #[cfg(test)]
@@ -448,5 +579,51 @@ mod tests {
         });
 
         assert_eq!(extract_chat_completion_text(&response), "reasoning text");
+    }
+
+    #[test]
+    fn deterministic_summary_handles_long_content_without_provider() {
+        let content = "Rust ownership and Cognitive Space memory. ".repeat(600);
+        let options = SummaryOptions {
+            max_words: 40,
+            language: "en".to_string(),
+            include_keywords: true,
+            style: SummaryStyle::Concise,
+        };
+
+        let result = deterministic_summarize(&content, &options);
+
+        assert_eq!(result.language, "en");
+        assert_eq!(result.original_length, content.len());
+        assert!(!result.summary.is_empty());
+        assert!(result.summary.len() <= 320);
+        assert!(result.keywords.iter().any(|keyword| keyword == "rust"));
+    }
+
+    #[test]
+    fn deterministic_summary_supports_bullet_points() {
+        let options = SummaryOptions {
+            max_words: 80,
+            language: "zh".to_string(),
+            include_keywords: false,
+            style: SummaryStyle::BulletPoints,
+        };
+
+        let result = deterministic_summarize("第一点。第二点。第三点。", &options);
+
+        assert!(result.summary.starts_with("- 第一点"));
+        assert!(result.keywords.is_empty());
+    }
+
+    #[test]
+    fn smart_tags_include_categories_and_keywords() {
+        let tags = suggest_smart_tags(
+            "Rust project roadmap for Cognitive Space, Lens Run, and contradiction review.",
+        );
+
+        assert!(tags.iter().any(|tag| tag.tag == "rust"));
+        assert!(tags.iter().any(|tag| tag.tag == "cognitive-lens"));
+        assert!(tags.iter().any(|tag| tag.category == "architecture"));
+        assert!(tags.len() <= 5);
     }
 }

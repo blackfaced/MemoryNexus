@@ -343,6 +343,30 @@ records the interpretation strategy used for the summary request. If request
 `options` are omitted, the Lens `output_format` influences the default summary
 style: `brief` maps to concise output, and `bullets` maps to bullet points.
 
+Summary requests use the configured summary provider when available. Without a
+provider, or when the provider returns empty output or an error, the API returns
+a deterministic local summary with provenance:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "summary": "Text to summarize",
+    "keywords": ["text", "summarize"],
+    "language": "en",
+    "original_length": 17,
+    "summary_length": 17,
+    "processing_time_ms": 0,
+    "summary_source": "deterministic",
+    "summary_provider": "deterministic",
+    "fallback_reason": "summary provider not configured"
+  }
+}
+```
+
+Long content is supported by the deterministic fallback path, which extracts a
+bounded summary and keywords locally.
+
 ### Summarize Memory
 
 `POST /api/v1/memories/:id/summarize`
@@ -356,3 +380,33 @@ style: `brief` maps to concise output, and `bullets` maps to bullet points.
 
 For memory summaries, `lens_id` must belong to the same Cognitive Space as the
 memory.
+
+### Smart Tags
+
+`POST /api/v1/ai/autotag`
+
+```json
+{
+  "content": "Rust project roadmap for Cognitive Space and Lens Run"
+}
+```
+
+Smart tags are suggestions only; clients can edit or discard them before saving.
+The local deterministic tagger returns tags, categories, and structured
+suggestions without requiring provider credentials:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "suggested_tags": ["rust", "cognitive-lens", "memory-space"],
+    "categories": ["technology", "cognition", "architecture"],
+    "suggestions": [
+      { "tag": "rust", "category": "technology" }
+    ],
+    "confidence": 0.8,
+    "source": "deterministic",
+    "editable": true
+  }
+}
+```

@@ -9,4 +9,7 @@ pub mod summary;
 #[allow(unused_imports)]
 pub use embedding::{Embedder, EmbeddingError, EmbeddingResult, OpenAIEmbedder};
 #[allow(unused_imports)]
-pub use summary::{OpenAISummarizer, Summarizer, SummaryOptions, SummaryResult, SummaryStyle};
+pub use summary::{
+    deterministic_summarize, suggest_smart_tags, OpenAISummarizer, SmartTagSuggestion, Summarizer,
+    SummaryOptions, SummaryResult, SummaryStyle,
+};

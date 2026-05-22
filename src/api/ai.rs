@@ -7,7 +7,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::ai::{OpenAISummarizer, Summarizer, SummaryOptions, SummaryStyle};
+use crate::ai::{
+    deterministic_summarize, suggest_smart_tags, SmartTagSuggestion, SummaryOptions, SummaryResult,
+    SummaryStyle,
+};
 use crate::auth::AuthenticatedUser;
 use crate::db::lens::LensDb;
 use crate::error::{ApiResponse, AppError};
@@ -34,6 +37,9 @@ pub struct SummarizeResponse {
     pub original_length: usize,
     pub summary_length: usize,
     pub processing_time_ms: u64,
+    pub summary_source: String,
+    pub summary_provider: String,
+    pub fallback_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lens: Option<LensSummaryProvenance>,
 }
@@ -58,7 +64,11 @@ pub struct AutoTagRequest {
 #[derive(Debug, Serialize)]
 pub struct AutoTagResponse {
     pub suggested_tags: Vec<String>,
+    pub categories: Vec<String>,
+    pub suggestions: Vec<SmartTagSuggestion>,
     pub confidence: f32,
+    pub source: String,
+    pub editable: bool,
 }
 
 /// 获取 AI 配置（仅管理员）
@@ -83,29 +93,22 @@ pub async fn summarize(
 ) -> Result<Json<ApiResponse<SummarizeResponse>>, AppError> {
     let lens = resolve_summary_lens(&state, auth_user.user_id, req.lens_id, None).await?;
 
-    // 获取 API Key
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .map_err(|_| AppError::BadRequest("AI 功能未配置".to_string()))?;
-
-    // 创建摘要器
-    let summarizer = OpenAISummarizer::new(api_key);
-
     // 使用提供的选项，或让 Lens 输出格式决定默认摘要风格
     let options = summary_options_for_lens(req.options, lens.as_ref());
 
     // 生成摘要
-    let result = summarizer
-        .summarize(&req.content, &options)
-        .await
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let summary = summarize_with_configured_provider(&state, &req.content, &options).await;
 
     Ok(Json(ApiResponse::success(SummarizeResponse {
-        summary: result.summary,
-        keywords: result.keywords,
-        language: result.language,
-        original_length: result.original_length,
-        summary_length: result.summary_length,
-        processing_time_ms: result.processing_time_ms,
+        summary: summary.result.summary,
+        keywords: summary.result.keywords,
+        language: summary.result.language,
+        original_length: summary.result.original_length,
+        summary_length: summary.result.summary_length,
+        processing_time_ms: summary.result.processing_time_ms,
+        summary_source: summary.source,
+        summary_provider: summary.provider,
+        fallback_reason: summary.fallback_reason,
         lens,
     })))
 }
@@ -138,32 +141,80 @@ pub async fn summarize_memory(
     )
     .await?;
 
-    // 获取 API Key
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .map_err(|_| AppError::BadRequest("AI 功能未配置".to_string()))?;
-
-    // 创建摘要器
-    let summarizer = OpenAISummarizer::new(api_key);
-
     // 生成摘要
     let options = summary_options_for_lens(req.options, lens.as_ref());
-    let result = summarizer
-        .summarize(&memory.content, &options)
-        .await
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let summary = summarize_with_configured_provider(&state, &memory.content, &options).await;
 
     // 更新记忆记录（如果用户想要保存）
     // 这里只是返回结果，实际保存由客户端决定
 
     Ok(Json(ApiResponse::success(SummarizeResponse {
-        summary: result.summary,
-        keywords: result.keywords,
-        language: result.language,
-        original_length: result.original_length,
-        summary_length: result.summary_length,
-        processing_time_ms: result.processing_time_ms,
+        summary: summary.result.summary,
+        keywords: summary.result.keywords,
+        language: summary.result.language,
+        original_length: summary.result.original_length,
+        summary_length: summary.result.summary_length,
+        processing_time_ms: summary.result.processing_time_ms,
+        summary_source: summary.source,
+        summary_provider: summary.provider,
+        fallback_reason: summary.fallback_reason,
         lens,
     })))
+}
+
+struct SummaryExecution {
+    result: SummaryResult,
+    source: String,
+    provider: String,
+    fallback_reason: Option<String>,
+}
+
+async fn summarize_with_configured_provider(
+    state: &AppState,
+    content: &str,
+    options: &SummaryOptions,
+) -> SummaryExecution {
+    let fallback_provider = state
+        .ai
+        .summary_provider
+        .clone()
+        .unwrap_or_else(|| "deterministic".to_string());
+
+    if let Some(summarizer) = &state.ai.summarizer {
+        match summarizer.summarize(content, options).await {
+            Ok(result) if !result.summary.trim().is_empty() => {
+                return SummaryExecution {
+                    result,
+                    source: "ai".to_string(),
+                    provider: fallback_provider,
+                    fallback_reason: None,
+                };
+            }
+            Ok(_) => {
+                return SummaryExecution {
+                    result: deterministic_summarize(content, options),
+                    source: "deterministic".to_string(),
+                    provider: fallback_provider,
+                    fallback_reason: Some("summary provider returned empty output".to_string()),
+                };
+            }
+            Err(error) => {
+                return SummaryExecution {
+                    result: deterministic_summarize(content, options),
+                    source: "deterministic".to_string(),
+                    provider: fallback_provider,
+                    fallback_reason: Some(error.to_string()),
+                };
+            }
+        }
+    }
+
+    SummaryExecution {
+        result: deterministic_summarize(content, options),
+        source: "deterministic".to_string(),
+        provider: "deterministic".to_string(),
+        fallback_reason: Some("summary provider not configured".to_string()),
+    }
 }
 
 async fn resolve_summary_lens(
@@ -236,49 +287,28 @@ pub async fn auto_tag(
     _auth_user: AuthenticatedUser,
     Json(req): Json<AutoTagRequest>,
 ) -> Result<Json<ApiResponse<AutoTagResponse>>, AppError> {
-    // 获取 API Key
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .map_err(|_| AppError::BadRequest("AI 功能未配置".to_string()))?;
-
-    // 创建摘要器
-    let summarizer = OpenAISummarizer::new(api_key);
-
-    // 构建标签推荐 prompt
-    let prompt = format!(
-        r#"请分析以下内容，推荐3-5个最相关的标签。
-只返回标签名称，用逗号分隔，不要包含其他说明。
-标签应该简洁，通常是1-2个词。
-
-内容:
-{}"#,
-        req.content
-    );
-
-    let options = SummaryOptions {
-        max_words: 20,
-        language: "zh".to_string(),
-        include_keywords: true,
-        style: SummaryStyle::Concise,
-    };
-
-    let result = summarizer
-        .summarize(&prompt, &options)
-        .await
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
-
-    // 解析标签（从摘要中提取）
-    let tags: Vec<String> = result
-        .summary
-        .split(|c: char| !c.is_alphanumeric() && c != '，' && c != ',' && c != '、')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.trim().to_string())
-        .filter(|s| s.len() <= 10) // 过滤太长的词
-        .take(5)
-        .collect();
+    let suggestions = suggest_smart_tags(&req.content);
+    let tags = suggestions
+        .iter()
+        .map(|suggestion| suggestion.tag.clone())
+        .collect::<Vec<_>>();
+    let categories = suggestions
+        .iter()
+        .map(|suggestion| suggestion.category.clone())
+        .fold(Vec::<String>::new(), |mut categories, category| {
+            if !categories.contains(&category) {
+                categories.push(category);
+            }
+            categories
+        });
 
     Ok(Json(ApiResponse::success(AutoTagResponse {
         suggested_tags: tags,
-        confidence: 0.8, // 简化实现，实际可计算置信度
+        categories,
+        suggestions,
+        confidence: 0.8,
+        source: "deterministic".to_string(),
+        editable: true,
     })))
 }
 
@@ -341,6 +371,9 @@ mod tests {
             original_length: 100,
             summary_length: 50,
             processing_time_ms: 100,
+            summary_source: "deterministic".to_string(),
+            summary_provider: "deterministic".to_string(),
+            fallback_reason: Some("summary provider not configured".to_string()),
             lens: None,
         };
 
@@ -360,6 +393,9 @@ mod tests {
             original_length: 100,
             summary_length: 50,
             processing_time_ms: 100,
+            summary_source: "deterministic".to_string(),
+            summary_provider: "deterministic".to_string(),
+            fallback_reason: None,
             lens: Some(LensSummaryProvenance {
                 id: lens_id,
                 space_id,
@@ -380,6 +416,30 @@ mod tests {
         let json = r#"{"content":"这是一段关于旅行的内容"}"#;
         let req: AutoTagRequest = serde_json::from_str(json).unwrap();
         assert!(req.content.contains("旅行"));
+    }
+
+    #[test]
+    fn auto_tag_response_marks_suggestions_editable() {
+        let suggestions = suggest_smart_tags("Rust Cognitive Space project");
+        let response = AutoTagResponse {
+            suggested_tags: suggestions
+                .iter()
+                .map(|suggestion| suggestion.tag.clone())
+                .collect(),
+            categories: suggestions
+                .iter()
+                .map(|suggestion| suggestion.category.clone())
+                .collect(),
+            suggestions,
+            confidence: 0.8,
+            source: "deterministic".to_string(),
+            editable: true,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"editable\":true"));
+        assert!(json.contains("\"suggestions\":"));
+        assert!(json.contains("rust"));
     }
 
     #[test]

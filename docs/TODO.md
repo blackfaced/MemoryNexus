@@ -43,8 +43,8 @@ Space.
 
 Current open work:
 
-- [#4 AI summary quality and evaluation](https://github.com/blackfaced/MemoryNexus/issues/4)
-- [#5 Generate smart tags from memory content](https://github.com/blackfaced/MemoryNexus/issues/5)
+No open Phase 2 work is tracked here. See GitHub Issues for newly discovered
+Lens MVP follow-ups.
 
 ## Phase 3: Personal Cognitive Features
 
