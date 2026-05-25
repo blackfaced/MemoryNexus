@@ -91,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
         profiles: Arc::new(db::profile::PostgresCognitiveProfileRepository::new(
             pool.clone(),
         )),
+        reminders: Arc::new(db::reminder::PostgresReminderRepository::new(pool.clone())),
         spaces: Arc::new(db::space::PostgresCognitiveSpaceRepository::new(
             pool.clone(),
         )),

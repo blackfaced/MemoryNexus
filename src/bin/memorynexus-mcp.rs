@@ -215,6 +215,47 @@ fn tools_list_result() -> Value {
                 }),
             ),
             tool_schema(
+                "add_reminder",
+                "Create a scheduled recall reminder in a Cognitive Space.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "space_id": {"type": "string"},
+                        "content": {"type": "string"},
+                        "remind_at": {"type": "string", "description": "RFC3339 timestamp, for example 2026-05-26T09:00:00Z"},
+                        "title": {"type": "string"},
+                        "memory_id": {"type": "string"},
+                        "repeat_rule": {"type": "string", "enum": ["daily", "weekly", "monthly"]}
+                    },
+                    "required": ["space_id", "content", "remind_at"]
+                }),
+            ),
+            tool_schema(
+                "list_reminders",
+                "List scheduled recall reminders in a Cognitive Space.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "space_id": {"type": "string"},
+                        "due_only": {"type": "boolean", "default": false},
+                        "include_completed": {"type": "boolean", "default": false},
+                        "limit": {"type": "integer", "default": 20}
+                    },
+                    "required": ["space_id"]
+                }),
+            ),
+            tool_schema(
+                "complete_reminder",
+                "Mark a pending reminder as completed.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "reminder_id": {"type": "string"}
+                    },
+                    "required": ["reminder_id"]
+                }),
+            ),
+            tool_schema(
                 "route_agent_context",
                 "Recommend whether an agent should write, search, run a Lens, get a profile, or ignore context.",
                 json!({
@@ -338,6 +379,53 @@ fn build_api_request_for_tool(
             })),
             token,
         }),
+        "add_reminder" => Ok(ApiRequest {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/reminders"),
+            body: Some(json!({
+                "space_id": required_string(arguments, "space_id")?,
+                "memory_id": optional_string(arguments, "memory_id"),
+                "title": optional_string(arguments, "title"),
+                "content": required_string(arguments, "content")?,
+                "remind_at": required_string(arguments, "remind_at")?,
+                "repeat_rule": optional_string(arguments, "repeat_rule"),
+            })),
+            token,
+        }),
+        "list_reminders" => {
+            let space_id = required_string(arguments, "space_id")?;
+            let due_only = optional_bool(arguments, "due_only")
+                .unwrap_or(false)
+                .to_string();
+            let include_completed = optional_bool(arguments, "include_completed")
+                .unwrap_or(false)
+                .to_string();
+            let limit = optional_usize(arguments, "limit").unwrap_or(20).to_string();
+
+            Ok(ApiRequest {
+                method: HttpMethod::Get,
+                url: with_query(
+                    &format!("{base_url}/api/v1/reminders"),
+                    &[
+                        ("space_id", space_id.as_str()),
+                        ("due_only", due_only.as_str()),
+                        ("include_completed", include_completed.as_str()),
+                        ("limit", limit.as_str()),
+                    ],
+                )?,
+                body: None,
+                token,
+            })
+        }
+        "complete_reminder" => {
+            let reminder_id = required_string(arguments, "reminder_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Post,
+                url: format!("{base_url}/api/v1/reminders/{reminder_id}/complete"),
+                body: None,
+                token,
+            })
+        }
         "route_agent_context" => Ok(ApiRequest {
             method: HttpMethod::Post,
             url: format!("{base_url}/api/v1/agent/route"),
@@ -489,6 +577,9 @@ mod tests {
                 "run_lens",
                 "get_lens_run",
                 "get_profile",
+                "add_reminder",
+                "list_reminders",
+                "complete_reminder",
                 "route_agent_context",
             ]
         );
@@ -620,6 +711,69 @@ mod tests {
                 "lens_id": null,
                 "target": "personal_context",
             }))
+        );
+    }
+
+    #[test]
+    fn reminder_tools_map_to_reminders_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let add = build_api_request_for_tool(
+            &config,
+            "add_reminder",
+            &json!({
+                "space_id": "space-123",
+                "title": "Review",
+                "content": "Review Rust practice",
+                "remind_at": "2026-05-26T09:00:00Z",
+                "repeat_rule": "weekly"
+            }),
+        )
+        .unwrap();
+        let list = build_api_request_for_tool(
+            &config,
+            "list_reminders",
+            &json!({
+                "space_id": "space-123",
+                "due_only": true,
+                "limit": 5
+            }),
+        )
+        .unwrap();
+        let complete = build_api_request_for_tool(
+            &config,
+            "complete_reminder",
+            &json!({
+                "reminder_id": "reminder-123"
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(add.method, HttpMethod::Post);
+        assert_eq!(add.url, "http://localhost:8080/api/v1/reminders");
+        assert_eq!(
+            add.body,
+            Some(json!({
+                "space_id": "space-123",
+                "memory_id": null,
+                "title": "Review",
+                "content": "Review Rust practice",
+                "remind_at": "2026-05-26T09:00:00Z",
+                "repeat_rule": "weekly",
+            }))
+        );
+        assert_eq!(list.method, HttpMethod::Get);
+        assert_eq!(
+            list.url,
+            "http://localhost:8080/api/v1/reminders?space_id=space-123&due_only=true&include_completed=false&limit=5"
+        );
+        assert_eq!(complete.method, HttpMethod::Post);
+        assert_eq!(
+            complete.url,
+            "http://localhost:8080/api/v1/reminders/reminder-123/complete"
         );
     }
 }

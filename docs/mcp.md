@@ -46,6 +46,9 @@ and MCP client JSON snippets.
 | `run_lens` | Run a Lens query and return a traceable Lens Run |
 | `get_lens_run` | Fetch a persisted Lens Run by ID |
 | `get_profile` | Project and persist a compact Cognitive Profile for a personal agent |
+| `add_reminder` | Create a scheduled recall reminder in a Cognitive Space |
+| `list_reminders` | List pending or due scheduled recall reminders |
+| `complete_reminder` | Mark a pending reminder as completed |
 | `route_agent_context` | Recommend write/search/lens/profile/ignore for agent context |
 
 ## Smoke Test
@@ -83,6 +86,15 @@ Agent routing recommendation:
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"route_agent_context","arguments":{"message":"Remember this: I prefer Rust-first backend work.","space_id":"<space-id>"}}}' \
+  | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
+```
+
+Scheduled recall:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_reminder","arguments":{"space_id":"<space-id>","title":"Review project direction","content":"Run a project_context Lens and decide the next task.","remind_at":"2026-05-26T09:00:00Z","repeat_rule":"weekly"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_reminders","arguments":{"space_id":"<space-id>","due_only":true,"limit":20}}}' \
   | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
 ```
 

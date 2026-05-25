@@ -147,6 +147,10 @@ needs compact user context. It persists a profile snapshot with source memory
 IDs and Lens Run IDs, so later answers can explain which Cognitive Space
 materials shaped the context.
 
+Use `list_reminders` with `due_only=true` at the start of a personal-agent
+session when the agent should surface scheduled recall. Complete a reminder only
+after the user or agent has handled it.
+
 Use `run_lens` when the agent needs interpretation, not just retrieval:
 
 - `personal_context`: "What should I know about this user before helping?"
@@ -158,10 +162,11 @@ Recommended order for Claw/Hermes:
 
 1. `route_agent_context` when the correct MemoryNexus action is not obvious.
 2. `get_profile` for compact working context.
-3. `search_memories` for raw recall when the task mentions a specific topic.
-4. `run_lens` when the agent needs an interpretation, tradeoff review, or
+3. `list_reminders` with `due_only=true` to surface scheduled recall.
+4. `search_memories` for raw recall when the task mentions a specific topic.
+5. `run_lens` when the agent needs an interpretation, tradeoff review, or
    contradiction check.
-5. `add_memory` only when the information is durable and safe to persist.
+6. `add_memory` only when the information is durable and safe to persist.
 
 ## Memory Shape
 
@@ -190,16 +195,18 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_profile","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","target":"personal_context","limit":12}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"route_agent_context","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","message":"What do you remember about my personal cognitive substrate?"}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"search_memories","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","query":"personal cognitive substrate","semantic":true,"limit":5}}}' \
+  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"list_reminders","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","due_only":true,"limit":5}}}' \
   | cargo run --quiet --bin memorynexus-mcp
 ```
 
 The response should include the tool list, a successful memory creation, a
-persisted profile snapshot, a routing recommendation, and at least one search
-result from the same `CognitiveSpace`.
+persisted profile snapshot, a routing recommendation, at least one search result
+from the same `CognitiveSpace`, and any due reminders.
 
 ## Current Gaps
 
 - Router policy is deterministic and conservative; it recommends actions but
   does not execute them automatically.
 - MCP does not create spaces or lenses yet; use CLI for setup.
-- Reminder and scheduled recall are still Phase 3 follow-up work.
+- Reminder delivery is poll-based. Background dispatch, external notification
+  channels, and richer recurrence rules are still Phase 3 follow-up work.

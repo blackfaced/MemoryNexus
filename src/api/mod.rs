@@ -13,6 +13,7 @@ mod lens_runs;
 mod lenses;
 mod memories;
 mod profiles;
+mod reminders;
 mod search;
 mod semantic;
 mod spaces;
@@ -71,6 +72,13 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v1/memories/:id",
             axum::routing::delete(memories::delete),
+        )
+        // Scheduled recall reminders
+        .route("/api/v1/reminders", axum::routing::post(reminders::create))
+        .route("/api/v1/reminders", axum::routing::get(reminders::list))
+        .route(
+            "/api/v1/reminders/:id/complete",
+            axum::routing::post(reminders::complete),
         )
         // Cognitive Profile projections
         .route("/api/v1/profiles", axum::routing::post(profiles::create))

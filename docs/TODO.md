@@ -30,7 +30,7 @@ The current baseline is the Rust-first Cognitive Lens MVP foundation:
 - Space-scoped memory CRUD, keyword search, semantic search, and Qdrant indexing
   are implemented.
 - `memorynexus-cli` supports auth, spaces, memories, search, lenses, Lens Run,
-  Lens Run history, Lens templates, and runtime config inspection.
+  Lens Run history, Lens templates, reminders, and runtime config inspection.
 - Lens Run stores traceable output with matched memory IDs, summary provenance,
   structured key points, open questions, next actions, and citations.
 - OpenAI-compatible summary providers are supported, including OpenRouter via
@@ -56,10 +56,11 @@ workflows while keeping Cognitive Space as the ownership boundary.
 
 Current open work:
 
-- [#7 Reminder and scheduled recall system](https://github.com/blackfaced/MemoryNexus/issues/7)
 - [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8)
 - [#20 Periodic cognitive review reports](https://github.com/blackfaced/MemoryNexus/issues/20)
 - [#16 CLI commands for family spaces and reminders](https://github.com/blackfaced/MemoryNexus/issues/16)
+- [#35 Reminder notification delivery channels](https://github.com/blackfaced/MemoryNexus/issues/35)
+- [#36 Advanced reminder recurrence and rule engine](https://github.com/blackfaced/MemoryNexus/issues/36)
 
 Recently completed:
 
@@ -72,6 +73,9 @@ Recently completed:
   profile snapshot API, persisted provenance, and MCP `get_profile`.
 - [#34 Add personal agent write policy and cognitive router](https://github.com/blackfaced/MemoryNexus/issues/34):
   deterministic agent router API and MCP `route_agent_context`.
+- [#7 Reminder and scheduled recall system](https://github.com/blackfaced/MemoryNexus/issues/7):
+  Space-scoped reminder storage, API, CLI, and MCP tools for poll-based
+  scheduled recall.
 
 ## Phase 4: User Interface
 

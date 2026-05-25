@@ -111,6 +111,67 @@ fn run_acceptance_flow(run_id: &str, api_url: &str) {
         api_url,
     );
     assert_ok(&memory);
+    let memory_id = memory["data"]["id"]
+        .as_str()
+        .expect("memory response should include data.id")
+        .to_string();
+
+    let reminder = cli(
+        [
+            "reminder",
+            "add",
+            "--space",
+            &space_id,
+            "--memory",
+            &memory_id,
+            "--title",
+            "Phase 3 scheduled recall",
+            "--content",
+            "Review the acceptance memory",
+            "--at",
+            "2026-01-01T00:00:00Z",
+        ],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&reminder);
+    let reminder_id = reminder["data"]["id"]
+        .as_str()
+        .expect("reminder response should include data.id")
+        .to_string();
+    assert_eq!(
+        reminder["data"]["space_id"],
+        Value::String(space_id.clone())
+    );
+
+    let due_reminders = cli(
+        [
+            "reminder", "list", "--space", &space_id, "--due", "--limit", "5",
+        ],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&due_reminders);
+    let reminders = due_reminders["data"]["items"]
+        .as_array()
+        .expect("reminder list response should include data.items");
+    assert!(
+        reminders
+            .iter()
+            .any(|reminder| reminder["id"] == reminder_id),
+        "due reminder list should include created reminder: {due_reminders}"
+    );
+
+    let completed_reminder = cli(
+        ["reminder", "complete", &reminder_id],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&completed_reminder);
+    assert_eq!(
+        completed_reminder["data"]["status"],
+        Value::String("completed".to_string())
+    );
 
     let keyword = cli(
         [

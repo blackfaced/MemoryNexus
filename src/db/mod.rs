@@ -5,6 +5,7 @@ pub mod lens;
 pub mod lens_run;
 pub mod memory;
 pub mod profile;
+pub mod reminder;
 pub mod space;
 pub mod tag;
 pub mod user;

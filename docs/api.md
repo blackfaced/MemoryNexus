@@ -325,6 +325,46 @@ If `space_id` is omitted, the default Cognitive Space is used.
 
 Memory access is checked against ownership and Cognitive Space membership.
 
+## Reminders
+
+Reminders are scheduled recall items scoped to a `CognitiveSpace`. They can
+optionally reference a memory, but they do not make an agent own memory.
+
+### Create Reminder
+
+`POST /api/v1/reminders`
+
+```json
+{
+  "space_id": "space-uuid",
+  "memory_id": "optional-memory-uuid",
+  "title": "Review Rust notes",
+  "content": "Review this week's Rust practice and extract next actions.",
+  "remind_at": "2026-05-26T09:00:00Z",
+  "repeat_rule": "weekly"
+}
+```
+
+`remind_at` must be an RFC3339 timestamp. `repeat_rule` is optional and
+currently supports `daily`, `weekly`, and `monthly`. Reminders are surfaced by
+listing due items.
+
+### List Reminders
+
+`GET /api/v1/reminders?space_id=<SPACE_ID>&due_only=false&include_completed=false&limit=20`
+
+Set `due_only=true` to fetch pending reminders whose `remind_at` is not in the
+future. Completed reminders are hidden unless `include_completed=true`.
+
+### Complete Reminder
+
+`POST /api/v1/reminders/:id/complete`
+
+Marks a pending reminder as completed if the current user is a member of the
+reminder's Cognitive Space. For a reminder with `repeat_rule`, this acknowledges
+the current occurrence and advances `remind_at` to the next interval while
+keeping the reminder pending.
+
 ## Search
 
 ### Keyword Search

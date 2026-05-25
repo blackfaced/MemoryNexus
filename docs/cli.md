@@ -259,6 +259,53 @@ cargo run --bin memorynexus-cli -- search "project direction" \
   --limit 5
 ```
 
+## Reminders
+
+Reminders are scheduled recall items inside a `CognitiveSpace`. The MVP exposes
+create/list/complete commands; clients or agents can poll due reminders with
+`--due`.
+
+Create a reminder:
+
+```bash
+REMINDER_JSON=$(cargo run --quiet --bin memorynexus-cli -- reminder add \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --title "Review project direction" \
+  --content "Run a project_context Lens and decide the next MemoryNexus task." \
+  --at "2026-05-26T09:00:00Z" \
+  --repeat weekly)
+
+export MEMORYNEXUS_REMINDER_ID=$(printf '%s' "$REMINDER_JSON" | jq -r '.data.id')
+```
+
+List pending reminders:
+
+```bash
+cargo run --bin memorynexus-cli -- reminder list \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --limit 20
+```
+
+List due reminders:
+
+```bash
+cargo run --bin memorynexus-cli -- reminder list \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --due \
+  --limit 20
+```
+
+Complete a reminder:
+
+```bash
+cargo run --bin memorynexus-cli -- reminder complete "$MEMORYNEXUS_REMINDER_ID"
+```
+
+`--at` uses an RFC3339 timestamp such as `2026-05-26T09:00:00Z`.
+`--repeat` is optional and currently supports `daily`, `weekly`, or `monthly`.
+Completing a repeated reminder advances it to the next interval instead of
+closing it permanently.
+
 When `--lens` is used, the API searches inside the Lens's Cognitive Space and
 returns Lens provenance in `data.lens`.
 

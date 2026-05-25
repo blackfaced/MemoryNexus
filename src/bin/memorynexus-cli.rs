@@ -136,6 +136,23 @@ enum Command {
     MemoryDelete {
         id: String,
     },
+    ReminderAdd {
+        space_id: String,
+        content: String,
+        remind_at: String,
+        title: Option<String>,
+        memory_id: Option<String>,
+        repeat_rule: Option<String>,
+    },
+    ReminderList {
+        space_id: String,
+        due_only: bool,
+        include_completed: bool,
+        limit: usize,
+    },
+    ReminderComplete {
+        id: String,
+    },
     Search {
         space_id: Option<String>,
         lens_id: Option<String>,
@@ -245,6 +262,7 @@ where
         "space" => parse_space_command(&args[2..]),
         "lens" => parse_lens_command(&args[2..]),
         "memory" => parse_memory_command(&args[2..]),
+        "reminder" => parse_reminder_command(&args[2..]),
         "search" => parse_search_command(&args[2..]),
         _ => Err(CliError::new(usage())),
     }
@@ -417,6 +435,37 @@ fn parse_memory_command(args: &[String]) -> Result<Command, CliError> {
                 .ok_or_else(|| CliError::new("memory id is required"))?,
         }),
         _ => Err(CliError::new("unknown memory subcommand")),
+    }
+}
+
+fn parse_reminder_command(args: &[String]) -> Result<Command, CliError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(CliError::new("reminder subcommand is required"));
+    };
+
+    match subcommand {
+        "add" => Ok(Command::ReminderAdd {
+            space_id: required_flag(args, "--space")?,
+            content: required_flag(args, "--content")?,
+            remind_at: required_flag(args, "--at")?,
+            title: optional_flag(args, "--title"),
+            memory_id: optional_flag(args, "--memory"),
+            repeat_rule: optional_flag(args, "--repeat"),
+        }),
+        "list" => Ok(Command::ReminderList {
+            space_id: required_flag(args, "--space")?,
+            due_only: has_flag(args, "--due"),
+            include_completed: has_flag(args, "--include-completed"),
+            limit: parse_usize_flag(args, "--limit", 20)?,
+        }),
+        "complete" => Ok(Command::ReminderComplete {
+            id: args
+                .get(1)
+                .filter(|id| !id.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| CliError::new("reminder id is required"))?,
+        }),
+        _ => Err(CliError::new("unknown reminder subcommand")),
     }
 }
 
@@ -616,6 +665,56 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             body: None,
             token: Some(require_token(config)?),
         }),
+        Command::ReminderAdd {
+            space_id,
+            content,
+            remind_at,
+            title,
+            memory_id,
+            repeat_rule,
+        } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/reminders"),
+            body: Some(json!({
+                "space_id": space_id,
+                "memory_id": memory_id,
+                "title": title,
+                "content": content,
+                "remind_at": remind_at,
+                "repeat_rule": repeat_rule,
+            })),
+            token: Some(require_token(config)?),
+        }),
+        Command::ReminderList {
+            space_id,
+            due_only,
+            include_completed,
+            limit,
+        } => {
+            let due_only = due_only.to_string();
+            let include_completed = include_completed.to_string();
+            let limit = limit.to_string();
+            Ok(RequestSpec {
+                method: HttpMethod::Get,
+                url: with_query(
+                    &format!("{base_url}/api/v1/reminders"),
+                    &[
+                        ("space_id", space_id.as_str()),
+                        ("due_only", due_only.as_str()),
+                        ("include_completed", include_completed.as_str()),
+                        ("limit", limit.as_str()),
+                    ],
+                )?,
+                body: None,
+                token: Some(require_token(config)?),
+            })
+        }
+        Command::ReminderComplete { id } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/reminders/{id}/complete"),
+            body: None,
+            token: Some(require_token(config)?),
+        }),
         Command::Search {
             space_id,
             lens_id,
@@ -766,7 +865,7 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, CliError
 }
 
 fn usage() -> &'static str {
-    "usage: memorynexus-cli <health|config|auth|space|lens|memory|search> ..."
+    "usage: memorynexus-cli <health|config|auth|space|lens|memory|reminder|search> ..."
 }
 
 #[cfg(test)]
@@ -1081,6 +1180,64 @@ mod tests {
     }
 
     #[test]
+    fn parses_reminder_commands() {
+        let add = parse_command([
+            "memorynexus-cli",
+            "reminder",
+            "add",
+            "--space",
+            "space-123",
+            "--content",
+            "Review Rust practice",
+            "--at",
+            "2026-05-26T09:00:00Z",
+            "--repeat",
+            "weekly",
+        ])
+        .unwrap();
+        let list = parse_command([
+            "memorynexus-cli",
+            "reminder",
+            "list",
+            "--space",
+            "space-123",
+            "--due",
+            "--limit",
+            "5",
+        ])
+        .unwrap();
+        let complete =
+            parse_command(["memorynexus-cli", "reminder", "complete", "reminder-123"]).unwrap();
+
+        assert_eq!(
+            add,
+            Command::ReminderAdd {
+                space_id: "space-123".to_string(),
+                content: "Review Rust practice".to_string(),
+                remind_at: "2026-05-26T09:00:00Z".to_string(),
+                title: None,
+                memory_id: None,
+                repeat_rule: Some("weekly".to_string()),
+            }
+        );
+        assert_eq!(
+            list,
+            Command::ReminderList {
+                space_id: "space-123".to_string(),
+                due_only: true,
+                include_completed: false,
+                limit: 5,
+            }
+        );
+        assert_eq!(
+            complete,
+            Command::ReminderComplete {
+                id: "reminder-123".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn parses_semantic_search_command() {
         let command = parse_command([
             "memorynexus-cli",
@@ -1328,6 +1485,68 @@ mod tests {
         assert_eq!(
             request.url,
             "http://localhost:8080/api/v1/lens-runs?limit=3&lens_id=lens-123"
+        );
+    }
+
+    #[test]
+    fn builds_reminder_requests() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let add = build_request(
+            &config,
+            &Command::ReminderAdd {
+                space_id: "space-123".to_string(),
+                content: "Review Rust practice".to_string(),
+                remind_at: "2026-05-26T09:00:00Z".to_string(),
+                title: Some("Review".to_string()),
+                memory_id: Some("memory-123".to_string()),
+                repeat_rule: Some("weekly".to_string()),
+            },
+        )
+        .unwrap();
+        let list = build_request(
+            &config,
+            &Command::ReminderList {
+                space_id: "space-123".to_string(),
+                due_only: true,
+                include_completed: false,
+                limit: 5,
+            },
+        )
+        .unwrap();
+        let complete = build_request(
+            &config,
+            &Command::ReminderComplete {
+                id: "reminder-123".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(add.method, HttpMethod::Post);
+        assert_eq!(add.url, "http://localhost:8080/api/v1/reminders");
+        assert_eq!(
+            add.body,
+            Some(json!({
+                "space_id": "space-123",
+                "memory_id": "memory-123",
+                "title": "Review",
+                "content": "Review Rust practice",
+                "remind_at": "2026-05-26T09:00:00Z",
+                "repeat_rule": "weekly",
+            }))
+        );
+        assert_eq!(list.method, HttpMethod::Get);
+        assert_eq!(
+            list.url,
+            "http://localhost:8080/api/v1/reminders?space_id=space-123&due_only=true&include_completed=false&limit=5"
+        );
+        assert_eq!(complete.method, HttpMethod::Post);
+        assert_eq!(
+            complete.url,
+            "http://localhost:8080/api/v1/reminders/reminder-123/complete"
         );
     }
 
