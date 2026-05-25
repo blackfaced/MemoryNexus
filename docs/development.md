@@ -62,6 +62,22 @@ traceable Lens interpretation.
 
 For provider setup issues, see [Lens Run Troubleshooting](cli.md#lens-run-troubleshooting).
 
+## Run The MCP Server
+
+`memorynexus-mcp` is the local stdio adapter for personal agents. Keep the API
+running, set `MEMORYNEXUS_TOKEN`, then inspect the exposed tools:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | MEMORYNEXUS_API_URL=http://localhost:8080 \
+    MEMORYNEXUS_TOKEN="$MEMORYNEXUS_TOKEN" \
+    cargo run --quiet --bin memorynexus-mcp
+```
+
+For agent installation and MCP config snippets, see
+[Agent Self-Install](agent-self-install.md).
+
 ## Verify
 
 ```bash
@@ -146,7 +162,7 @@ skipped explicitly.
 
 ## Structure
 
-- `src/`: Rust API, CLI, domain, repositories, vector and AI modules
+- `src/`: Rust API, CLI, MCP, domain, repositories, vector and AI modules
 - `migrations/`: SQLx migrations
 - `tests/`: integration tests
 - `docs/`: project and architecture documentation

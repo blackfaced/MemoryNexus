@@ -19,6 +19,8 @@ interpretation strategy over a Cognitive Space.
 - Smart tag suggestions with categories and editable response metadata.
 - Local deterministic Lens evaluation harness.
 - MCP server access for spaces, memories, search, Lens Run, and run lookup.
+  Phase 3 later extended this surface with agent bootstrap tools such as
+  `create_space`, `create_lens`, profile projection, reminders, and routing.
 - Ignored acceptance tests isolated to a dedicated acceptance database and
   temporary API port.
 - Optional GitHub Actions service acceptance job with PostgreSQL and Qdrant.

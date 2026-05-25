@@ -5,6 +5,19 @@
 No. Memory belongs to `CognitiveSpace`. Agents can read, write, search, and run
 interpretation strategies, but they do not own the memory.
 
+## Can another agent install MemoryNexus by itself?
+
+Yes, if it can run shell commands and edit its own MCP configuration. Give it
+[Agent Self-Install](agent-self-install.md). The guide tells the agent how to
+start local services, build `memorynexus-mcp`, configure MCP, create a
+`CognitiveSpace`, create a Lens, and run smoke tests without exposing tokens.
+
+## What is the minimum agent integration path?
+
+Start the Rust API, provide `MEMORYNEXUS_TOKEN`, configure `memorynexus-mcp`, and
+let the agent call MCP tools such as `create_space`, `create_lens`,
+`add_memory`, `get_profile`, `search_memories`, and `route_agent_context`.
+
 ## Where is the backend?
 
 The Rust crate lives at the repository root. Run Cargo commands from the root.

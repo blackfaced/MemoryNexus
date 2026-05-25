@@ -56,9 +56,9 @@ workflows while keeping Cognitive Space as the ownership boundary.
 
 Current open work:
 
-- [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8)
 - [#35 Reminder notification delivery channels](https://github.com/blackfaced/MemoryNexus/issues/35)
 - [#36 Advanced reminder recurrence and rule engine](https://github.com/blackfaced/MemoryNexus/issues/36)
+- [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8)
 
 Recently completed:
 
@@ -67,6 +67,9 @@ Recently completed:
   role-gated memory writes.
 - Personal agent integration guide and templates for Claw/Hermes-style MCP
   clients.
+- [#41 Agent-ready MCP bootstrap tools](https://github.com/blackfaced/MemoryNexus/issues/41):
+  MCP `create_space` / `create_lens`, default-space `get_profile`, and an
+  agent self-install guide so another agent can connect itself.
 - [#33 Persist personal agent profile and cognitive state projection](https://github.com/blackfaced/MemoryNexus/issues/33):
   profile snapshot API, persisted provenance, and MCP `get_profile`.
 - [#34 Add personal agent write policy and cognitive router](https://github.com/blackfaced/MemoryNexus/issues/34):

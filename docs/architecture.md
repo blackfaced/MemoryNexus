@@ -7,7 +7,7 @@ but they do not own memory directly.
 ## Runtime Components
 
 ```text
-CLI / HTTP clients
+CLI / MCP / HTTP clients
       |
       v
 Rust Axum API
@@ -35,7 +35,7 @@ src/
   state/     application state and repository wiring
   storage/   S3 and thumbnail storage helpers
   vector/    Qdrant vector store and vector repository
-  bin/       memorynexus-cli
+  bin/       memorynexus-cli, memorynexus-mcp, memorynexus-eval
 
 migrations/ PostgreSQL schema migrations
 tests/      integration test entry points
@@ -90,12 +90,15 @@ architecture.
 
 ## Current Constraints
 
-- The CLI is the primary manual MVP surface.
+- The CLI is the primary manual MVP surface. MCP is the primary local agent
+  surface for Claw/Hermes-style clients.
 - Semantic search is available when `QDRANT_URL` and an embedding provider are
   configured.
 - `MEMORYNEXUS_EMBEDDING_PROVIDER=local` is intended for deterministic local
   smoke tests.
 - Lens persistence is available through REST and CLI create/list/get commands.
+- MCP exposes agent bootstrap tools for creating spaces and lenses, plus
+  memory write/search, Lens Run, profile projection, reminders, and routing.
 - Lens Run execution is synchronous in the MVP: it retrieves memories inside the
   Lens's Cognitive Space, persists matched memory IDs, and stores traceable
   output with summary provider provenance.

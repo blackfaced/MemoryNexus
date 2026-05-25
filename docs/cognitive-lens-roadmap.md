@@ -163,7 +163,9 @@ Phase 2 open issues。
 
 目标：让 Cognitive Space 成为家庭、应用和外部 Agent 的长期认知底座。
 
-- [ ] 支持外部 Agent 通过开放 API 接入 Cognitive Space，但只能基于权限读写空间。
+- [x] 支持外部 Agent 通过 API/MCP 接入 Cognitive Space，并基于权限读写空间。
+- [x] 提供 agent self-install 文档和 MCP bootstrap tools，让 Claw/Hermes 类
+  agent 可以创建 Space、创建 Lens、写入 memory、获取 profile、检索和路由上下文。
 - [ ] 增加空间级策略：谁可以写入、谁可以运行 Lens、哪些 Lens 可以产生持久化洞察。
 - [ ] 支持 Lens marketplace 或模板库，允许用户复用解释策略。
 - [ ] 增加跨空间检索和授权分享，保持默认隔离。
