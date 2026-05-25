@@ -60,7 +60,6 @@ Current open work:
 - [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8)
 - [#20 Periodic cognitive review reports](https://github.com/blackfaced/MemoryNexus/issues/20)
 - [#16 CLI commands for family spaces and reminders](https://github.com/blackfaced/MemoryNexus/issues/16)
-- [#33 Persist personal agent profile and cognitive state projection](https://github.com/blackfaced/MemoryNexus/issues/33)
 - [#34 Add personal agent write policy and cognitive router](https://github.com/blackfaced/MemoryNexus/issues/34)
 
 Recently completed:
@@ -70,6 +69,8 @@ Recently completed:
   role-gated memory writes.
 - Personal agent integration guide and templates for Claw/Hermes-style MCP
   clients.
+- [#33 Persist personal agent profile and cognitive state projection](https://github.com/blackfaced/MemoryNexus/issues/33):
+  profile snapshot API, persisted provenance, and MCP `get_profile`.
 
 ## Phase 4: User Interface
 

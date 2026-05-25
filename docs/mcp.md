@@ -45,6 +45,7 @@ and MCP client JSON snippets.
 | `list_lenses` | List Lenses in a Cognitive Space |
 | `run_lens` | Run a Lens query and return a traceable Lens Run |
 | `get_lens_run` | Fetch a persisted Lens Run by ID |
+| `get_profile` | Project and persist a compact Cognitive Profile for a personal agent |
 
 ## Smoke Test
 
@@ -58,13 +59,21 @@ printf '%s\n' \
 ```
 
 Expected output includes an `initialize` response and a `tools/list` response
-with the six tools above.
+with the tools above.
 
 To call a tool, keep the API running and send a `tools/call` request:
 
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_memories","arguments":{"query":"cognitive lens","lens_id":"<lens-id>","limit":5}}}' \
+  | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
+```
+
+Personal agent profile projection:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_profile","arguments":{"space_id":"<space-id>","target":"personal_context","limit":12}}}' \
   | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
 ```
 

@@ -380,6 +380,75 @@ for semantic smoke tests without external API credentials. Production-like
 deployments should keep the default OpenAI embedding provider and configure
 `OPENAI_API_KEY`.
 
+## Cognitive Profiles
+
+Profiles are compact projections of a Cognitive Space for LLM, MCP, and UI
+clients. A profile is not agent-owned memory. It is persisted as a snapshot with
+source memory IDs and Lens Run IDs.
+
+### Create Profile Snapshot
+
+`POST /api/v1/profiles`
+
+```json
+{
+  "space_id": "space-uuid",
+  "lens_id": "optional-lens-uuid",
+  "target": "personal_context",
+  "limit": 12
+}
+```
+
+Supported `target` values:
+
+- `llm_context`
+- `personal_context`
+- `preference_review`
+- `decision_history`
+- `risk_review`
+- `project_context`
+
+The response includes the persisted snapshot:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "snapshot": {
+      "id": "profile-snapshot-uuid",
+      "space_id": "space-uuid",
+      "lens_id": null,
+      "target": "personal_context",
+      "profile": {
+        "summary": "Cognitive profile for 'Personal Agent Space' using 3 recent memories and 1 Lens Runs.",
+        "stable_preferences": [],
+        "active_projects": [],
+        "decision_history": [],
+        "recent_context": [],
+        "unresolved_contradictions": [],
+        "source_memory_ids": [],
+        "source_lens_run_ids": []
+      },
+      "source_memory_ids": [],
+      "source_lens_run_ids": [],
+      "created_by": "user-uuid",
+      "created_at": "2026-05-25T00:00:00Z"
+    }
+  }
+}
+```
+
+Use profile snapshots when an agent needs compact working context. Use search
+when it needs raw recall. Use Lens Run when it needs interpretation with
+citations.
+
+### Get Profile Snapshot
+
+`GET /api/v1/profiles/:id`
+
+Returns a profile snapshot only if the current user is a member of the snapshot's
+Cognitive Space.
+
 ## AI
 
 ### Summarize Content

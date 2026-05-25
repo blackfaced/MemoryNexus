@@ -136,12 +136,25 @@ Do not write routine scratchpad content:
 Use `search_memories` before answering when the question depends on durable user
 context. Prefer semantic search for natural language queries.
 
+Use `get_profile` at the start of a personal-agent session or before a task that
+needs compact user context. It persists a profile snapshot with source memory
+IDs and Lens Run IDs, so later answers can explain which Cognitive Space
+materials shaped the context.
+
 Use `run_lens` when the agent needs interpretation, not just retrieval:
 
 - `personal_context`: "What should I know about this user before helping?"
 - `preference_review`: "What stable preferences affect this task?"
 - `decision_history`: "What related decisions have already been made?"
 - `risk_review`: "What contradictions or unresolved concerns should I surface?"
+
+Recommended order for Claw/Hermes:
+
+1. `get_profile` for compact working context.
+2. `search_memories` for raw recall when the task mentions a specific topic.
+3. `run_lens` when the agent needs an interpretation, tradeoff review, or
+   contradiction check.
+4. `add_memory` only when the information is durable and safe to persist.
 
 ## Memory Shape
 
@@ -167,17 +180,17 @@ With the API running and `MEMORYNEXUS_TOKEN` set:
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add_memory","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","title":"Agent integration smoke","content":"Claw or Hermes can use MemoryNexus through MCP as a personal cognitive substrate.","tags":["agent","mcp","smoke"]}}}' \
-  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_memories","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","query":"personal cognitive substrate","semantic":true,"limit":5}}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_profile","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","target":"personal_context","limit":12}}}' \
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_memories","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","query":"personal cognitive substrate","semantic":true,"limit":5}}}' \
   | cargo run --quiet --bin memorynexus-mcp
 ```
 
-The response should include the tool list, a successful memory creation, and at
-least one search result from the same `CognitiveSpace`.
+The response should include the tool list, a successful memory creation, a
+persisted profile snapshot, and at least one search result from the same
+`CognitiveSpace`.
 
 ## Current Gaps
 
-- Profile and CognitiveState are still projections in the domain model, not a
-  persisted personal-agent API.
 - Automatic write policy is a convention, not a router yet.
 - MCP does not create spaces or lenses yet; use CLI for setup.
 - Reminder and scheduled recall are still Phase 3 follow-up work.

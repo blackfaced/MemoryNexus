@@ -200,6 +200,20 @@ fn tools_list_result() -> Value {
                     "required": ["run_id"]
                 }),
             ),
+            tool_schema(
+                "get_profile",
+                "Project and persist a compact Cognitive Profile for a personal agent.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "space_id": {"type": "string"},
+                        "lens_id": {"type": "string"},
+                        "target": {"type": "string", "default": "personal_context"},
+                        "limit": {"type": "integer", "default": 12}
+                    },
+                    "required": ["space_id"]
+                }),
+            ),
         ]
     })
 }
@@ -298,6 +312,18 @@ fn build_api_request_for_tool(
                 token,
             })
         }
+        "get_profile" => Ok(ApiRequest {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/profiles"),
+            body: Some(json!({
+                "space_id": required_string(arguments, "space_id")?,
+                "lens_id": optional_string(arguments, "lens_id"),
+                "target": optional_string(arguments, "target")
+                    .unwrap_or_else(|| "personal_context".to_string()),
+                "limit": optional_usize(arguments, "limit").unwrap_or(12),
+            })),
+            token,
+        }),
         _ => Err(McpError::new(format!("unknown tool: {tool_name}"))),
     }
 }
@@ -436,6 +462,7 @@ mod tests {
                 "list_lenses",
                 "run_lens",
                 "get_lens_run",
+                "get_profile",
             ]
         );
     }
@@ -506,5 +533,36 @@ mod tests {
         let error = build_api_request_for_tool(&config, "list_spaces", &json!({})).unwrap_err();
 
         assert_eq!(error.message, "MEMORYNEXUS_TOKEN is required");
+    }
+
+    #[test]
+    fn get_profile_tool_maps_to_profiles_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let request = build_api_request_for_tool(
+            &config,
+            "get_profile",
+            &json!({
+                "space_id": "space-123",
+                "target": "personal_context",
+                "limit": 8
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/profiles");
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "space_id": "space-123",
+                "lens_id": null,
+                "target": "personal_context",
+                "limit": 8,
+            }))
+        );
     }
 }

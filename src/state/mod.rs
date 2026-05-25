@@ -275,6 +275,7 @@ pub struct Repositories {
     pub lenses: Arc<dyn super::db::lens::LensRepository>,
     pub lens_runs: Arc<dyn super::db::lens_run::LensRunRepository>,
     pub memories: Arc<dyn super::db::memory::MemoryRepository>,
+    pub profiles: Arc<dyn super::db::profile::CognitiveProfileRepository>,
     pub spaces: Arc<dyn super::db::space::CognitiveSpaceRepository>,
     pub tags: Arc<dyn super::db::tag::TagRepository>,
     pub users: Arc<dyn super::db::user::UserRepository>,
