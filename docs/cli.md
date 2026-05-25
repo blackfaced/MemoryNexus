@@ -72,10 +72,57 @@ Run the CLI in another terminal:
 ```bash
 cargo run --bin memorynexus-cli -- health
 cargo run --bin memorynexus-cli -- config
+cargo run --bin memorynexus-cli -- version
 ```
 
 `config` reads the running API process configuration. Use it to confirm which
 embedding and summary providers the API actually started with.
+
+## Local Version And Upgrade Helpers
+
+The CLI includes local helper commands for agent installs. They do not require
+`MEMORYNEXUS_TOKEN`.
+
+Check the local CLI version, binary path, checkout state, and reachable API
+health/version:
+
+```bash
+cargo run --bin memorynexus-cli -- version
+cargo run --bin memorynexus-cli -- install status --checkout /path/to/MemoryNexus
+```
+
+Generate an upgrade plan without executing it:
+
+```bash
+cargo run --bin memorynexus-cli -- upgrade \
+  --checkout /path/to/MemoryNexus \
+  --pull \
+  --rebuild-mcp
+```
+
+Apply the plan explicitly:
+
+```bash
+cargo run --bin memorynexus-cli -- upgrade \
+  --checkout /path/to/MemoryNexus \
+  --pull \
+  --rebuild-mcp \
+  --apply
+```
+
+Important behavior:
+
+- Omit `--pull` when the checkout already contains the user's latest local
+  edits.
+- Add `--rebuild-mcp` when the agent MCP config points at
+  `target/debug/memorynexus-mcp`.
+- Add `--rebuild-api` when the API is launched from a built
+  `target/debug/memorynexus` binary.
+- Omit `--rebuild-mcp` when the MCP config uses `cargo run`; restart or reload
+  the MCP client instead.
+- `upgrade` refuses to `git pull` with dirty local files.
+- Running processes still need restarting after upgrade; the CLI does not
+  restart the API or MCP client for you.
 
 ## Cognitive Lens MVP Walkthrough
 
