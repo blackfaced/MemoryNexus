@@ -133,6 +133,12 @@ Do not write routine scratchpad content:
 - secrets, credentials, tokens, or private keys
 - large pasted files without user intent to preserve them
 
+Use `route_agent_context` before choosing a MemoryNexus tool when the agent is
+uncertain. The router is deterministic and conservative: it recommends
+`write_memory`, `search_memory`, `run_lens`, `get_profile`, or `ignore`, but it
+does not execute the action. The agent should inspect `safety_flags` before
+following the suggestion.
+
 Use `search_memories` before answering when the question depends on durable user
 context. Prefer semantic search for natural language queries.
 
@@ -150,11 +156,12 @@ Use `run_lens` when the agent needs interpretation, not just retrieval:
 
 Recommended order for Claw/Hermes:
 
-1. `get_profile` for compact working context.
-2. `search_memories` for raw recall when the task mentions a specific topic.
-3. `run_lens` when the agent needs an interpretation, tradeoff review, or
+1. `route_agent_context` when the correct MemoryNexus action is not obvious.
+2. `get_profile` for compact working context.
+3. `search_memories` for raw recall when the task mentions a specific topic.
+4. `run_lens` when the agent needs an interpretation, tradeoff review, or
    contradiction check.
-4. `add_memory` only when the information is durable and safe to persist.
+5. `add_memory` only when the information is durable and safe to persist.
 
 ## Memory Shape
 
@@ -181,16 +188,18 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add_memory","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","title":"Agent integration smoke","content":"Claw or Hermes can use MemoryNexus through MCP as a personal cognitive substrate.","tags":["agent","mcp","smoke"]}}}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_profile","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","target":"personal_context","limit":12}}}' \
-  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_memories","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","query":"personal cognitive substrate","semantic":true,"limit":5}}}' \
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"route_agent_context","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","message":"What do you remember about my personal cognitive substrate?"}}}' \
+  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"search_memories","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","query":"personal cognitive substrate","semantic":true,"limit":5}}}' \
   | cargo run --quiet --bin memorynexus-mcp
 ```
 
 The response should include the tool list, a successful memory creation, a
-persisted profile snapshot, and at least one search result from the same
-`CognitiveSpace`.
+persisted profile snapshot, a routing recommendation, and at least one search
+result from the same `CognitiveSpace`.
 
 ## Current Gaps
 
-- Automatic write policy is a convention, not a router yet.
+- Router policy is deterministic and conservative; it recommends actions but
+  does not execute them automatically.
 - MCP does not create spaces or lenses yet; use CLI for setup.
 - Reminder and scheduled recall are still Phase 3 follow-up work.

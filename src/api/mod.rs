@@ -4,6 +4,7 @@ use axum::Router;
 
 use crate::state::AppState;
 
+mod agent_router;
 mod ai;
 mod auth;
 mod embedding;
@@ -27,6 +28,11 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/auth/login", axum::routing::post(auth::login))
         .route("/api/v1/auth/register", axum::routing::post(auth::register))
         .route("/api/v1/auth/me", axum::routing::get(auth::me))
+        // Agent routing
+        .route(
+            "/api/v1/agent/route",
+            axum::routing::post(agent_router::route),
+        )
         // Cognitive Space
         .route("/api/v1/spaces", axum::routing::get(spaces::list))
         .route("/api/v1/spaces", axum::routing::post(spaces::create))

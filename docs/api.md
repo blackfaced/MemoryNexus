@@ -449,6 +449,59 @@ citations.
 Returns a profile snapshot only if the current user is a member of the snapshot's
 Cognitive Space.
 
+## Agent Router
+
+The agent router is a deterministic, conservative policy layer for personal
+agents. It recommends a MemoryNexus action but does not execute the action. This
+keeps writes explicit and prevents the router from silently storing secrets or
+scratchpad noise.
+
+### Route Agent Context
+
+`POST /api/v1/agent/route`
+
+```json
+{
+  "message": "Remember this: I prefer Rust-first backend work.",
+  "space_id": "optional-space-uuid",
+  "lens_id": "optional-lens-uuid",
+  "target": "personal_context"
+}
+```
+
+Possible `action` values:
+
+- `write_memory`
+- `search_memory`
+- `run_lens`
+- `get_profile`
+- `ignore`
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "action": "write_memory",
+    "confidence": 0.92,
+    "reason_codes": ["explicit_memory_intent"],
+    "safety_flags": [],
+    "suggested_tool": "add_memory",
+    "suggested_arguments": {
+      "space_id": "space-uuid",
+      "title": "I prefer Rust-first backend work.",
+      "content": "I prefer Rust-first backend work.",
+      "tags": ["agent", "explicit-memory"]
+    }
+  }
+}
+```
+
+Secret-like input returns `ignore` with `do_not_persist_secret`. Long command
+output and transient build/test logs return `ignore` with
+`transient_or_low_signal`.
+
 ## AI
 
 ### Summarize Content

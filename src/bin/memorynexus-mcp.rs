@@ -214,6 +214,20 @@ fn tools_list_result() -> Value {
                     "required": ["space_id"]
                 }),
             ),
+            tool_schema(
+                "route_agent_context",
+                "Recommend whether an agent should write, search, run a Lens, get a profile, or ignore context.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "message": {"type": "string"},
+                        "space_id": {"type": "string"},
+                        "lens_id": {"type": "string"},
+                        "target": {"type": "string", "default": "personal_context"}
+                    },
+                    "required": ["message"]
+                }),
+            ),
         ]
     })
 }
@@ -321,6 +335,18 @@ fn build_api_request_for_tool(
                 "target": optional_string(arguments, "target")
                     .unwrap_or_else(|| "personal_context".to_string()),
                 "limit": optional_usize(arguments, "limit").unwrap_or(12),
+            })),
+            token,
+        }),
+        "route_agent_context" => Ok(ApiRequest {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/agent/route"),
+            body: Some(json!({
+                "message": required_string(arguments, "message")?,
+                "space_id": optional_string(arguments, "space_id"),
+                "lens_id": optional_string(arguments, "lens_id"),
+                "target": optional_string(arguments, "target")
+                    .unwrap_or_else(|| "personal_context".to_string()),
             })),
             token,
         }),
@@ -463,6 +489,7 @@ mod tests {
                 "run_lens",
                 "get_lens_run",
                 "get_profile",
+                "route_agent_context",
             ]
         );
     }
@@ -562,6 +589,36 @@ mod tests {
                 "lens_id": null,
                 "target": "personal_context",
                 "limit": 8,
+            }))
+        );
+    }
+
+    #[test]
+    fn route_agent_context_tool_maps_to_agent_route_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let request = build_api_request_for_tool(
+            &config,
+            "route_agent_context",
+            &json!({
+                "message": "Remember this: I prefer Rust.",
+                "space_id": "space-123"
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/agent/route");
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "message": "Remember this: I prefer Rust.",
+                "space_id": "space-123",
+                "lens_id": null,
+                "target": "personal_context",
             }))
         );
     }

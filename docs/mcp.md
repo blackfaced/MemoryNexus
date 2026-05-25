@@ -46,6 +46,7 @@ and MCP client JSON snippets.
 | `run_lens` | Run a Lens query and return a traceable Lens Run |
 | `get_lens_run` | Fetch a persisted Lens Run by ID |
 | `get_profile` | Project and persist a compact Cognitive Profile for a personal agent |
+| `route_agent_context` | Recommend write/search/lens/profile/ignore for agent context |
 
 ## Smoke Test
 
@@ -74,6 +75,14 @@ Personal agent profile projection:
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_profile","arguments":{"space_id":"<space-id>","target":"personal_context","limit":12}}}' \
+  | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
+```
+
+Agent routing recommendation:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"route_agent_context","arguments":{"message":"Remember this: I prefer Rust-first backend work.","space_id":"<space-id>"}}}' \
   | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
 ```
 
