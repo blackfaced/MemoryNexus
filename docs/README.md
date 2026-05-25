@@ -5,6 +5,7 @@
 - [Architecture](architecture.md)
 - [API](api.md)
 - [CLI](cli.md)
+- [Personal Agent Integration](agent-integration.md)
 - [Development](development.md)
 - [Deployment](deployment.md)
 - [TODO](TODO.md)

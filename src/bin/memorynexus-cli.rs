@@ -45,6 +45,30 @@ const LENS_TEMPLATES: &[LensTemplate] = &[
         output_format: "bullets",
         retrieval_mode: "semantic",
     },
+    LensTemplate {
+        id: "personal_context",
+        name: "Personal Context",
+        description: "Interpret personal memories for an agent's working context.",
+        strategy: "personal_context",
+        output_format: "brief",
+        retrieval_mode: "semantic",
+    },
+    LensTemplate {
+        id: "preference_review",
+        name: "Preference Review",
+        description: "Extract stable user preferences, dislikes, and working style signals.",
+        strategy: "preference_review",
+        output_format: "bullets",
+        retrieval_mode: "semantic",
+    },
+    LensTemplate {
+        id: "decision_history",
+        name: "Decision History",
+        description: "Review past decisions, rationale, reversals, and open tradeoffs.",
+        strategy: "decision_history",
+        output_format: "bullets",
+        retrieval_mode: "semantic",
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1247,6 +1271,11 @@ mod tests {
             .unwrap()
             .iter()
             .any(|template| template["id"] == "project_context"));
+        assert!(output["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|template| template["id"] == "personal_context"));
     }
 
     #[test]

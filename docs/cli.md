@@ -196,6 +196,9 @@ Available templates:
 | `learning_review` | `learning_review` | `bullets` | Learning progress, gaps, and next steps |
 | `family_growth` | `family_growth` | `brief` | Family growth moments and continuity |
 | `risk_review` | `risk_review` | `bullets` | Risks, contradictions, and unresolved concerns |
+| `personal_context` | `personal_context` | `brief` | Personal agent working context |
+| `preference_review` | `preference_review` | `bullets` | Stable preferences, dislikes, and working style |
+| `decision_history` | `decision_history` | `bullets` | Past decisions, rationale, reversals, and tradeoffs |
 
 You can override template fields:
 

@@ -30,6 +30,11 @@ MEMORYNEXUS_TOKEN='<jwt-token>' \
 cargo run --bin memorynexus-mcp
 ```
 
+For Claw, Hermes, or another personal agent, see
+[Personal Agent Integration](agent-integration.md). That guide includes a
+recommended personal `CognitiveSpace`, personal Lens templates, write policy,
+and MCP client JSON snippets.
+
 ## Tools
 
 | Tool | Purpose |
