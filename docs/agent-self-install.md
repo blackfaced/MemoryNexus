@@ -21,6 +21,21 @@ Expected result:
   `get_profile`, `search_memories`, `run_lens`, and `route_agent_context`.
 - A smoke memory can be written and retrieved through MCP.
 
+## Execution Strategy
+
+Work in phases and stop cleanly at blockers.
+
+1. **Repository ready**: use the existing local repository if present.
+2. **Rust/MCP ready**: build `memorynexus-mcp` before starting Docker services.
+3. **Services ready**: start PostgreSQL and Qdrant.
+4. **API ready**: run the Rust API and verify `/health`.
+5. **Token ready**: reuse or create `MEMORYNEXUS_TOKEN`.
+6. **Agent connected**: write the MCP config and reload the client.
+7. **End-to-end smoke**: write, profile, route, and search through MCP.
+
+If a phase fails twice for the same reason, do not loop. Report the blocker,
+what was tried, and which later phases can still be completed.
+
 ## Safety Rules
 
 - Do not commit secrets, JWT tokens, API keys, or local MCP config files.
@@ -32,7 +47,16 @@ Expected result:
 
 ## Prerequisites
 
-Check these first:
+First check whether the repository already exists:
+
+```bash
+test -d /Users/bytedance/code/MemoryNexus && echo "repo exists"
+```
+
+If it exists, use it. Do not clone a second copy. If it does not exist, ask the
+user before cloning.
+
+Then check tools:
 
 ```bash
 pwd
@@ -50,6 +74,38 @@ cd /Users/bytedance/code/MemoryNexus
 
 If Rust or Docker is missing, ask the user before installing system packages.
 
+## Build MCP Server
+
+Build the MCP binary:
+
+```bash
+cargo build --bin memorynexus-mcp
+```
+
+This phase does not require PostgreSQL, Qdrant, or a running API.
+
+Verify the server exposes tools. The token can be a placeholder because
+`tools/list` does not call the API:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | MEMORYNEXUS_API_URL=http://localhost:8080 \
+    MEMORYNEXUS_TOKEN="placeholder-token" \
+    ./target/debug/memorynexus-mcp
+```
+
+The output must include:
+
+- `create_space`
+- `create_lens`
+- `add_memory`
+- `get_profile`
+- `search_memories`
+- `route_agent_context`
+
+If this passes, the MCP binary is ready even if Docker is blocked.
+
 ## Start Local Services
 
 Start PostgreSQL and Qdrant:
@@ -57,6 +113,9 @@ Start PostgreSQL and Qdrant:
 ```bash
 docker compose up -d postgres qdrant
 ```
+
+If Docker image pulling fails, do not keep retrying blindly. Go to
+[Docker Pull Or Proxy Issues](#docker-pull-or-proxy-issues).
 
 Start the Rust API in a long-running terminal:
 
@@ -78,7 +137,7 @@ cargo run --quiet --bin memorynexus-cli -- health
 
 If the user already has `MEMORYNEXUS_TOKEN`, reuse it.
 
-Otherwise create a local test account:
+Otherwise create a local test account after the API is healthy:
 
 ```bash
 export MEMORYNEXUS_API_URL=http://localhost:8080
@@ -92,33 +151,6 @@ export MEMORYNEXUS_TOKEN=$(printf '%s' "$AUTH_JSON" | jq -r '.data.token')
 ```
 
 Do not print the token.
-
-## Build MCP Server
-
-Build the MCP binary:
-
-```bash
-cargo build --bin memorynexus-mcp
-```
-
-Verify the server exposes tools:
-
-```bash
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | MEMORYNEXUS_API_URL=http://localhost:8080 \
-    MEMORYNEXUS_TOKEN="$MEMORYNEXUS_TOKEN" \
-    ./target/debug/memorynexus-mcp
-```
-
-The output must include:
-
-- `create_space`
-- `create_lens`
-- `add_memory`
-- `get_profile`
-- `search_memories`
-- `route_agent_context`
 
 ## Configure The Agent MCP Client
 
@@ -247,10 +279,66 @@ printf '%s\n' "$SPACE_JSON"
 Then extract the `space_id` from the returned API JSON text and continue with
 `create_lens`, `add_memory`, `get_profile`, and `search_memories`.
 
+## Docker Pull Or Proxy Issues
+
+Docker image pulls are performed by the Docker daemon, not by the current shell.
+Shell variables such as `HTTP_PROXY` may not affect `docker compose up`.
+
+If Docker pull fails:
+
+1. Check whether Docker works at all:
+
+```bash
+docker version
+docker info
+```
+
+2. Check daemon proxy visibility:
+
+```bash
+docker info | grep -i proxy
+```
+
+3. If the proxy is missing, ask the user to configure Docker Desktop or the
+   Docker daemon proxy and restart Docker. Do not assume shell proxy variables
+   are enough.
+
+4. If local images already exist, continue with them:
+
+```bash
+docker images | grep -E 'postgres|qdrant|minio'
+```
+
+5. If Docker remains blocked, complete the non-Docker phases:
+
+- repository check
+- Rust build
+- `memorynexus-mcp` build
+- MCP `tools/list` smoke
+- MCP client config draft
+
+Then report Docker as the blocker for API and end-to-end smoke.
+
+## Partial Success Criteria
+
+If full installation is blocked, report the highest completed level:
+
+- **Level 1: Repo Ready**: repository exists and prerequisites checked.
+- **Level 2: MCP Binary Ready**: `cargo build --bin memorynexus-mcp` succeeds.
+- **Level 3: MCP Discoverable**: stdio `tools/list` shows MemoryNexus tools.
+- **Level 4: API Ready**: API health check succeeds.
+- **Level 5: Agent Connected**: MCP config is installed and visible in the
+  agent client.
+- **Level 6: End-to-End Ready**: MCP can create a space, create a Lens, write a
+  memory, project a profile, and search.
+
+Do not redo earlier successful levels unless files changed.
+
 ## Completion Report
 
 When done, report:
 
+- Highest completed level from the partial success list.
 - Whether the API is running.
 - Whether MCP `tools/list` shows MemoryNexus tools.
 - Which MCP config entry was added.
