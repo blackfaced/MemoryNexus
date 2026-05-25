@@ -17,7 +17,8 @@ decisions/
 ├── ADR-008-database-design.md    ✅ 数据库设计
 ├── ADR-009-rust-first-backend.md ✅ Rust-first 后端主线
 ├── ADR-010-memory-salience.md    ✅ Memory salience 与 automatic forgetting
-└── ADR-011-contradiction-lifecycle.md ✅ Contradiction 生命周期
+├── ADR-011-contradiction-lifecycle.md ✅ Contradiction 生命周期
+└── ADR-012-family-shared-cognitive-space.md ✅ 家庭与共享 Cognitive Space
 ```
 
 ## 📖 ADR 是什么？

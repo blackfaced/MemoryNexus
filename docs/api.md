@@ -85,9 +85,13 @@ The auth response includes `data.token`.
 ```json
 {
   "name": "Learning Space",
-  "description": "Rust and cognitive memory practice"
+  "description": "Rust and cognitive memory practice",
+  "space_type": "project"
 }
 ```
+
+`space_type` is optional and defaults to `personal`. Supported values are
+`personal`, `family`, `project`, and `organization`.
 
 ### List Spaces
 
@@ -100,6 +104,58 @@ Returns spaces where the current user is a member.
 `GET /api/v1/spaces/:id`
 
 Returns a space only if the current user is a member.
+
+### List Space Members
+
+`GET /api/v1/spaces/:id/members`
+
+Returns members only when the current user is already a member of the space.
+Member roles are:
+
+- `owner`: manages members and writes content.
+- `editor`: writes content and can update/delete their own memories.
+- `viewer`: reads visible space content.
+
+### Create Space Invite
+
+`POST /api/v1/spaces/:id/invites`
+
+Only `owner` members can create invite codes. Invite codes can grant `editor` or
+`viewer`; `owner` cannot be granted by invite.
+
+```json
+{
+  "role": "viewer",
+  "expires_in_days": 7
+}
+```
+
+### Accept Space Invite
+
+`POST /api/v1/spaces/invites/accept`
+
+```json
+{
+  "code": "invite-code"
+}
+```
+
+Accepting an invite creates or updates the current user's membership in the
+target Cognitive Space.
+
+### Update Member Role
+
+`PATCH /api/v1/spaces/:id/members/:user_id`
+
+Only `owner` members can update roles. This endpoint supports `editor` and
+`viewer`; owner transfer is intentionally out of scope for the first shared
+space model.
+
+```json
+{
+  "role": "editor"
+}
+```
 
 ## Lenses
 

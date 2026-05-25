@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
 use crate::db::memory::{CreateMemory, MemoryDb, MemoryType};
+use crate::db::space::SpaceMemberRole;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
 use crate::vector::{MemoryVectorPayload, MemoryVectorPoint};
@@ -150,6 +151,7 @@ pub async fn create(
     let title = req.title;
     let memory_type: MemoryType = req.memory_type.into();
     let space = resolve_space(&state, auth_user.user_id, req.space_id).await?;
+    require_space_writer(&state, space.id, auth_user.user_id).await?;
 
     let create_memory = CreateMemory {
         user_id: auth_user.user_id,
@@ -255,9 +257,9 @@ pub async fn get(
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", id)))?;
 
-    // 检查权限（自己的或共享的）
-    if memory.user_id != auth_user.user_id && !memory.is_shared {
-        return Err(AppError::Unauthorized);
+    // Memory visibility is scoped by Cognitive Space membership.
+    if memory.user_id != auth_user.user_id {
+        require_space_member(&state, memory.space_id, auth_user.user_id).await?;
     }
 
     Ok(Json(ApiResponse::success(memory)))
@@ -279,10 +281,7 @@ pub async fn update(
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", id)))?;
 
-    // 检查权限
-    if existing.user_id != auth_user.user_id {
-        return Err(AppError::Unauthorized);
-    }
+    require_memory_writer(&state, &existing, auth_user.user_id).await?;
 
     // 更新字段
     let memory = state
@@ -315,9 +314,7 @@ pub async fn delete(
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound(format!("Memory {} not found", id)))?;
 
-    if existing.user_id != auth_user.user_id {
-        return Err(AppError::Unauthorized);
-    }
+    require_memory_writer(&state, &existing, auth_user.user_id).await?;
 
     let deleted = state
         .repositories
@@ -331,6 +328,65 @@ pub async fn delete(
     }
 
     Ok(Json(ApiResponse::success(())))
+}
+
+async fn require_space_member(
+    state: &AppState,
+    space_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    state
+        .repositories
+        .spaces
+        .find_member(space_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .map(|_| ())
+        .ok_or(AppError::Unauthorized)
+}
+
+async fn require_space_writer(
+    state: &AppState,
+    space_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let member = state
+        .repositories
+        .spaces
+        .find_member(space_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+
+    if member.parsed_role().is_some_and(SpaceMemberRole::can_write) {
+        Ok(())
+    } else {
+        Err(AppError::Unauthorized)
+    }
+}
+
+async fn require_memory_writer(
+    state: &AppState,
+    memory: &MemoryDb,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    if memory.user_id == user_id {
+        return Ok(());
+    }
+
+    let member = state
+        .repositories
+        .spaces
+        .find_member(memory.space_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+
+    if member.parsed_role() == Some(SpaceMemberRole::Owner) {
+        Ok(())
+    } else {
+        Err(AppError::Unauthorized)
+    }
 }
 
 #[cfg(test)]
