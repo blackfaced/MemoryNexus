@@ -437,12 +437,16 @@ source memory IDs and Lens Run IDs.
 
 ```json
 {
-  "space_id": "space-uuid",
+  "space_id": "optional-space-uuid",
   "lens_id": "optional-lens-uuid",
   "target": "personal_context",
   "limit": 12
 }
 ```
+
+If `space_id` is omitted, the server uses the user's default Cognitive Space. If
+`lens_id` is provided without `space_id`, the server uses the Lens's Cognitive
+Space.
 
 Supported `target` values:
 

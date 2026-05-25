@@ -40,9 +40,11 @@ and MCP client JSON snippets.
 | Tool | Purpose |
 |------|---------|
 | `list_spaces` | List Cognitive Spaces visible to the authenticated user |
+| `create_space` | Create a Cognitive Space for agent bootstrap |
 | `add_memory` | Add a text memory to a Cognitive Space |
 | `search_memories` | Search memories by `space_id` or `lens_id` |
 | `list_lenses` | List Lenses in a Cognitive Space |
+| `create_lens` | Create a Lens interpretation strategy in a Cognitive Space |
 | `run_lens` | Run a Lens query and return a traceable Lens Run |
 | `get_lens_run` | Fetch a persisted Lens Run by ID |
 | `get_profile` | Project and persist a compact Cognitive Profile for a personal agent |
@@ -77,7 +79,16 @@ Personal agent profile projection:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_profile","arguments":{"space_id":"<space-id>","target":"personal_context","limit":12}}}' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_profile","arguments":{"target":"personal_context","limit":12}}}' \
+  | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
+```
+
+Agent bootstrap from MCP:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_space","arguments":{"name":"Personal Agent Space","description":"Long-term memory universe for a personal agent","space_type":"personal"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_lens","arguments":{"space_id":"<space-id-from-create-space>","name":"Personal Context","strategy":"personal_context","output_format":"brief","retrieval_mode":"semantic"}}}' \
   | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
 ```
 

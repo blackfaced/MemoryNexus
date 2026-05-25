@@ -21,7 +21,7 @@ use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateProfileRequest {
-    pub space_id: Uuid,
+    pub space_id: Option<Uuid>,
     pub lens_id: Option<Uuid>,
     #[serde(default = "default_target")]
     pub target: String,
@@ -46,15 +46,7 @@ pub async fn create(
     let target = normalize_target(&req.target)?;
     let limit = req.limit.unwrap_or(12).clamp(1, 30);
 
-    let space = state
-        .repositories
-        .spaces
-        .find_for_user(req.space_id, auth_user.user_id)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or(AppError::Unauthorized)?;
-
-    let lens = resolve_lens(&state, req.lens_id, auth_user.user_id, space.id).await?;
+    let (space, lens) = resolve_profile_context(&state, &req, auth_user.user_id).await?;
 
     let memories = state
         .repositories
@@ -102,6 +94,60 @@ pub async fn create(
     ))
 }
 
+async fn resolve_profile_context(
+    state: &AppState,
+    req: &CreateProfileRequest,
+    user_id: Uuid,
+) -> Result<(CognitiveSpaceDb, Option<LensDb>), AppError> {
+    if let Some(lens_id) = req.lens_id {
+        let lens = state
+            .repositories
+            .lenses
+            .find_for_user(lens_id, user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized)?;
+
+        if let Some(space_id) = req.space_id {
+            if space_id != lens.space_id {
+                return Err(AppError::BadRequest(
+                    "space_id must match the Lens Cognitive Space".to_string(),
+                ));
+            }
+        }
+
+        let space = state
+            .repositories
+            .spaces
+            .find_for_user(lens.space_id, user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized)?;
+
+        return Ok((space, Some(lens)));
+    }
+
+    let space = if let Some(space_id) = req.space_id {
+        state
+            .repositories
+            .spaces
+            .find_for_user(space_id, user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized)?
+    } else {
+        state
+            .repositories
+            .spaces
+            .default_for_user(user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))?
+    };
+
+    Ok((space, None))
+}
+
 /// GET /api/v1/profiles/:id - Fetch a persisted profile snapshot.
 pub async fn get(
     State(state): State<AppState>,
@@ -117,32 +163,6 @@ pub async fn get(
         .ok_or(AppError::Unauthorized)?;
 
     Ok(Json(ApiResponse::success(ProfileResponse { snapshot })))
-}
-
-async fn resolve_lens(
-    state: &AppState,
-    lens_id: Option<Uuid>,
-    user_id: Uuid,
-    space_id: Uuid,
-) -> Result<Option<LensDb>, AppError> {
-    let Some(lens_id) = lens_id else {
-        return Ok(None);
-    };
-    let lens = state
-        .repositories
-        .lenses
-        .find_for_user(lens_id, user_id)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or(AppError::Unauthorized)?;
-
-    if lens.space_id != space_id {
-        return Err(AppError::BadRequest(
-            "lens_id must belong to the requested Cognitive Space".to_string(),
-        ));
-    }
-
-    Ok(Some(lens))
 }
 
 fn normalize_target(target: &str) -> Result<String, AppError> {
@@ -369,5 +389,15 @@ mod tests {
     fn unsupported_target_is_rejected() {
         let error = normalize_target("agent_private_memory").unwrap_err();
         assert!(matches!(error, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn create_profile_request_allows_default_space() {
+        let req: CreateProfileRequest =
+            serde_json::from_str(r#"{"target":"personal_context","limit":8}"#).unwrap();
+
+        assert_eq!(req.space_id, None);
+        assert_eq!(req.target, "personal_context");
+        assert_eq!(req.limit, Some(8));
     }
 }

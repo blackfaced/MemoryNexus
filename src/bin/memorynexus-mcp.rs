@@ -135,6 +135,19 @@ fn tools_list_result() -> Value {
                 }),
             ),
             tool_schema(
+                "create_space",
+                "Create a Cognitive Space for personal, family, project, or organization memory.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "space_type": {"type": "string", "enum": ["personal", "family", "project", "organization"], "default": "personal"}
+                    },
+                    "required": ["name"]
+                }),
+            ),
+            tool_schema(
                 "add_memory",
                 "Add a text memory to a Cognitive Space.",
                 json!({
@@ -177,6 +190,22 @@ fn tools_list_result() -> Value {
                 }),
             ),
             tool_schema(
+                "create_lens",
+                "Create a Lens interpretation strategy in a Cognitive Space.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "space_id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "strategy": {"type": "string", "default": "default"},
+                        "output_format": {"type": "string", "default": "summary"},
+                        "retrieval_mode": {"type": "string", "default": "semantic"}
+                    },
+                    "required": ["space_id", "name"]
+                }),
+            ),
+            tool_schema(
                 "run_lens",
                 "Run a Lens query and return a traceable Lens Run.",
                 json!({
@@ -210,8 +239,7 @@ fn tools_list_result() -> Value {
                         "lens_id": {"type": "string"},
                         "target": {"type": "string", "default": "personal_context"},
                         "limit": {"type": "integer", "default": 12}
-                    },
-                    "required": ["space_id"]
+                    }
                 }),
             ),
             tool_schema(
@@ -299,6 +327,17 @@ fn build_api_request_for_tool(
             body: None,
             token,
         }),
+        "create_space" => Ok(ApiRequest {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/spaces"),
+            body: Some(json!({
+                "name": required_string(arguments, "name")?,
+                "description": optional_string(arguments, "description"),
+                "space_type": optional_string(arguments, "space_type")
+                    .unwrap_or_else(|| "personal".to_string()),
+            })),
+            token,
+        }),
         "add_memory" => Ok(ApiRequest {
             method: HttpMethod::Post,
             url: format!("{base_url}/api/v1/memories"),
@@ -348,6 +387,22 @@ fn build_api_request_for_tool(
                 token,
             })
         }
+        "create_lens" => Ok(ApiRequest {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/lenses"),
+            body: Some(json!({
+                "space_id": required_string(arguments, "space_id")?,
+                "name": required_string(arguments, "name")?,
+                "description": optional_string(arguments, "description"),
+                "strategy": optional_string(arguments, "strategy")
+                    .unwrap_or_else(|| "default".to_string()),
+                "output_format": optional_string(arguments, "output_format")
+                    .unwrap_or_else(|| "summary".to_string()),
+                "retrieval_mode": optional_string(arguments, "retrieval_mode")
+                    .unwrap_or_else(|| "semantic".to_string()),
+            })),
+            token,
+        }),
         "run_lens" => Ok(ApiRequest {
             method: HttpMethod::Post,
             url: format!("{base_url}/api/v1/lens-runs"),
@@ -371,7 +426,7 @@ fn build_api_request_for_tool(
             method: HttpMethod::Post,
             url: format!("{base_url}/api/v1/profiles"),
             body: Some(json!({
-                "space_id": required_string(arguments, "space_id")?,
+                "space_id": optional_string(arguments, "space_id"),
                 "lens_id": optional_string(arguments, "lens_id"),
                 "target": optional_string(arguments, "target")
                     .unwrap_or_else(|| "personal_context".to_string()),
@@ -571,9 +626,11 @@ mod tests {
             names,
             vec![
                 "list_spaces",
+                "create_space",
                 "add_memory",
                 "search_memories",
                 "list_lenses",
+                "create_lens",
                 "run_lens",
                 "get_lens_run",
                 "get_profile",
@@ -582,6 +639,71 @@ mod tests {
                 "complete_reminder",
                 "route_agent_context",
             ]
+        );
+    }
+
+    #[test]
+    fn create_space_tool_maps_to_spaces_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let request = build_api_request_for_tool(
+            &config,
+            "create_space",
+            &json!({
+                "name": "Personal Agent Space",
+                "description": "Agent memory universe",
+                "space_type": "personal"
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/spaces");
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "name": "Personal Agent Space",
+                "description": "Agent memory universe",
+                "space_type": "personal"
+            }))
+        );
+    }
+
+    #[test]
+    fn create_lens_tool_maps_to_lenses_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let request = build_api_request_for_tool(
+            &config,
+            "create_lens",
+            &json!({
+                "space_id": "space-123",
+                "name": "Personal Context",
+                "strategy": "personal_context",
+                "output_format": "brief",
+                "retrieval_mode": "semantic"
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/lenses");
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "space_id": "space-123",
+                "name": "Personal Context",
+                "description": null,
+                "strategy": "personal_context",
+                "output_format": "brief",
+                "retrieval_mode": "semantic"
+            }))
         );
     }
 
@@ -677,6 +799,36 @@ mod tests {
             request.body,
             Some(json!({
                 "space_id": "space-123",
+                "lens_id": null,
+                "target": "personal_context",
+                "limit": 8,
+            }))
+        );
+    }
+
+    #[test]
+    fn get_profile_tool_allows_default_space() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let request = build_api_request_for_tool(
+            &config,
+            "get_profile",
+            &json!({
+                "target": "personal_context",
+                "limit": 8
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.url, "http://localhost:8080/api/v1/profiles");
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "space_id": null,
                 "lens_id": null,
                 "target": "personal_context",
                 "limit": 8,

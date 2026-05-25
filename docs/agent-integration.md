@@ -43,7 +43,8 @@ AUTH_JSON=$(cargo run --quiet --bin memorynexus-cli -- auth register \
 export MEMORYNEXUS_TOKEN=$(printf '%s' "$AUTH_JSON" | jq -r '.data.token')
 ```
 
-Create a personal agent space:
+You can create the first space and lenses either with the CLI or directly from
+the MCP client. CLI setup is convenient for shell-driven local testing:
 
 ```bash
 SPACE_JSON=$(cargo run --quiet --bin memorynexus-cli -- space create \
@@ -72,6 +73,11 @@ export MEMORYNEXUS_PERSONAL_LENS_ID=$(printf '%s' "$PERSONAL_LENS_JSON" | jq -r 
 export MEMORYNEXUS_PREFERENCE_LENS_ID=$(printf '%s' "$PREFERENCE_LENS_JSON" | jq -r '.data.id')
 export MEMORYNEXUS_DECISION_LENS_ID=$(printf '%s' "$DECISION_LENS_JSON" | jq -r '.data.id')
 ```
+
+Once the MCP client is connected, the agent can also bootstrap its own working
+space with `create_space`, then create lenses with `create_lens`. Use the
+returned `space_id` from `create_space` as the `space_id` argument for
+`create_lens`.
 
 ## MCP Configuration
 
@@ -143,9 +149,10 @@ Use `search_memories` before answering when the question depends on durable user
 context. Prefer semantic search for natural language queries.
 
 Use `get_profile` at the start of a personal-agent session or before a task that
-needs compact user context. It persists a profile snapshot with source memory
-IDs and Lens Run IDs, so later answers can explain which Cognitive Space
-materials shaped the context.
+needs compact user context. `space_id` is optional; when omitted, MemoryNexus
+uses the user's default `CognitiveSpace`. It persists a profile snapshot with
+source memory IDs and Lens Run IDs, so later answers can explain which
+Cognitive Space materials shaped the context.
 
 Use `list_reminders` with `due_only=true` at the start of a personal-agent
 session when the agent should surface scheduled recall. Complete a reminder only
@@ -197,7 +204,7 @@ With the API running and `MEMORYNEXUS_TOKEN` set:
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add_memory","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","title":"Agent integration smoke","content":"Claw or Hermes can use MemoryNexus through MCP as a personal cognitive substrate.","tags":["agent","mcp","smoke"]}}}' \
-  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_profile","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","target":"personal_context","limit":12}}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_profile","arguments":{"target":"personal_context","limit":12}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"route_agent_context","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","message":"What do you remember about my personal cognitive substrate?"}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"search_memories","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","query":"personal cognitive substrate","semantic":true,"limit":5}}}' \
   '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"list_reminders","arguments":{"space_id":"'"$MEMORYNEXUS_SPACE_ID"'","due_only":true,"limit":5}}}' \
@@ -212,6 +219,5 @@ from the same `CognitiveSpace`, and any due reminders.
 
 - Router policy is deterministic and conservative; it recommends actions but
   does not execute them automatically.
-- MCP does not create spaces or lenses yet; use CLI for setup.
 - Reminder delivery is poll-based. Background dispatch, external notification
   channels, and richer recurrence rules are still Phase 3 follow-up work.
