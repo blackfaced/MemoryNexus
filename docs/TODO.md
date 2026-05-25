@@ -57,7 +57,6 @@ workflows while keeping Cognitive Space as the ownership boundary.
 Current open work:
 
 - [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8)
-- [#16 CLI commands for family spaces and reminders](https://github.com/blackfaced/MemoryNexus/issues/16)
 - [#35 Reminder notification delivery channels](https://github.com/blackfaced/MemoryNexus/issues/35)
 - [#36 Advanced reminder recurrence and rule engine](https://github.com/blackfaced/MemoryNexus/issues/36)
 
@@ -78,6 +77,9 @@ Recently completed:
 - [#20 Periodic cognitive review reports](https://github.com/blackfaced/MemoryNexus/issues/20):
   manual API/CLI review report generation over a Lens and time window with
   source memory citations and summary provenance.
+- [#16 CLI commands for family spaces and reminders](https://github.com/blackfaced/MemoryNexus/issues/16):
+  `family` CLI for shared Cognitive Space create/list/members/invite/accept/role
+  plus `remind` alias for reminder commands.
 
 ## Phase 4: User Interface
 

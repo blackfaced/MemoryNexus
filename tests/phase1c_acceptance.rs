@@ -93,6 +93,108 @@ fn run_acceptance_flow(run_id: &str, api_url: &str) {
         .expect("space response should include data.id")
         .to_string();
 
+    let family = cli(
+        [
+            "family",
+            "create",
+            "--name",
+            "Phase 3 Family Space",
+            "--description",
+            "Shared family CLI acceptance",
+        ],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&family);
+    assert_eq!(
+        family["data"]["space_type"],
+        Value::String("family".to_string())
+    );
+    let family_space_id = family["data"]["id"]
+        .as_str()
+        .expect("family response should include data.id")
+        .to_string();
+
+    let family_members = cli(
+        ["family", "members", "--space", &family_space_id],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&family_members);
+    assert_eq!(family_members["data"]["total"], Value::from(1));
+
+    let invite = cli(
+        [
+            "family",
+            "invite",
+            "--space",
+            &family_space_id,
+            "--role",
+            "viewer",
+            "--expires-in-days",
+            "7",
+        ],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&invite);
+    let invite_code = invite["data"]["code"]
+        .as_str()
+        .expect("invite response should include data.code")
+        .to_string();
+
+    let family_member_email = format!("phase1c-family-{run_id}@example.com");
+    let family_member_auth = cli(
+        [
+            "auth",
+            "register",
+            "--email",
+            &family_member_email,
+            "--name",
+            "Phase1CFamily",
+            "--password",
+            "secret123",
+        ],
+        None,
+        api_url,
+    );
+    assert_ok(&family_member_auth);
+    let family_member_token = family_member_auth["data"]["token"]
+        .as_str()
+        .expect("family member auth should include data.token")
+        .to_string();
+
+    let accepted = cli(
+        ["family", "accept", "--code", &invite_code],
+        Some(&family_member_token),
+        api_url,
+    );
+    assert_ok(&accepted);
+    let accepted_by = accepted["data"]["accepted_by"]
+        .as_str()
+        .expect("accepted invite should include accepted_by")
+        .to_string();
+
+    let updated_role = cli(
+        [
+            "family",
+            "role",
+            "--space",
+            &family_space_id,
+            "--user",
+            &accepted_by,
+            "--role",
+            "editor",
+        ],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&updated_role);
+    assert_eq!(
+        updated_role["data"]["role"],
+        Value::String("editor".to_string())
+    );
+
     let content = format!("phase1c semantic qdrant smoke memory {run_id}");
     let memory = cli(
         [

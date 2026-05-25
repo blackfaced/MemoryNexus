@@ -259,6 +259,56 @@ cargo run --bin memorynexus-cli -- search "project direction" \
   --limit 5
 ```
 
+## Family Spaces
+
+`family` is a CLI convenience surface for shared `CognitiveSpace` workflows. It
+does not reintroduce the old family model; it creates spaces with
+`space_type=family` and uses the same members/invites API.
+
+Create a family space:
+
+```bash
+FAMILY_JSON=$(cargo run --quiet --bin memorynexus-cli -- family create \
+  --name "Family Space" \
+  --description "Shared family memories")
+
+export MEMORYNEXUS_FAMILY_SPACE_ID=$(printf '%s' "$FAMILY_JSON" | jq -r '.data.id')
+```
+
+List spaces and family members:
+
+```bash
+cargo run --bin memorynexus-cli -- family list | jq
+cargo run --bin memorynexus-cli -- family members \
+  --space "$MEMORYNEXUS_FAMILY_SPACE_ID" | jq
+```
+
+Create and accept an invite:
+
+```bash
+INVITE_JSON=$(cargo run --quiet --bin memorynexus-cli -- family invite \
+  --space "$MEMORYNEXUS_FAMILY_SPACE_ID" \
+  --role viewer \
+  --expires-in-days 7)
+
+export MEMORYNEXUS_INVITE_CODE=$(printf '%s' "$INVITE_JSON" | jq -r '.data.code')
+
+cargo run --bin memorynexus-cli -- family accept \
+  --code "$MEMORYNEXUS_INVITE_CODE"
+```
+
+Update a member role:
+
+```bash
+cargo run --bin memorynexus-cli -- family role \
+  --space "$MEMORYNEXUS_FAMILY_SPACE_ID" \
+  --user "<user-id>" \
+  --role editor
+```
+
+Supported invite/update roles are `viewer` and `editor`. `owner` cannot be
+assigned through invite or role update.
+
 ## Reminders
 
 Reminders are scheduled recall items inside a `CognitiveSpace`. The MVP exposes
@@ -300,6 +350,8 @@ Complete a reminder:
 ```bash
 cargo run --bin memorynexus-cli -- reminder complete "$MEMORYNEXUS_REMINDER_ID"
 ```
+
+`remind` is an alias for `reminder`.
 
 `--at` uses an RFC3339 timestamp such as `2026-05-26T09:00:00Z`.
 `--repeat` is optional and currently supports `daily`, `weekly`, or `monthly`.

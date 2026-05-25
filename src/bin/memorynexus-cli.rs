@@ -89,6 +89,27 @@ enum Command {
         description: Option<String>,
     },
     SpaceList,
+    FamilyCreate {
+        name: String,
+        description: Option<String>,
+    },
+    FamilyList,
+    FamilyMembers {
+        space_id: String,
+    },
+    FamilyInvite {
+        space_id: String,
+        role: String,
+        expires_in_days: Option<usize>,
+    },
+    FamilyAccept {
+        code: String,
+    },
+    FamilyRole {
+        space_id: String,
+        user_id: String,
+        role: String,
+    },
     LensCreate {
         space_id: String,
         name: String,
@@ -198,6 +219,7 @@ impl Config {
 enum HttpMethod {
     Get,
     Post,
+    Patch,
     Delete,
 }
 
@@ -276,9 +298,10 @@ where
         "config" => Ok(Command::Config),
         "auth" => parse_auth_command(&args[2..]),
         "space" => parse_space_command(&args[2..]),
+        "family" => parse_family_command(&args[2..]),
         "lens" => parse_lens_command(&args[2..]),
         "memory" => parse_memory_command(&args[2..]),
-        "reminder" => parse_reminder_command(&args[2..]),
+        "reminder" | "remind" => parse_reminder_command(&args[2..]),
         "review" => parse_review_command(&args[2..]),
         "search" => parse_search_command(&args[2..]),
         _ => Err(CliError::new(usage())),
@@ -323,6 +346,43 @@ fn parse_space_command(args: &[String]) -> Result<Command, CliError> {
         }),
         "list" => Ok(Command::SpaceList),
         _ => Err(CliError::new("unknown space subcommand")),
+    }
+}
+
+fn parse_family_command(args: &[String]) -> Result<Command, CliError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(CliError::new("family subcommand is required"));
+    };
+
+    match subcommand {
+        "create" => Ok(Command::FamilyCreate {
+            name: required_flag(args, "--name")?,
+            description: optional_flag(args, "--description"),
+        }),
+        "list" => Ok(Command::FamilyList),
+        "members" => Ok(Command::FamilyMembers {
+            space_id: required_flag(args, "--space")?,
+        }),
+        "invite" => Ok(Command::FamilyInvite {
+            space_id: required_flag(args, "--space")?,
+            role: optional_flag(args, "--role").unwrap_or_else(|| "viewer".to_string()),
+            expires_in_days: optional_flag(args, "--expires-in-days")
+                .map(|value| {
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| CliError::new("--expires-in-days must be a positive integer"))
+                })
+                .transpose()?,
+        }),
+        "accept" => Ok(Command::FamilyAccept {
+            code: required_flag(args, "--code")?,
+        }),
+        "role" => Ok(Command::FamilyRole {
+            space_id: required_flag(args, "--space")?,
+            user_id: required_flag(args, "--user")?,
+            role: required_flag(args, "--role")?,
+        }),
+        _ => Err(CliError::new("unknown family subcommand")),
     }
 }
 
@@ -587,6 +647,61 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             body: None,
             token: Some(require_token(config)?),
         }),
+        Command::FamilyCreate { name, description } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/spaces"),
+            body: Some(json!({
+                "name": name,
+                "description": description,
+                "space_type": "family",
+            })),
+            token: Some(require_token(config)?),
+        }),
+        Command::FamilyList => Ok(RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{base_url}/api/v1/spaces"),
+            body: None,
+            token: Some(require_token(config)?),
+        }),
+        Command::FamilyMembers { space_id } => Ok(RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{base_url}/api/v1/spaces/{space_id}/members"),
+            body: None,
+            token: Some(require_token(config)?),
+        }),
+        Command::FamilyInvite {
+            space_id,
+            role,
+            expires_in_days,
+        } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/spaces/{space_id}/invites"),
+            body: Some(json!({
+                "role": role,
+                "expires_in_days": expires_in_days,
+            })),
+            token: Some(require_token(config)?),
+        }),
+        Command::FamilyAccept { code } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/spaces/invites/accept"),
+            body: Some(json!({
+                "code": code,
+            })),
+            token: Some(require_token(config)?),
+        }),
+        Command::FamilyRole {
+            space_id,
+            user_id,
+            role,
+        } => Ok(RequestSpec {
+            method: HttpMethod::Patch,
+            url: format!("{base_url}/api/v1/spaces/{space_id}/members/{user_id}"),
+            body: Some(json!({
+                "role": role,
+            })),
+            token: Some(require_token(config)?),
+        }),
         Command::LensCreate {
             space_id,
             name,
@@ -846,6 +961,7 @@ async fn execute(config: &Config, command: &Command) -> Result<Value, CliError> 
     let mut builder = match request.method {
         HttpMethod::Get => client.get(&request.url),
         HttpMethod::Post => client.post(&request.url),
+        HttpMethod::Patch => client.patch(&request.url),
         HttpMethod::Delete => client.delete(&request.url),
     };
 
@@ -956,7 +1072,7 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, CliError
 }
 
 fn usage() -> &'static str {
-    "usage: memorynexus-cli <health|config|auth|space|lens|memory|reminder|review|search> ..."
+    "usage: memorynexus-cli <health|config|auth|space|family|lens|memory|reminder|remind|review|search> ..."
 }
 
 #[cfg(test)]
@@ -1072,6 +1188,98 @@ mod tests {
             }
         );
         assert_eq!(list, Command::SpaceList);
+    }
+
+    #[test]
+    fn parses_family_commands() {
+        let create = parse_command([
+            "memorynexus-cli",
+            "family",
+            "create",
+            "--name",
+            "Family Space",
+            "--description",
+            "Shared family cognition",
+        ])
+        .unwrap();
+        let list = parse_command(["memorynexus-cli", "family", "list"]).unwrap();
+        let members = parse_command([
+            "memorynexus-cli",
+            "family",
+            "members",
+            "--space",
+            "space-123",
+        ])
+        .unwrap();
+        let invite = parse_command([
+            "memorynexus-cli",
+            "family",
+            "invite",
+            "--space",
+            "space-123",
+            "--role",
+            "editor",
+            "--expires-in-days",
+            "7",
+        ])
+        .unwrap();
+        let accept = parse_command([
+            "memorynexus-cli",
+            "family",
+            "accept",
+            "--code",
+            "invite-code",
+        ])
+        .unwrap();
+        let role = parse_command([
+            "memorynexus-cli",
+            "family",
+            "role",
+            "--space",
+            "space-123",
+            "--user",
+            "user-123",
+            "--role",
+            "viewer",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            create,
+            Command::FamilyCreate {
+                name: "Family Space".to_string(),
+                description: Some("Shared family cognition".to_string()),
+            }
+        );
+        assert_eq!(list, Command::FamilyList);
+        assert_eq!(
+            members,
+            Command::FamilyMembers {
+                space_id: "space-123".to_string(),
+            }
+        );
+        assert_eq!(
+            invite,
+            Command::FamilyInvite {
+                space_id: "space-123".to_string(),
+                role: "editor".to_string(),
+                expires_in_days: Some(7),
+            }
+        );
+        assert_eq!(
+            accept,
+            Command::FamilyAccept {
+                code: "invite-code".to_string(),
+            }
+        );
+        assert_eq!(
+            role,
+            Command::FamilyRole {
+                space_id: "space-123".to_string(),
+                user_id: "user-123".to_string(),
+                role: "viewer".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -1329,6 +1537,22 @@ mod tests {
     }
 
     #[test]
+    fn parses_remind_alias() {
+        let command =
+            parse_command(["memorynexus-cli", "remind", "list", "--space", "space-123"]).unwrap();
+
+        assert_eq!(
+            command,
+            Command::ReminderList {
+                space_id: "space-123".to_string(),
+                due_only: false,
+                include_completed: false,
+                limit: 20,
+            }
+        );
+    }
+
+    #[test]
     fn parses_review_commands() {
         let create = parse_command([
             "memorynexus-cli",
@@ -1504,6 +1728,99 @@ mod tests {
             Some(json!({
                 "name": "Personal Space",
                 "description": null,
+            }))
+        );
+    }
+
+    #[test]
+    fn builds_family_requests() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let create = build_request(
+            &config,
+            &Command::FamilyCreate {
+                name: "Family Space".to_string(),
+                description: None,
+            },
+        )
+        .unwrap();
+        let members = build_request(
+            &config,
+            &Command::FamilyMembers {
+                space_id: "space-123".to_string(),
+            },
+        )
+        .unwrap();
+        let invite = build_request(
+            &config,
+            &Command::FamilyInvite {
+                space_id: "space-123".to_string(),
+                role: "viewer".to_string(),
+                expires_in_days: Some(7),
+            },
+        )
+        .unwrap();
+        let accept = build_request(
+            &config,
+            &Command::FamilyAccept {
+                code: "invite-code".to_string(),
+            },
+        )
+        .unwrap();
+        let role = build_request(
+            &config,
+            &Command::FamilyRole {
+                space_id: "space-123".to_string(),
+                user_id: "user-123".to_string(),
+                role: "editor".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(create.method, HttpMethod::Post);
+        assert_eq!(create.url, "http://localhost:8080/api/v1/spaces");
+        assert_eq!(
+            create.body,
+            Some(json!({
+                "name": "Family Space",
+                "description": null,
+                "space_type": "family",
+            }))
+        );
+        assert_eq!(members.method, HttpMethod::Get);
+        assert_eq!(
+            members.url,
+            "http://localhost:8080/api/v1/spaces/space-123/members"
+        );
+        assert_eq!(invite.method, HttpMethod::Post);
+        assert_eq!(
+            invite.url,
+            "http://localhost:8080/api/v1/spaces/space-123/invites"
+        );
+        assert_eq!(
+            invite.body,
+            Some(json!({
+                "role": "viewer",
+                "expires_in_days": 7,
+            }))
+        );
+        assert_eq!(accept.method, HttpMethod::Post);
+        assert_eq!(
+            accept.url,
+            "http://localhost:8080/api/v1/spaces/invites/accept"
+        );
+        assert_eq!(role.method, HttpMethod::Patch);
+        assert_eq!(
+            role.url,
+            "http://localhost:8080/api/v1/spaces/space-123/members/user-123"
+        );
+        assert_eq!(
+            role.body,
+            Some(json!({
+                "role": "editor",
             }))
         );
     }
