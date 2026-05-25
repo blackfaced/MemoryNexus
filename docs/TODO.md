@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-05-22
+> Last updated: 2026-05-25
 > Source of truth for executable tasks: GitHub Issues.
 
 This file is now a roadmap summary. Do not maintain detailed task status in
@@ -35,16 +35,19 @@ The current baseline is the Rust-first Cognitive Lens MVP foundation:
   structured key points, open questions, next actions, and citations.
 - OpenAI-compatible summary providers are supported, including OpenRouter via
   `OPENROUTER_API_KEY`.
+- Phase 2 Cognitive Lens MVP is complete and the GitHub milestone is closed.
 
 ## Phase 2: Cognitive Lens MVP
 
 Goal: make Lens a reliable runnable interpretation strategy over a Cognitive
 Space.
 
-Current open work:
+Status:
 
-No open Phase 2 work is tracked here. See GitHub Issues for newly discovered
-Lens MVP follow-ups.
+Completed. The GitHub milestone has 0 open issues. The implemented MVP includes
+Lens CRUD, Lens templates, Lens Run execution/history, lens-scoped search and
+summaries, deterministic/provider-backed summaries, smart tag suggestions, local
+evaluation fixtures, MCP access, and optional service-backed acceptance CI.
 
 ## Phase 3: Personal Cognitive Features
 
