@@ -4,6 +4,11 @@ This guide targets local personal agents such as Claw or Hermes. The goal is to
 let an agent use MemoryNexus as a personal cognitive substrate without making
 the agent own memory.
 
+If you want another agent to install and connect MemoryNexus by itself, give it
+[Agent Self-Install Guide](agent-self-install.md). That file is written as an
+agent-executable task brief with commands, MCP config snippets, smoke tests, and
+safety rules.
+
 ## Mental Model
 
 - `CognitiveSpace` is the memory universe.

@@ -85,6 +85,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [API](docs/api.md)
 - [CLI](docs/cli.md)
 - [MCP Server](docs/mcp.md)
+- [Agent Self-Install](docs/agent-self-install.md)
 - [Lens Evaluation](docs/evaluation.md)
 - [Phase 2 Completion](docs/phase2-completion.md)
 - [Development](docs/development.md)

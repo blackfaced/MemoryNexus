@@ -35,6 +35,9 @@ For Claw, Hermes, or another personal agent, see
 recommended personal `CognitiveSpace`, personal Lens templates, write policy,
 and MCP client JSON snippets.
 
+If another agent should perform the setup itself, give it
+[Agent Self-Install Guide](agent-self-install.md).
+
 ## Tools
 
 | Tool | Purpose |
