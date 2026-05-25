@@ -88,6 +88,14 @@ pub trait MemoryRepository: Send + Sync {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<MemoryDb>, sqlx::Error>;
+    async fn list_by_space_window(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+        window_start: DateTime<Utc>,
+        window_end: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<MemoryDb>, sqlx::Error>;
     async fn count_by_space(&self, user_id: Uuid, space_id: Uuid) -> Result<i64, sqlx::Error>;
     async fn update(
         &self,
@@ -233,6 +241,42 @@ impl MemoryRepository for PostgresMemoryRepository {
         .fetch_one(&self.pool)
         .await?;
         Ok(result.0)
+    }
+
+    async fn list_by_space_window(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+        window_start: DateTime<Utc>,
+        window_end: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<MemoryDb>, sqlx::Error> {
+        sqlx::query_as::<_, MemoryDb>(
+            r#"
+            SELECT * FROM memories
+            WHERE space_id = $2
+              AND created_at >= $3
+              AND created_at < $4
+              AND (
+                user_id = $1
+                OR is_shared = true
+                OR EXISTS (
+                    SELECT 1 FROM cognitive_space_members
+                    WHERE cognitive_space_members.space_id = memories.space_id
+                      AND cognitive_space_members.user_id = $1
+                )
+              )
+            ORDER BY created_at DESC
+            LIMIT $5
+            "#,
+        )
+        .bind(user_id)
+        .bind(space_id)
+        .bind(window_start)
+        .bind(window_end)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
     }
 
     async fn update(

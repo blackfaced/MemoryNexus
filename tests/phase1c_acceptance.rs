@@ -247,6 +247,68 @@ fn run_acceptance_flow(run_id: &str, api_url: &str) {
     assert_ok(&lens_get);
     assert_eq!(lens_get["data"]["id"], Value::String(lens_id.clone()));
 
+    let review = cli(
+        [
+            "review",
+            "create",
+            "--space",
+            &space_id,
+            "--lens",
+            &lens_id,
+            "--from",
+            "2020-01-01T00:00:00Z",
+            "--to",
+            "2030-01-01T00:00:00Z",
+            "--type",
+            "weekly_review",
+            "--limit",
+            "10",
+        ],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&review);
+    assert_eq!(review["data"]["space_id"], Value::String(space_id.clone()));
+    assert_eq!(review["data"]["lens_id"], Value::String(lens_id.clone()));
+    let review_id = review["data"]["id"]
+        .as_str()
+        .expect("review response should include data.id")
+        .to_string();
+    let review_memory_ids = review["data"]["source_memory_ids"]
+        .as_array()
+        .expect("review response should include source_memory_ids");
+    assert!(
+        review_memory_ids
+            .iter()
+            .any(|id| id == &Value::String(memory_id.clone())),
+        "review should cite the source memory: {review}"
+    );
+    let summary_source = review["data"]["report"]["summary_source"]
+        .as_str()
+        .expect("review report should include summary_source");
+    assert!(
+        matches!(summary_source, "ai" | "deterministic"),
+        "review report should record summary provenance: {review}"
+    );
+
+    let review_get = cli(["review", "get", &review_id], Some(&token), api_url);
+    assert_ok(&review_get);
+    assert_eq!(review_get["data"]["id"], Value::String(review_id.clone()));
+
+    let review_list = cli(
+        ["review", "list", "--space", &space_id, "--limit", "5"],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&review_list);
+    let reviews = review_list["data"]["items"]
+        .as_array()
+        .expect("review list response should include data.items");
+    assert!(
+        reviews.iter().any(|review| review["id"] == review_id),
+        "review list should include created report: {review_list}"
+    );
+
     let lens_run = cli(
         [
             "lens",

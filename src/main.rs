@@ -92,6 +92,9 @@ async fn main() -> anyhow::Result<()> {
             pool.clone(),
         )),
         reminders: Arc::new(db::reminder::PostgresReminderRepository::new(pool.clone())),
+        review_reports: Arc::new(
+            db::review_report::PostgresCognitiveReviewReportRepository::new(pool.clone()),
+        ),
         spaces: Arc::new(db::space::PostgresCognitiveSpaceRepository::new(
             pool.clone(),
         )),

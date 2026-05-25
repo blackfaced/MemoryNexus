@@ -153,6 +153,22 @@ enum Command {
     ReminderComplete {
         id: String,
     },
+    ReviewCreate {
+        space_id: String,
+        lens_id: String,
+        window_start: String,
+        window_end: String,
+        report_type: String,
+        limit: usize,
+    },
+    ReviewGet {
+        id: String,
+    },
+    ReviewList {
+        space_id: String,
+        lens_id: Option<String>,
+        limit: usize,
+    },
     Search {
         space_id: Option<String>,
         lens_id: Option<String>,
@@ -263,6 +279,7 @@ where
         "lens" => parse_lens_command(&args[2..]),
         "memory" => parse_memory_command(&args[2..]),
         "reminder" => parse_reminder_command(&args[2..]),
+        "review" => parse_review_command(&args[2..]),
         "search" => parse_search_command(&args[2..]),
         _ => Err(CliError::new(usage())),
     }
@@ -466,6 +483,37 @@ fn parse_reminder_command(args: &[String]) -> Result<Command, CliError> {
                 .ok_or_else(|| CliError::new("reminder id is required"))?,
         }),
         _ => Err(CliError::new("unknown reminder subcommand")),
+    }
+}
+
+fn parse_review_command(args: &[String]) -> Result<Command, CliError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(CliError::new("review subcommand is required"));
+    };
+
+    match subcommand {
+        "create" => Ok(Command::ReviewCreate {
+            space_id: required_flag(args, "--space")?,
+            lens_id: required_flag(args, "--lens")?,
+            window_start: required_flag(args, "--from")?,
+            window_end: required_flag(args, "--to")?,
+            report_type: optional_flag(args, "--type")
+                .unwrap_or_else(|| "periodic_review".to_string()),
+            limit: parse_usize_flag(args, "--limit", 30)?,
+        }),
+        "get" => Ok(Command::ReviewGet {
+            id: args
+                .get(1)
+                .filter(|id| !id.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| CliError::new("review report id is required"))?,
+        }),
+        "list" => Ok(Command::ReviewList {
+            space_id: required_flag(args, "--space")?,
+            lens_id: optional_flag(args, "--lens"),
+            limit: parse_usize_flag(args, "--limit", 20)?,
+        }),
+        _ => Err(CliError::new("unknown review subcommand")),
     }
 }
 
@@ -715,6 +763,49 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             body: None,
             token: Some(require_token(config)?),
         }),
+        Command::ReviewCreate {
+            space_id,
+            lens_id,
+            window_start,
+            window_end,
+            report_type,
+            limit,
+        } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/review-reports"),
+            body: Some(json!({
+                "space_id": space_id,
+                "lens_id": lens_id,
+                "window_start": window_start,
+                "window_end": window_end,
+                "report_type": report_type,
+                "limit": limit,
+            })),
+            token: Some(require_token(config)?),
+        }),
+        Command::ReviewGet { id } => Ok(RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{base_url}/api/v1/review-reports/{id}"),
+            body: None,
+            token: Some(require_token(config)?),
+        }),
+        Command::ReviewList {
+            space_id,
+            lens_id,
+            limit,
+        } => {
+            let limit = limit.to_string();
+            let mut pairs = vec![("space_id", space_id.as_str()), ("limit", limit.as_str())];
+            if let Some(lens_id) = lens_id {
+                pairs.push(("lens_id", lens_id.as_str()));
+            }
+            Ok(RequestSpec {
+                method: HttpMethod::Get,
+                url: with_query(&format!("{base_url}/api/v1/review-reports"), &pairs)?,
+                body: None,
+                token: Some(require_token(config)?),
+            })
+        }
         Command::Search {
             space_id,
             lens_id,
@@ -865,7 +956,7 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, CliError
 }
 
 fn usage() -> &'static str {
-    "usage: memorynexus-cli <health|config|auth|space|lens|memory|reminder|search> ..."
+    "usage: memorynexus-cli <health|config|auth|space|lens|memory|reminder|review|search> ..."
 }
 
 #[cfg(test)]
@@ -1238,6 +1329,57 @@ mod tests {
     }
 
     #[test]
+    fn parses_review_commands() {
+        let create = parse_command([
+            "memorynexus-cli",
+            "review",
+            "create",
+            "--space",
+            "space-123",
+            "--lens",
+            "lens-123",
+            "--from",
+            "2026-05-18T00:00:00Z",
+            "--to",
+            "2026-05-25T00:00:00Z",
+            "--type",
+            "weekly_review",
+            "--limit",
+            "12",
+        ])
+        .unwrap();
+        let get = parse_command(["memorynexus-cli", "review", "get", "report-123"]).unwrap();
+        let list =
+            parse_command(["memorynexus-cli", "review", "list", "--space", "space-123"]).unwrap();
+
+        assert_eq!(
+            create,
+            Command::ReviewCreate {
+                space_id: "space-123".to_string(),
+                lens_id: "lens-123".to_string(),
+                window_start: "2026-05-18T00:00:00Z".to_string(),
+                window_end: "2026-05-25T00:00:00Z".to_string(),
+                report_type: "weekly_review".to_string(),
+                limit: 12,
+            }
+        );
+        assert_eq!(
+            get,
+            Command::ReviewGet {
+                id: "report-123".to_string(),
+            }
+        );
+        assert_eq!(
+            list,
+            Command::ReviewList {
+                space_id: "space-123".to_string(),
+                lens_id: None,
+                limit: 20,
+            }
+        );
+    }
+
+    #[test]
     fn parses_semantic_search_command() {
         let command = parse_command([
             "memorynexus-cli",
@@ -1547,6 +1689,67 @@ mod tests {
         assert_eq!(
             complete.url,
             "http://localhost:8080/api/v1/reminders/reminder-123/complete"
+        );
+    }
+
+    #[test]
+    fn builds_review_requests() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let create = build_request(
+            &config,
+            &Command::ReviewCreate {
+                space_id: "space-123".to_string(),
+                lens_id: "lens-123".to_string(),
+                window_start: "2026-05-18T00:00:00Z".to_string(),
+                window_end: "2026-05-25T00:00:00Z".to_string(),
+                report_type: "weekly_review".to_string(),
+                limit: 12,
+            },
+        )
+        .unwrap();
+        let get = build_request(
+            &config,
+            &Command::ReviewGet {
+                id: "report-123".to_string(),
+            },
+        )
+        .unwrap();
+        let list = build_request(
+            &config,
+            &Command::ReviewList {
+                space_id: "space-123".to_string(),
+                lens_id: Some("lens-123".to_string()),
+                limit: 5,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(create.method, HttpMethod::Post);
+        assert_eq!(create.url, "http://localhost:8080/api/v1/review-reports");
+        assert_eq!(
+            create.body,
+            Some(json!({
+                "space_id": "space-123",
+                "lens_id": "lens-123",
+                "window_start": "2026-05-18T00:00:00Z",
+                "window_end": "2026-05-25T00:00:00Z",
+                "report_type": "weekly_review",
+                "limit": 12,
+            }))
+        );
+        assert_eq!(get.method, HttpMethod::Get);
+        assert_eq!(
+            get.url,
+            "http://localhost:8080/api/v1/review-reports/report-123"
+        );
+        assert_eq!(list.method, HttpMethod::Get);
+        assert_eq!(
+            list.url,
+            "http://localhost:8080/api/v1/review-reports?space_id=space-123&limit=5&lens_id=lens-123"
         );
     }
 

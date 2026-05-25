@@ -151,6 +151,9 @@ Use `list_reminders` with `due_only=true` at the start of a personal-agent
 session when the agent should surface scheduled recall. Complete a reminder only
 after the user or agent has handled it.
 
+Use CLI/API review reports for periodic synthesis. A review report is a
+persisted Lens-based interpretation over a time window, not a new owned memory.
+
 Use `run_lens` when the agent needs interpretation, not just retrieval:
 
 - `personal_context`: "What should I know about this user before helping?"
@@ -166,7 +169,9 @@ Recommended order for Claw/Hermes:
 4. `search_memories` for raw recall when the task mentions a specific topic.
 5. `run_lens` when the agent needs an interpretation, tradeoff review, or
    contradiction check.
-6. `add_memory` only when the information is durable and safe to persist.
+6. Generate a review report when the task is periodic synthesis over a time
+   window.
+7. `add_memory` only when the information is durable and safe to persist.
 
 ## Memory Shape
 

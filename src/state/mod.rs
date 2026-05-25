@@ -277,6 +277,7 @@ pub struct Repositories {
     pub memories: Arc<dyn super::db::memory::MemoryRepository>,
     pub profiles: Arc<dyn super::db::profile::CognitiveProfileRepository>,
     pub reminders: Arc<dyn super::db::reminder::ReminderRepository>,
+    pub review_reports: Arc<dyn super::db::review_report::CognitiveReviewReportRepository>,
     pub spaces: Arc<dyn super::db::space::CognitiveSpaceRepository>,
     pub tags: Arc<dyn super::db::tag::TagRepository>,
     pub users: Arc<dyn super::db::user::UserRepository>,

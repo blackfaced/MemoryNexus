@@ -489,6 +489,51 @@ citations.
 Returns a profile snapshot only if the current user is a member of the snapshot's
 Cognitive Space.
 
+## Cognitive Review Reports
+
+Review reports are persisted derived interpretations over a time window. They
+are generated through a Lens, cite source memory IDs, and record summary
+provider provenance.
+
+### Generate Review Report
+
+`POST /api/v1/review-reports`
+
+```json
+{
+  "space_id": "space-uuid",
+  "lens_id": "lens-uuid",
+  "window_start": "2026-05-18T00:00:00Z",
+  "window_end": "2026-05-25T00:00:00Z",
+  "report_type": "weekly_review",
+  "limit": 30
+}
+```
+
+Supported `report_type` values:
+
+- `periodic_review`
+- `daily_review`
+- `weekly_review`
+- `monthly_review`
+
+The response stores `report.summary`, `source_memory_ids`,
+`summary_provider`, `summary_source`, `summary_model`, and
+`summary_fallback_reason`. Reports are derived interpretations; they do not copy
+or own memories.
+
+### Get Review Report
+
+`GET /api/v1/review-reports/:id`
+
+Returns a report only if the current user can access its Cognitive Space.
+
+### List Review Reports
+
+`GET /api/v1/review-reports?space_id=<SPACE_ID>&lens_id=<OPTIONAL_LENS_ID>&limit=20`
+
+Returns visible reports ordered by newest first.
+
 ## Agent Router
 
 The agent router is a deterministic, conservative policy layer for personal

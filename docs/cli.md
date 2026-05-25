@@ -306,6 +306,42 @@ cargo run --bin memorynexus-cli -- reminder complete "$MEMORYNEXUS_REMINDER_ID"
 Completing a repeated reminder advances it to the next interval instead of
 closing it permanently.
 
+## Cognitive Review Reports
+
+Review reports generate a persisted, Lens-based interpretation for a time
+window. They cite source memory IDs and record summary provider provenance.
+
+Create a weekly review:
+
+```bash
+REVIEW_JSON=$(cargo run --quiet --bin memorynexus-cli -- review create \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --lens "$MEMORYNEXUS_LENS_ID" \
+  --from "2026-05-18T00:00:00Z" \
+  --to "2026-05-25T00:00:00Z" \
+  --type weekly_review \
+  --limit 30)
+
+export MEMORYNEXUS_REVIEW_ID=$(printf '%s' "$REVIEW_JSON" | jq -r '.data.id')
+```
+
+Inspect the report:
+
+```bash
+cargo run --bin memorynexus-cli -- review get "$MEMORYNEXUS_REVIEW_ID" | jq
+```
+
+List recent reports in a space:
+
+```bash
+cargo run --bin memorynexus-cli -- review list \
+  --space "$MEMORYNEXUS_SPACE_ID" \
+  --limit 10
+```
+
+Supported `--type` values are `periodic_review`, `daily_review`,
+`weekly_review`, and `monthly_review`.
+
 When `--lens` is used, the API searches inside the Lens's Cognitive Space and
 returns Lens provenance in `data.lens`.
 

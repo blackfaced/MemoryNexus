@@ -14,6 +14,7 @@ mod lenses;
 mod memories;
 mod profiles;
 mod reminders;
+mod review_reports;
 mod search;
 mod semantic;
 mod spaces;
@@ -83,6 +84,19 @@ pub fn routes() -> Router<AppState> {
         // Cognitive Profile projections
         .route("/api/v1/profiles", axum::routing::post(profiles::create))
         .route("/api/v1/profiles/:id", axum::routing::get(profiles::get))
+        // Cognitive Review Reports
+        .route(
+            "/api/v1/review-reports",
+            axum::routing::post(review_reports::create),
+        )
+        .route(
+            "/api/v1/review-reports",
+            axum::routing::get(review_reports::list),
+        )
+        .route(
+            "/api/v1/review-reports/:id",
+            axum::routing::get(review_reports::get),
+        )
         // 标签 CRUD
         .route("/api/v1/tags", axum::routing::get(tags::list))
         .route("/api/v1/tags", axum::routing::post(tags::create))
