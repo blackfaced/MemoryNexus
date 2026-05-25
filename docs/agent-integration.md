@@ -6,8 +6,8 @@ the agent own memory.
 
 If you want another agent to install and connect MemoryNexus by itself, give it
 [Agent Self-Install Guide](agent-self-install.md). That file is written as an
-agent-executable task brief with commands, MCP config snippets, smoke tests, and
-safety rules.
+agent-executable task brief with install-or-upgrade detection, commands, MCP
+config snippets, smoke tests, and safety rules.
 
 ## Mental Model
 
@@ -123,6 +123,53 @@ cargo build --bin memorynexus-mcp
   }
 }
 ```
+
+## Upgrading An Existing Agent Install
+
+After MemoryNexus source code changes, the connected agent does not
+automatically upgrade. Upgrade the checkout, rebuild if needed, then restart the
+running processes. If the latest changes are already local edits in this
+checkout, skip `git pull` and start with `cargo test`.
+
+Use this path when the MCP config uses `cargo run`:
+
+```bash
+cd /Users/bytedance/code/MemoryNexus
+git pull
+cargo test
+```
+
+Then restart the Rust API if backend code or migrations changed, and reload or
+restart the agent MCP client. The MCP client must restart its stdio server to
+run the new source.
+
+Use this path when the MCP config points at `target/debug/memorynexus-mcp`:
+
+```bash
+cd /Users/bytedance/code/MemoryNexus
+git pull
+cargo test
+cargo build --bin memorynexus-mcp
+```
+
+If the API is also launched from a built binary, rebuild it too:
+
+```bash
+cargo build --bin memorynexus
+```
+
+Then restart the API and reload or restart the agent MCP client.
+
+The API runs database migrations on startup, so migrations are applied only
+after the API process restarts. Do not print or rotate `MEMORYNEXUS_TOKEN`
+during an upgrade unless the token is missing or invalid.
+
+Agents connected through MCP can inspect and plan upgrades with local tools:
+
+- `get_install_status`: returns local MCP version, checkout state, and API
+  health/version when reachable.
+- `upgrade_install`: returns a plan by default; set `apply=true` only when the
+  user wants the agent to run local upgrade commands.
 
 ## Agent Tool Policy
 

@@ -75,6 +75,18 @@ const LENS_TEMPLATES: &[LensTemplate] = &[
 enum Command {
     Health,
     Config,
+    Version,
+    InstallStatus {
+        checkout_dir: Option<String>,
+    },
+    Upgrade {
+        checkout_dir: Option<String>,
+        apply: bool,
+        pull: bool,
+        rebuild_mcp: bool,
+        rebuild_api: bool,
+        skip_tests: bool,
+    },
     AuthRegister {
         email: String,
         username: String,
@@ -296,6 +308,9 @@ where
     match command {
         "health" => Ok(Command::Health),
         "config" => Ok(Command::Config),
+        "version" => Ok(Command::Version),
+        "install" => parse_install_command(&args[2..]),
+        "upgrade" => parse_upgrade_command(&args[2..]),
         "auth" => parse_auth_command(&args[2..]),
         "space" => parse_space_command(&args[2..]),
         "family" => parse_family_command(&args[2..]),
@@ -306,6 +321,30 @@ where
         "search" => parse_search_command(&args[2..]),
         _ => Err(CliError::new(usage())),
     }
+}
+
+fn parse_install_command(args: &[String]) -> Result<Command, CliError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(CliError::new("install subcommand is required"));
+    };
+
+    match subcommand {
+        "status" => Ok(Command::InstallStatus {
+            checkout_dir: optional_flag(args, "--checkout"),
+        }),
+        _ => Err(CliError::new("unknown install subcommand")),
+    }
+}
+
+fn parse_upgrade_command(args: &[String]) -> Result<Command, CliError> {
+    Ok(Command::Upgrade {
+        checkout_dir: optional_flag(args, "--checkout"),
+        apply: has_flag(args, "--apply"),
+        pull: has_flag(args, "--pull"),
+        rebuild_mcp: has_flag(args, "--rebuild-mcp"),
+        rebuild_api: has_flag(args, "--rebuild-api"),
+        skip_tests: has_flag(args, "--skip-tests"),
+    })
 }
 
 fn parse_auth_command(args: &[String]) -> Result<Command, CliError> {
@@ -609,6 +648,9 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             body: None,
             token: None,
         }),
+        Command::Version | Command::InstallStatus { .. } | Command::Upgrade { .. } => {
+            Err(CliError::new("local command has no HTTP request"))
+        }
         Command::AuthRegister {
             email,
             username,
@@ -955,8 +997,30 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
 }
 
 async fn execute(config: &Config, command: &Command) -> Result<Value, CliError> {
-    if matches!(command, Command::LensTemplates) {
-        return Ok(lens_templates_response());
+    match command {
+        Command::LensTemplates => return Ok(lens_templates_response()),
+        Command::Version => return Ok(local_version_response()),
+        Command::InstallStatus { checkout_dir } => {
+            return install_status_response(config, checkout_dir.as_deref()).await;
+        }
+        Command::Upgrade {
+            checkout_dir,
+            apply,
+            pull,
+            rebuild_mcp,
+            rebuild_api,
+            skip_tests,
+        } => {
+            return upgrade_response(
+                checkout_dir.as_deref(),
+                *apply,
+                *pull,
+                *rebuild_mcp,
+                *rebuild_api,
+                *skip_tests,
+            );
+        }
+        _ => {}
     }
 
     let request = build_request(config, command)?;
@@ -1021,6 +1085,254 @@ fn lens_templates_response() -> Value {
     })
 }
 
+fn local_version_response() -> Value {
+    json!({
+        "ok": true,
+        "data": local_version_data(),
+    })
+}
+
+fn local_version_data() -> Value {
+    json!({
+        "name": env!("CARGO_PKG_NAME"),
+        "version": env!("CARGO_PKG_VERSION"),
+        "binary": std::env::current_exe()
+            .ok()
+            .map(|path| path.display().to_string()),
+    })
+}
+
+async fn install_status_response(
+    config: &Config,
+    checkout_dir: Option<&str>,
+) -> Result<Value, CliError> {
+    let checkout = resolve_checkout_dir(checkout_dir)?;
+    let api_health = fetch_api_health(config).await.unwrap_or_else(|error| {
+        json!({
+            "reachable": false,
+            "error": error.message,
+        })
+    });
+
+    Ok(json!({
+        "ok": true,
+        "data": {
+            "local": local_version_data(),
+            "checkout": checkout_status(&checkout),
+            "api": api_health,
+            "upgrade": upgrade_plan_value(false, false, true, false),
+        }
+    }))
+}
+
+async fn fetch_api_health(config: &Config) -> Result<Value, CliError> {
+    let base_url = config.api_url.trim_end_matches('/');
+    let response = reqwest::Client::new()
+        .get(format!("{base_url}/api/v1/health"))
+        .send()
+        .await
+        .map_err(|error| CliError::new(error.to_string()))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| CliError::new(error.to_string()))?;
+    let body = serde_json::from_str::<Value>(&text).unwrap_or_else(|_| json!({ "raw": text }));
+
+    Ok(json!({
+        "reachable": status.is_success(),
+        "status_code": status.as_u16(),
+        "body": body,
+    }))
+}
+
+fn upgrade_response(
+    checkout_dir: Option<&str>,
+    apply: bool,
+    pull: bool,
+    rebuild_mcp: bool,
+    rebuild_api: bool,
+    skip_tests: bool,
+) -> Result<Value, CliError> {
+    let checkout = resolve_checkout_dir(checkout_dir)?;
+    let plan = upgrade_plan_value(pull, rebuild_mcp, !skip_tests, rebuild_api);
+    if !apply {
+        return Ok(json!({
+            "ok": true,
+            "data": {
+                "mode": "plan",
+                "checkout": checkout.display().to_string(),
+                "plan": plan,
+                "apply_hint": "rerun with --apply to execute these local commands",
+            }
+        }));
+    }
+
+    let dirty = git_status_short(&checkout)?;
+    if pull && !dirty.trim().is_empty() {
+        return Err(CliError::new(
+            "refusing to git pull with local changes; commit/stash them or rerun without --pull",
+        ));
+    }
+
+    let mut results = Vec::new();
+    if pull {
+        results.push(run_local_command(&checkout, "git", &["pull"])?);
+    }
+    if !skip_tests {
+        results.push(run_local_command(&checkout, "cargo", &["test"])?);
+    }
+    if rebuild_mcp {
+        results.push(run_local_command(
+            &checkout,
+            "cargo",
+            &["build", "--bin", "memorynexus-mcp"],
+        )?);
+    }
+    if rebuild_api {
+        results.push(run_local_command(
+            &checkout,
+            "cargo",
+            &["build", "--bin", "memorynexus"],
+        )?);
+    }
+
+    Ok(json!({
+        "ok": true,
+        "data": {
+            "mode": "applied",
+            "checkout": checkout.display().to_string(),
+            "plan": plan,
+            "results": results,
+            "restart_required": {
+                "api": rebuild_api,
+                "mcp_client": true,
+                "note": "Restart the API after backend changes and reload the agent MCP client so it starts a fresh memorynexus-mcp process."
+            }
+        }
+    }))
+}
+
+fn resolve_checkout_dir(checkout_dir: Option<&str>) -> Result<std::path::PathBuf, CliError> {
+    let path = checkout_dir
+        .map(std::path::PathBuf::from)
+        .map(Ok)
+        .unwrap_or_else(std::env::current_dir)
+        .map_err(|error| CliError::new(error.to_string()))?;
+    if !path.join("Cargo.toml").exists() {
+        return Err(CliError::new(format!(
+            "{} does not look like the MemoryNexus checkout",
+            path.display()
+        )));
+    }
+    Ok(path)
+}
+
+fn checkout_status(checkout: &std::path::Path) -> Value {
+    let git_head = run_local_command(checkout, "git", &["log", "-1", "--oneline"]).ok();
+    let git_status = git_status_short(checkout).ok();
+
+    json!({
+        "path": checkout.display().to_string(),
+        "git_head": git_head.and_then(|result| result.get("stdout").cloned()),
+        "dirty": git_status
+            .as_deref()
+            .map(|status| !status.trim().is_empty())
+            .unwrap_or(false),
+        "git_status_short": git_status,
+    })
+}
+
+fn git_status_short(checkout: &std::path::Path) -> Result<String, CliError> {
+    let output = std::process::Command::new("git")
+        .arg("status")
+        .arg("--short")
+        .current_dir(checkout)
+        .output()
+        .map_err(|error| CliError::new(error.to_string()))?;
+    if !output.status.success() {
+        return Err(CliError::new(String::from_utf8_lossy(&output.stderr)));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn run_local_command(
+    checkout: &std::path::Path,
+    program: &str,
+    args: &[&str],
+) -> Result<Value, CliError> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .current_dir(checkout)
+        .output()
+        .map_err(|error| CliError::new(error.to_string()))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !output.status.success() {
+        return Err(CliError::new(format!(
+            "{} {} failed: {}",
+            program,
+            args.join(" "),
+            stderr
+        )));
+    }
+
+    Ok(json!({
+        "command": std::iter::once(program)
+            .chain(args.iter().copied())
+            .collect::<Vec<_>>()
+            .join(" "),
+        "stdout": stdout,
+        "stderr": stderr,
+    }))
+}
+
+fn upgrade_plan_value(pull: bool, rebuild_mcp: bool, run_tests: bool, rebuild_api: bool) -> Value {
+    let mut steps = Vec::new();
+    steps.push(json!({
+        "command": "git status --short",
+        "reason": "detect local edits before any source update",
+    }));
+    if pull {
+        steps.push(json!({
+            "command": "git pull",
+            "reason": "update source from the configured remote; skipped when local edits are already the desired upgrade",
+        }));
+    }
+    if run_tests {
+        steps.push(json!({
+            "command": "cargo test",
+            "reason": "verify the updated checkout before reconnecting agents",
+        }));
+    }
+    if rebuild_mcp {
+        steps.push(json!({
+            "command": "cargo build --bin memorynexus-mcp",
+            "reason": "refresh built-binary MCP installs",
+        }));
+    }
+    if rebuild_api {
+        steps.push(json!({
+            "command": "cargo build --bin memorynexus",
+            "reason": "refresh built-binary API installs",
+        }));
+    }
+    steps.push(json!({
+        "command": "restart API and reload MCP client",
+        "reason": "running processes keep old code until restarted",
+    }));
+
+    json!({
+        "steps": steps,
+        "notes": [
+            "Skip git pull when the checkout already contains the user's local edits.",
+            "Skip cargo build --bin memorynexus-mcp when the MCP config uses cargo run.",
+            "Restart the API after backend code or migrations change; migrations run on API startup."
+        ]
+    })
+}
+
 fn require_token(config: &Config) -> Result<String, CliError> {
     config
         .token
@@ -1075,7 +1387,7 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, CliError
 }
 
 fn usage() -> &'static str {
-    "usage: memorynexus-cli <health|config|auth|space|family|lens|memory|reminder|remind|review|search> ..."
+    "usage: memorynexus-cli <health|config|version|install|upgrade|auth|space|family|lens|memory|reminder|remind|review|search> ..."
 }
 
 #[cfg(test)]
@@ -1092,6 +1404,87 @@ mod tests {
     fn parses_config_command() {
         let command = parse_command(["memorynexus-cli", "config"]).unwrap();
         assert_eq!(command, Command::Config);
+    }
+
+    #[test]
+    fn parses_version_command() {
+        let command = parse_command(["memorynexus-cli", "version"]).unwrap();
+        assert_eq!(command, Command::Version);
+    }
+
+    #[test]
+    fn parses_install_status_command() {
+        let command = parse_command([
+            "memorynexus-cli",
+            "install",
+            "status",
+            "--checkout",
+            "/tmp/MemoryNexus",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            command,
+            Command::InstallStatus {
+                checkout_dir: Some("/tmp/MemoryNexus".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_upgrade_plan_and_apply_flags() {
+        let command = parse_command([
+            "memorynexus-cli",
+            "upgrade",
+            "--checkout",
+            "/tmp/MemoryNexus",
+            "--pull",
+            "--rebuild-mcp",
+            "--rebuild-api",
+            "--skip-tests",
+            "--apply",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            command,
+            Command::Upgrade {
+                checkout_dir: Some("/tmp/MemoryNexus".to_string()),
+                apply: true,
+                pull: true,
+                rebuild_mcp: true,
+                rebuild_api: true,
+                skip_tests: true,
+            }
+        );
+    }
+
+    #[test]
+    fn upgrade_plan_defaults_to_tests_and_restart_without_apply() {
+        let plan = upgrade_plan_value(false, false, true, false);
+        let steps = plan["steps"].as_array().unwrap();
+
+        assert_eq!(steps[0]["command"], "git status --short");
+        assert!(steps.iter().any(|step| step["command"] == "cargo test"));
+        assert!(steps
+            .iter()
+            .any(|step| step["command"] == "restart API and reload MCP client"));
+        assert!(!steps.iter().any(|step| step["command"] == "git pull"));
+    }
+
+    #[test]
+    fn upgrade_plan_includes_binary_rebuild_steps_when_requested() {
+        let plan = upgrade_plan_value(true, true, true, true);
+        let commands: Vec<&str> = plan["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|step| step["command"].as_str().unwrap())
+            .collect();
+
+        assert!(commands.contains(&"git pull"));
+        assert!(commands.contains(&"cargo build --bin memorynexus-mcp"));
+        assert!(commands.contains(&"cargo build --bin memorynexus"));
     }
 
     #[test]
