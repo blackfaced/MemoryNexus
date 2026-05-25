@@ -56,7 +56,7 @@ impl TagRepository for PostgresTagRepository {
             r#"
             INSERT INTO tags (name, user_id)
             VALUES ($1, $2)
-            ON CONFLICT (name) WHERE user_id IS NOT NULL
+            ON CONFLICT (user_id, name) WHERE user_id IS NOT NULL
             DO UPDATE SET name = EXCLUDED.name
             RETURNING *
             "#,

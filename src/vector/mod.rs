@@ -51,6 +51,7 @@ pub struct VectorSearchMatch {
 pub trait VectorStore: Send + Sync {
     async fn ensure_collection(&self, vector_size: usize) -> Result<(), VectorError>;
     async fn upsert_memory(&self, point: MemoryVectorPoint) -> Result<(), VectorError>;
+    async fn delete_memory(&self, memory_id: Uuid) -> Result<(), VectorError>;
     async fn search_memories(
         &self,
         space_id: Uuid,
@@ -100,6 +101,13 @@ impl QdrantVectorStore {
             self.base_url, self.collection
         )
     }
+
+    fn delete_url(&self) -> String {
+        format!(
+            "{}/collections/{}/points/delete?wait=true",
+            self.base_url, self.collection
+        )
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -127,6 +135,19 @@ impl QdrantCreateCollectionRequest {
 #[derive(Debug, Serialize)]
 struct QdrantUpsertRequest {
     points: Vec<MemoryVectorPoint>,
+}
+
+#[derive(Debug, Serialize)]
+struct QdrantDeleteRequest {
+    points: Vec<String>,
+}
+
+impl QdrantDeleteRequest {
+    fn for_memory(memory_id: Uuid) -> Self {
+        Self {
+            points: vec![memory_id.to_string()],
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -259,6 +280,26 @@ impl VectorStore for QdrantVectorStore {
         Ok(())
     }
 
+    async fn delete_memory(&self, memory_id: Uuid) -> Result<(), VectorError> {
+        let body = QdrantDeleteRequest::for_memory(memory_id);
+
+        let response = self
+            .client
+            .post(self.delete_url())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| VectorError::Request(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(VectorError::Response(format!("{} {}", status, text)));
+        }
+
+        Ok(())
+    }
+
     async fn search_memories(
         &self,
         space_id: Uuid,
@@ -347,6 +388,19 @@ mod tests {
             store.search_url(),
             "http://localhost:6333/collections/memories/points/search"
         );
+        assert_eq!(
+            store.delete_url(),
+            "http://localhost:6333/collections/memories/points/delete?wait=true"
+        );
+    }
+
+    #[test]
+    fn qdrant_delete_request_targets_memory_point_id() {
+        let memory_id = Uuid::new_v4();
+        let request = QdrantDeleteRequest::for_memory(memory_id);
+        let json = serde_json::to_value(request).unwrap();
+
+        assert_eq!(json["points"][0], memory_id.to_string());
     }
 
     #[test]

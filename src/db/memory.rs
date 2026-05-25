@@ -1,5 +1,7 @@
 //! 记忆数据库操作
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
@@ -118,9 +120,25 @@ impl PostgresMemoryRepository {
     }
 }
 
+fn normalize_tag_names(tags: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+
+    for tag in tags {
+        let tag = tag.trim();
+        if tag.is_empty() || !seen.insert(tag.to_string()) {
+            continue;
+        }
+        normalized.push(tag.to_string());
+    }
+
+    normalized
+}
+
 #[async_trait::async_trait]
 impl MemoryRepository for PostgresMemoryRepository {
     async fn create(&self, memory: CreateMemory) -> Result<MemoryDb, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
         let result = sqlx::query_as::<_, MemoryDb>(
             r#"
             INSERT INTO memories (user_id, space_id, title, content, memory_type, file_path, is_shared)
@@ -135,14 +153,38 @@ impl MemoryRepository for PostgresMemoryRepository {
         .bind(memory.memory_type.to_string())
         .bind(&memory.file_path)
         .bind(memory.is_shared)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await?;
 
-        // 处理标签
-        for tag_name in memory.tags {
-            // TODO: 标签逻辑
-            let _ = tag_name;
+        for tag_name in normalize_tag_names(memory.tags) {
+            let (tag_id,): (Uuid,) = sqlx::query_as(
+                r#"
+                INSERT INTO tags (name, user_id)
+                VALUES ($1, $2)
+                ON CONFLICT (user_id, name) WHERE user_id IS NOT NULL
+                DO UPDATE SET name = EXCLUDED.name
+                RETURNING id
+                "#,
+            )
+            .bind(&tag_name)
+            .bind(memory.user_id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO memory_tags (memory_id, tag_id)
+                VALUES ($1, $2)
+                ON CONFLICT DO NOTHING
+                "#,
+            )
+            .bind(result.id)
+            .bind(tag_id)
+            .execute(&mut *tx)
+            .await?;
         }
+
+        tx.commit().await?;
 
         Ok(result)
     }
@@ -369,6 +411,18 @@ mod tests {
         };
 
         assert!(!memory.content.is_empty());
+    }
+
+    #[test]
+    fn normalize_tag_names_trims_deduplicates_and_drops_empty_values() {
+        let tags = normalize_tag_names(vec![
+            " rust ".to_string(),
+            "".to_string(),
+            "lens".to_string(),
+            "rust".to_string(),
+        ]);
+
+        assert_eq!(tags, vec!["rust".to_string(), "lens".to_string()]);
     }
 
     #[test]

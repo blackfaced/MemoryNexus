@@ -659,7 +659,10 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
         }),
         Command::FamilyList => Ok(RequestSpec {
             method: HttpMethod::Get,
-            url: format!("{base_url}/api/v1/spaces"),
+            url: with_query(
+                &format!("{base_url}/api/v1/spaces"),
+                &[("space_type", "family")],
+            )?,
             body: None,
             token: Some(require_token(config)?),
         }),
@@ -1747,6 +1750,7 @@ mod tests {
             },
         )
         .unwrap();
+        let list = build_request(&config, &Command::FamilyList).unwrap();
         let members = build_request(
             &config,
             &Command::FamilyMembers {
@@ -1789,6 +1793,11 @@ mod tests {
                 "description": null,
                 "space_type": "family",
             }))
+        );
+        assert_eq!(list.method, HttpMethod::Get);
+        assert_eq!(
+            list.url,
+            "http://localhost:8080/api/v1/spaces?space_type=family"
         );
         assert_eq!(members.method, HttpMethod::Get);
         assert_eq!(

@@ -146,6 +146,11 @@ pub struct CreateSpaceInvite {
 pub trait CognitiveSpaceRepository: Send + Sync {
     async fn create(&self, space: CreateCognitiveSpace) -> Result<CognitiveSpaceDb, Error>;
     async fn list_for_user(&self, user_id: Uuid) -> Result<Vec<CognitiveSpaceDb>, Error>;
+    async fn list_for_user_by_type(
+        &self,
+        user_id: Uuid,
+        space_type: CognitiveSpaceType,
+    ) -> Result<Vec<CognitiveSpaceDb>, Error>;
     async fn find_for_user(
         &self,
         space_id: Uuid,
@@ -241,6 +246,26 @@ impl CognitiveSpaceRepository for PostgresCognitiveSpaceRepository {
             "#,
         )
         .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    async fn list_for_user_by_type(
+        &self,
+        user_id: Uuid,
+        space_type: CognitiveSpaceType,
+    ) -> Result<Vec<CognitiveSpaceDb>, Error> {
+        sqlx::query_as::<_, CognitiveSpaceDb>(
+            r#"
+            SELECT s.*
+            FROM cognitive_spaces s
+            INNER JOIN cognitive_space_members m ON m.space_id = s.id
+            WHERE m.user_id = $1 AND s.space_type = $2
+            ORDER BY s.created_at ASC
+            "#,
+        )
+        .bind(user_id)
+        .bind(space_type.to_string())
         .fetch_all(&self.pool)
         .await
     }

@@ -275,7 +275,7 @@ FAMILY_JSON=$(cargo run --quiet --bin memorynexus-cli -- family create \
 export MEMORYNEXUS_FAMILY_SPACE_ID=$(printf '%s' "$FAMILY_JSON" | jq -r '.data.id')
 ```
 
-List spaces and family members:
+List family spaces and family members:
 
 ```bash
 cargo run --bin memorynexus-cli -- family list | jq

@@ -46,7 +46,7 @@ pub struct RouteAgentContextResponse {
 pub async fn route(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
-    Json(req): Json<RouteAgentContextRequest>,
+    Json(mut req): Json<RouteAgentContextRequest>,
 ) -> Result<Json<ApiResponse<RouteAgentContextResponse>>, AppError> {
     let message = req.message.trim();
     if message.is_empty() {
@@ -64,13 +64,34 @@ pub async fn route(
     }
 
     if let Some(lens_id) = req.lens_id {
-        state
+        let lens = state
             .repositories
             .lenses
             .find_for_user(lens_id, auth_user.user_id)
             .await
             .map_err(AppError::Database)?
             .ok_or(AppError::Unauthorized)?;
+
+        if let Some(space_id) = req.space_id {
+            if space_id != lens.space_id {
+                return Err(AppError::BadRequest(
+                    "space_id must match the Lens Cognitive Space".to_string(),
+                ));
+            }
+        } else {
+            req.space_id = Some(lens.space_id);
+        }
+    }
+
+    if req.space_id.is_none() {
+        let space = state
+            .repositories
+            .spaces
+            .default_for_user(auth_user.user_id)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))?;
+        req.space_id = Some(space.id);
     }
 
     Ok(Json(ApiResponse::success(route_message(&req))))
@@ -145,6 +166,18 @@ fn route_message(req: &RouteAgentContextRequest) -> RouteAgentContextResponse {
         ],
     ) {
         reason_codes.push("profile_context_needed".to_string());
+        if req.space_id.is_none() {
+            reason_codes.push("space_required".to_string());
+            return response(
+                AgentRouteAction::GetProfile,
+                0.7,
+                reason_codes,
+                safety_flags,
+                None,
+                json!({}),
+            );
+        }
+
         return response(
             AgentRouteAction::GetProfile,
             0.82,
@@ -367,6 +400,22 @@ mod tests {
 
         assert_eq!(response.action, AgentRouteAction::GetProfile);
         assert_eq!(response.suggested_tool.as_deref(), Some("get_profile"));
+    }
+
+    #[test]
+    fn profile_route_without_space_is_not_executable() {
+        let response = route_message(&RouteAgentContextRequest {
+            message: "What should you know about me before helping?".to_string(),
+            space_id: None,
+            lens_id: None,
+            target: "personal_context".to_string(),
+        });
+
+        assert_eq!(response.action, AgentRouteAction::GetProfile);
+        assert_eq!(response.suggested_tool, None);
+        assert!(response
+            .reason_codes
+            .contains(&"space_required".to_string()));
     }
 
     #[test]

@@ -97,6 +97,11 @@ The auth response includes `data.token`.
 
 `GET /api/v1/spaces`
 
+Optional query parameters:
+
+- `space_type`: filter visible spaces by `personal`, `family`, `project`, or
+  `organization`.
+
 Returns spaces where the current user is a member.
 
 ### Get Space

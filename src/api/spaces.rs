@@ -1,7 +1,7 @@
 //! Cognitive Space API
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -28,6 +28,11 @@ pub struct CreateSpaceRequest {
 pub struct SpaceListResponse {
     pub items: Vec<CognitiveSpaceDb>,
     pub total: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListSpacesQuery {
+    pub space_type: Option<CognitiveSpaceType>,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,13 +87,23 @@ pub async fn create(
 pub async fn list(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
+    Query(query): Query<ListSpacesQuery>,
 ) -> Result<Json<ApiResponse<SpaceListResponse>>, AppError> {
-    let spaces = state
-        .repositories
-        .spaces
-        .list_for_user(auth_user.user_id)
-        .await
-        .map_err(AppError::Database)?;
+    let spaces = if let Some(space_type) = query.space_type {
+        state
+            .repositories
+            .spaces
+            .list_for_user_by_type(auth_user.user_id, space_type)
+            .await
+            .map_err(AppError::Database)?
+    } else {
+        state
+            .repositories
+            .spaces
+            .list_for_user(auth_user.user_id)
+            .await
+            .map_err(AppError::Database)?
+    };
 
     Ok(Json(ApiResponse::success(SpaceListResponse {
         total: spaces.len(),

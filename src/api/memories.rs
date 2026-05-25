@@ -296,6 +296,8 @@ pub async fn update(
         .await
         .map_err(AppError::Database)?;
 
+    index_memory_embedding(&state, &memory).await;
+
     Ok(Json(ApiResponse::success(memory)))
 }
 
@@ -327,7 +329,19 @@ pub async fn delete(
         return Err(AppError::NotFound(format!("Memory {} not found", id)));
     }
 
+    delete_memory_embedding(&state, id).await;
+
     Ok(Json(ApiResponse::success(())))
+}
+
+async fn delete_memory_embedding(state: &AppState, memory_id: Uuid) {
+    let Some(vector_store) = state.vector_store.as_ref() else {
+        return;
+    };
+
+    if let Err(error) = vector_store.delete_memory(memory_id).await {
+        tracing::warn!(?error, %memory_id, "删除 Qdrant 记忆向量失败");
+    }
 }
 
 async fn require_space_member(
