@@ -296,6 +296,65 @@ Returns a run only if the current user can access its Cognitive Space.
 Returns visible Lens Runs ordered by newest first. At least one of `lens_id` or
 `space_id` is required.
 
+## Feedback Loops
+
+FeedbackLoop captures one long-running feedback cycle inside a Namespace and
+Cognitive Space. The first API stores the loop state itself; creating Memory
+snapshots and threading `feedback_loop_id` provenance through Memory, Lens Run,
+Review Report, and Profile remains a follow-up boundary.
+
+### Create Feedback Loop
+
+`POST /api/v1/feedback-loops`
+
+```json
+{
+  "space_id": "space-uuid",
+  "namespace_id": "namespace-uuid",
+  "goal": "Improve fraction word problems",
+  "task": "Complete five fraction word problems and explain each mistake",
+  "attempt": "optional attempt notes",
+  "evaluation": "optional evaluation",
+  "feedback": "optional feedback",
+  "adjustment": "optional adjustment",
+  "next_task": "optional next task",
+  "status": "active"
+}
+```
+
+`namespace_id` must belong to the same `space_id`. `status` supports `active`,
+`completed`, and `paused`; omitted status defaults to `active`.
+
+### List Feedback Loops
+
+`GET /api/v1/feedback-loops?space_id=<SPACE_ID>&namespace_id=<OPTIONAL_NAMESPACE_ID>`
+
+Returns visible loops ordered by newest first. `namespace_id` narrows the list to
+one namespace and must belong to the requested space.
+
+### Get Feedback Loop
+
+`GET /api/v1/feedback-loops/:id`
+
+Returns a loop only if the current user can access its Cognitive Space.
+
+### Patch Feedback Loop
+
+`PATCH /api/v1/feedback-loops/:id`
+
+```json
+{
+  "evaluation": "What changed after the attempt",
+  "feedback": "Observed error pattern",
+  "adjustment": "What to change next round",
+  "next_task": "The next concrete task",
+  "status": "paused"
+}
+```
+
+Patch supports `evaluation`, `feedback`, `adjustment`, `next_task`, and
+`status`. Writers are Space `owner` or `editor` members.
+
 ## Memories
 
 ### Create Memory

@@ -272,6 +272,7 @@ pub struct AppState {
 /// 仓储聚合
 #[derive(Clone)]
 pub struct Repositories {
+    pub feedback_loops: Arc<dyn super::db::feedback_loop::FeedbackLoopRepository>,
     pub lenses: Arc<dyn super::db::lens::LensRepository>,
     pub lens_runs: Arc<dyn super::db::lens_run::LensRunRepository>,
     pub memories: Arc<dyn super::db::memory::MemoryRepository>,
