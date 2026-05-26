@@ -51,7 +51,13 @@ pub async fn create(
     let memories = state
         .repositories
         .memories
-        .list_by_space(auth_user.user_id, space.id, limit, 0)
+        .list_by_space(
+            auth_user.user_id,
+            space.id,
+            limit,
+            0,
+            crate::db::memory::MemoryListFilter::default(),
+        )
         .await
         .map_err(AppError::Database)?;
 
