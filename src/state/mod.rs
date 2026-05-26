@@ -275,6 +275,7 @@ pub struct Repositories {
     pub lenses: Arc<dyn super::db::lens::LensRepository>,
     pub lens_runs: Arc<dyn super::db::lens_run::LensRunRepository>,
     pub memories: Arc<dyn super::db::memory::MemoryRepository>,
+    pub namespaces: Arc<dyn super::db::namespace::NamespaceRepository>,
     pub profiles: Arc<dyn super::db::profile::CognitiveProfileRepository>,
     pub reminders: Arc<dyn super::db::reminder::ReminderRepository>,
     pub review_reports: Arc<dyn super::db::review_report::CognitiveReviewReportRepository>,
