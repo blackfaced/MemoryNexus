@@ -283,4 +283,35 @@ mod tests {
         assert!(html.contains("title: titleInput.value.trim()"));
         assert!(!html.contains("title: titleInput.value.trim() || null"));
     }
+
+    #[test]
+    fn thought_review_app_has_auth_inline_error_and_pending_state_hooks() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("id=\"authError\""));
+        assert!(html.contains("role=\"alert\""));
+        assert!(html.contains("showAuthError"));
+        assert!(html.contains("clearAuthError"));
+        assert!(html.contains("setAuthBusy"));
+        assert!(html.contains("正在创建..."));
+        assert!(html.contains("正在登录..."));
+        assert!(html.contains("请输入邮箱"));
+        assert!(html.contains("请输入密码"));
+        assert!(html.contains("认证失败"));
+        assert!(html.contains("邮箱或密码不正确，请检查后再试。"));
+    }
+
+    #[test]
+    fn thought_review_app_clears_invalid_session_without_clearing_auth_inputs() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("handleAuthExpired"));
+        assert!(html.contains("登录已过期，请重新登录。"));
+        assert!(html.contains("response.status === 401"));
+        assert!(html.contains("throw new Error(\"登录已过期，请重新登录。\")"));
+        assert!(html.contains("clearSession({ preserveAuthInputs: true })"));
+        assert!(html.contains("clearSession({ preserveAuthInputs: false })"));
+        assert!(!html.contains("$(\"emailInput\").value = \"\""));
+        assert!(!html.contains("$(\"passwordInput\").value = \"\""));
+    }
 }
