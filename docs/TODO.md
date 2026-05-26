@@ -96,8 +96,8 @@ provenance, and summarize recurring weekly themes.
 
 Current open work:
 
-- [#10 Login and registration UI](https://github.com/blackfaced/MemoryNexus/issues/10)
-- [#11 Memory create, list, and detail UI](https://github.com/blackfaced/MemoryNexus/issues/11)
+- [#54 Auth UI polish and session states](https://github.com/blackfaced/MemoryNexus/issues/54)
+- [#55 Memory list filter and sort controls](https://github.com/blackfaced/MemoryNexus/issues/55)
 
 Recently completed:
 
@@ -129,6 +129,12 @@ Recently completed:
   error handling.
 - [#12 Memory detail and delete flow](https://github.com/blackfaced/MemoryNexus/issues/12):
   saved thoughts can be opened, edited with tags, and deleted from the static UI.
+- [#10 Login and registration UI](https://github.com/blackfaced/MemoryNexus/issues/10):
+  original MVP auth form and JWT persistence scope is covered; remaining polish
+  continues in #54.
+- [#11 Memory create, list, and detail UI](https://github.com/blackfaced/MemoryNexus/issues/11):
+  broad MVP memory UI scope is covered; remaining filter/sort work continues in
+  #55.
 
 ## Phase 5: Namespace Feedback Loops
 
@@ -155,30 +161,17 @@ Recently completed:
   [Namespace and Feedback Loop Minimal Design](namespace-feedback-loop-design.md),
   with ADR-014 supplemented and implementation work split below.
 
-Candidate follow-up work:
+Current open work:
 
-- Use [Namespace and Feedback Loop Minimal Design](namespace-feedback-loop-design.md)
-  as the Phase 5 foundation design.
-- Migration: add `namespaces` scoped by `space_id`, with unique
-  `(space_id, name)` and `reflective` / `skill` kind validation.
-- Rust API: add Namespace create/list/get endpoints with Space membership checks.
-- Migration: add `feedback_loops` scoped by both `space_id` and `namespace_id`,
-  with goal, task, attempt, evaluation, feedback, adjustment, next task, and
-  status fields.
-- Rust API: add FeedbackLoop create/list/get/patch endpoints with same-Space
-  validation.
-- Migration: add nullable namespace and feedback-loop provenance columns to
-  Memory, Lens, Lens Run, Review Report, and Profile tables where needed.
-- API filters: thread optional `namespace_id` through memory create/list, search,
-  semantic search, lens list/create, Lens Run, review reports, and profile
-  projection.
-- Provenance: define and test how FeedbackLoop events create or associate
-  Memory while keeping Memory owned by CognitiveSpace.
-- Acceptance tests: cover Space -> Namespace -> FeedbackLoop -> Memory -> Lens
-  Run -> Review Report/Profile in Rust.
-- Design `learning.math` as the first Skill Namespace MVP before expanding to
-  other practice domains. This is a separate product issue, not part of #52
-  foundation implementation.
+- [#56 Minimal Namespace database model and API](https://github.com/blackfaced/MemoryNexus/issues/56)
+- [#57 Minimal FeedbackLoop database model and API](https://github.com/blackfaced/MemoryNexus/issues/57)
+- [#58 Namespace filters and FeedbackLoop provenance threading](https://github.com/blackfaced/MemoryNexus/issues/58)
+- [#59 learning.math Skill Namespace MVP design](https://github.com/blackfaced/MemoryNexus/issues/59)
+
+Candidate follow-up work after #56-#59:
+
+- Add end-to-end acceptance tests for Space -> Namespace -> FeedbackLoop ->
+  Memory -> Lens Run -> Review Report/Profile.
 - Keep product entry points narrow; do not expose every possible namespace in
   the first UI.
 
