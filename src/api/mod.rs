@@ -20,6 +20,7 @@ mod semantic;
 mod spaces;
 mod tags;
 mod upload;
+mod voice;
 mod web;
 
 /// 聚合所有 API 路由
@@ -76,6 +77,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v1/memories/:id",
             axum::routing::delete(memories::delete),
         )
+        .route("/api/v1/voice-captures", axum::routing::post(voice::create))
         // Scheduled recall reminders
         .route("/api/v1/reminders", axum::routing::post(reminders::create))
         .route("/api/v1/reminders", axum::routing::get(reminders::list))

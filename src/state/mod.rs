@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::ai::embedding::{Embedder, LocalHashEmbedder, OpenAIEmbedder};
 use crate::ai::summary::{OpenAISummarizer, Summarizer};
+use crate::ai::transcription::{OpenAITranscriptionProvider, TranscriptionProvider};
 use crate::vector::repository::VectorRepository;
 use crate::vector::VectorStore;
 
@@ -13,8 +14,12 @@ pub struct AiConfig {
     pub openai_api_key: Option<String>,
     pub embedder: Option<Arc<dyn Embedder>>,
     pub summarizer: Option<Arc<dyn Summarizer>>,
+    pub transcriber: Option<Arc<dyn TranscriptionProvider>>,
     pub summary_provider: Option<String>,
     pub summary_model: Option<String>,
+    pub transcription_provider: Option<String>,
+    pub transcription_model: Option<String>,
+    pub transcription_config_error: Option<String>,
     pub summary_max_words: Option<usize>,
 }
 
@@ -37,6 +42,8 @@ impl Default for AiConfig {
         };
         let summary_config =
             resolve_summary_config(&SummaryEnv::from_process(openai_api_key.clone()));
+        let transcription_config =
+            resolve_transcription_config(&TranscriptionEnv::from_process(openai_api_key.clone()));
         let summarizer = if summary_config.disabled {
             None
         } else {
@@ -55,13 +62,37 @@ impl Default for AiConfig {
                 })
         };
         let summary_provider = summarizer.as_ref().and(summary_config.provider);
+        let transcriber = if transcription_config.disabled || transcription_config.error.is_some() {
+            None
+        } else {
+            transcription_config
+                .api_key
+                .clone()
+                .zip(transcription_config.model.clone())
+                .map(|(key, model)| {
+                    let provider = OpenAITranscriptionProvider::new(key).with_model(model);
+                    let provider = if let Some(base_url) = transcription_config.base_url.clone() {
+                        provider.with_base_url(base_url)
+                    } else {
+                        provider
+                    };
+                    Arc::new(provider) as Arc<dyn TranscriptionProvider>
+                })
+        };
+        let transcription_provider = transcriber
+            .as_ref()
+            .and(transcription_config.provider.clone());
 
         Self {
             openai_api_key,
             embedder,
             summarizer,
+            transcriber,
             summary_provider,
             summary_model: summary_config.model,
+            transcription_provider,
+            transcription_model: transcription_config.model,
+            transcription_config_error: transcription_config.error,
             summary_max_words: summary_config.max_words,
         }
     }
@@ -109,6 +140,38 @@ struct SummaryConfig {
     base_url: Option<String>,
     max_words: Option<usize>,
     disabled: bool,
+}
+
+struct TranscriptionEnv {
+    transcription_provider: Option<String>,
+    transcription_api_key: Option<String>,
+    openai_api_key: Option<String>,
+    transcription_model: Option<String>,
+    transcription_base_url: Option<String>,
+    openai_base_url: Option<String>,
+}
+
+impl TranscriptionEnv {
+    fn from_process(openai_api_key: Option<String>) -> Self {
+        Self {
+            transcription_provider: non_empty_env("MEMORYNEXUS_TRANSCRIPTION_PROVIDER"),
+            transcription_api_key: non_empty_env("MEMORYNEXUS_TRANSCRIPTION_API_KEY"),
+            openai_api_key,
+            transcription_model: non_empty_env("MEMORYNEXUS_TRANSCRIPTION_MODEL")
+                .or_else(|| non_empty_env("OPENAI_TRANSCRIPTION_MODEL")),
+            transcription_base_url: non_empty_env("MEMORYNEXUS_TRANSCRIPTION_BASE_URL"),
+            openai_base_url: non_empty_env("OPENAI_BASE_URL"),
+        }
+    }
+}
+
+struct TranscriptionConfig {
+    provider: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
+    disabled: bool,
+    error: Option<String>,
 }
 
 fn resolve_summary_config(env: &SummaryEnv) -> SummaryConfig {
@@ -187,6 +250,40 @@ fn default_summary_base_url(provider: &str) -> Option<String> {
     }
 }
 
+fn resolve_transcription_config(env: &TranscriptionEnv) -> TranscriptionConfig {
+    let provider = env
+        .transcription_provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| "openai".to_string())
+        .to_lowercase();
+    let disabled = matches!(provider.as_str(), "none" | "disabled" | "off");
+    let error = match provider.as_str() {
+        "openai" | "none" | "disabled" | "off" => None,
+        unsupported => Some(format!(
+            "unsupported transcription provider '{unsupported}'; supported providers are openai, none, disabled, off"
+        )),
+    };
+    let api_key = clean_opt(env.transcription_api_key.as_deref())
+        .or_else(|| clean_opt(env.openai_api_key.as_deref()));
+    let model = api_key.as_ref().filter(|_| error.is_none()).map(|_| {
+        clean_opt(env.transcription_model.as_deref()).unwrap_or_else(|| "whisper-1".to_string())
+    });
+    let base_url = clean_opt(env.transcription_base_url.as_deref())
+        .or_else(|| clean_opt(env.openai_base_url.as_deref()));
+
+    TranscriptionConfig {
+        provider: Some(provider),
+        api_key,
+        model,
+        base_url,
+        disabled,
+        error,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +354,82 @@ mod tests {
         assert_eq!(config.provider.as_deref(), Some("openai"));
         assert_eq!(config.api_key, None);
         assert_eq!(config.model, None);
+    }
+
+    #[test]
+    fn transcription_config_requires_api_key_before_enabling_provider() {
+        let env = TranscriptionEnv {
+            transcription_provider: None,
+            transcription_api_key: None,
+            openai_api_key: None,
+            transcription_model: None,
+            transcription_base_url: None,
+            openai_base_url: None,
+        };
+
+        let config = resolve_transcription_config(&env);
+
+        assert_eq!(config.provider.as_deref(), Some("openai"));
+        assert_eq!(config.api_key, None);
+        assert_eq!(config.model, None);
+    }
+
+    #[test]
+    fn transcription_config_defaults_to_whisper_when_key_exists() {
+        let env = TranscriptionEnv {
+            transcription_provider: None,
+            transcription_api_key: Some("sk-test".to_string()),
+            openai_api_key: None,
+            transcription_model: None,
+            transcription_base_url: None,
+            openai_base_url: None,
+        };
+
+        let config = resolve_transcription_config(&env);
+
+        assert_eq!(config.provider.as_deref(), Some("openai"));
+        assert_eq!(config.api_key.as_deref(), Some("sk-test"));
+        assert_eq!(config.model.as_deref(), Some("whisper-1"));
+        assert_eq!(config.error, None);
+    }
+
+    #[test]
+    fn transcription_config_rejects_unsupported_provider_names() {
+        let env = TranscriptionEnv {
+            transcription_provider: Some("opneai".to_string()),
+            transcription_api_key: Some("sk-test".to_string()),
+            openai_api_key: None,
+            transcription_model: None,
+            transcription_base_url: None,
+            openai_base_url: None,
+        };
+
+        let config = resolve_transcription_config(&env);
+
+        assert_eq!(config.provider.as_deref(), Some("opneai"));
+        assert_eq!(config.api_key.as_deref(), Some("sk-test"));
+        assert_eq!(config.model, None);
+        assert!(config
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("unsupported transcription provider")));
+    }
+
+    #[test]
+    fn transcription_config_rejects_local_provider_name() {
+        let env = TranscriptionEnv {
+            transcription_provider: Some("local".to_string()),
+            transcription_api_key: None,
+            openai_api_key: None,
+            transcription_model: None,
+            transcription_base_url: None,
+            openai_base_url: None,
+        };
+
+        let config = resolve_transcription_config(&env);
+
+        assert!(!config.disabled);
+        assert!(config.error.is_some());
     }
 }
 

@@ -119,6 +119,8 @@ pub struct MemoryListItem {
     pub file_path: Option<String>,
     pub thumbnail_path: Option<String>,
     pub is_shared: bool,
+    pub source_type: String,
+    pub source_metadata: serde_json::Value,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub tags: Vec<String>,
@@ -136,6 +138,8 @@ pub struct MemoryDetailResponse {
     pub file_path: Option<String>,
     pub thumbnail_path: Option<String>,
     pub is_shared: bool,
+    pub source_type: String,
+    pub source_metadata: serde_json::Value,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub tags: Vec<String>,
@@ -153,6 +157,8 @@ impl MemoryDetailResponse {
             file_path: memory.file_path,
             thumbnail_path: memory.thumbnail_path,
             is_shared: memory.is_shared,
+            source_type: memory.source_type,
+            source_metadata: memory.source_metadata,
             created_at: memory.created_at,
             updated_at: memory.updated_at,
             tags,
@@ -174,6 +180,8 @@ impl MemoryListItem {
             file_path: memory.file_path,
             thumbnail_path: memory.thumbnail_path,
             is_shared: memory.is_shared,
+            source_type: memory.source_type,
+            source_metadata: memory.source_metadata,
             created_at: memory.created_at,
             updated_at: memory.updated_at,
             tags,
@@ -257,6 +265,8 @@ pub async fn create(
         memory_type,
         file_path: None,
         is_shared: req.is_shared,
+        source_type: "manual".to_string(),
+        source_metadata: serde_json::json!({}),
         tags: req.tags,
     };
 
@@ -306,7 +316,7 @@ async fn resolve_space(
         .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))
 }
 
-async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
+pub(crate) async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
     let Some(vector_store) = state.vector_store.as_ref() else {
         return;
     };
@@ -584,6 +594,8 @@ mod tests {
             file_path: None,
             thumbnail_path: None,
             is_shared: false,
+            source_type: "manual".to_string(),
+            source_metadata: serde_json::json!({}),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -611,6 +623,8 @@ mod tests {
             file_path: None,
             thumbnail_path: None,
             is_shared: false,
+            source_type: "manual".to_string(),
+            source_metadata: serde_json::json!({}),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };

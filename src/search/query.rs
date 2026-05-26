@@ -495,6 +495,8 @@ mod tests {
             file_path: None,
             thumbnail_path: None,
             is_shared: false,
+            source_type: "manual".to_string(),
+            source_metadata: serde_json::json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
