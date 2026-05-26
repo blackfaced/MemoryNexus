@@ -71,6 +71,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 
 - 子 Agent 开工前必须阅读本文件、相关 issue、`README.md`、`docs/TODO.md` 和相关
   ADR。
+- 子 Agent 通用 handoff 模板见 `docs/subagent-issue-workflow.md`。
 - 如果 issue 描述不足，不要猜大方向；先补充 issue 评论或拆小任务。
 - 每个 issue 应有明确验收标准、相关文件、非目标和验证命令。
 - Phase 4 UI issue 默认基于 Rust-served Thought Review UI 继续演进，不另建前端工程。
