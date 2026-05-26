@@ -134,6 +134,23 @@ learning.math
 但不要在同一版 UI 中同时展开孩子学习、钢琴、下棋、画画、编程和个人复盘。每个具体
 产品入口必须有自己的 issue、验收标准和用户语言。
 
+## 第一阶段实现解释
+
+#52 的第一阶段不直接落成完整 schema 或学习产品 UI，而是先定义最小模型和 API
+拆分，见 [Namespace and Feedback Loop Minimal Design](../docs/namespace-feedback-loop-design.md)。
+
+第一阶段采用以下实现边界：
+
+- `Namespace` 必须 scoped inside `CognitiveSpace`，只表达领域分区，不表达权限。
+- `FeedbackLoop` 必须属于同一个 `CognitiveSpace` 和 `Namespace`。
+- `Memory` 仍然是原始认知材料；`FeedbackLoop` 通过 provenance 产生或关联
+  Memory，而不是取代 Memory。
+- `Lens Run`、`Review Report` 和 `CognitiveProfile` 可以追加
+  `namespace_id` / `feedback_loop_id` provenance 和过滤能力，但继续以
+  `space_id` 做权限校验。
+- `learning.math` 是第一个 Skill Namespace MVP 候选，但必须作为后续独立产品 issue
+  验证，不能和底层 schema foundation 混在一个交付里。
+
 ## 后果
 
 正面：

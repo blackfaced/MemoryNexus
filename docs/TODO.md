@@ -148,13 +148,28 @@ Current open work:
 
 Candidate follow-up work:
 
-- Define the minimal `Namespace` model and API surface.
-- Define the minimal `FeedbackLoop` model and provenance relationship to Memory
-  and Lens Run.
-- Add namespace filters to memory search, Lens Run, review reports, and profile
+- Use [Namespace and Feedback Loop Minimal Design](namespace-feedback-loop-design.md)
+  as the Phase 5 foundation design.
+- Migration: add `namespaces` scoped by `space_id`, with unique
+  `(space_id, name)` and `reflective` / `skill` kind validation.
+- Rust API: add Namespace create/list/get endpoints with Space membership checks.
+- Migration: add `feedback_loops` scoped by both `space_id` and `namespace_id`,
+  with goal, task, attempt, evaluation, feedback, adjustment, next task, and
+  status fields.
+- Rust API: add FeedbackLoop create/list/get/patch endpoints with same-Space
+  validation.
+- Migration: add nullable namespace and feedback-loop provenance columns to
+  Memory, Lens, Lens Run, Review Report, and Profile tables where needed.
+- API filters: thread optional `namespace_id` through memory create/list, search,
+  semantic search, lens list/create, Lens Run, review reports, and profile
   projection.
+- Provenance: define and test how FeedbackLoop events create or associate
+  Memory while keeping Memory owned by CognitiveSpace.
+- Acceptance tests: cover Space -> Namespace -> FeedbackLoop -> Memory -> Lens
+  Run -> Review Report/Profile in Rust.
 - Design `learning.math` as the first Skill Namespace MVP before expanding to
-  other practice domains.
+  other practice domains. This is a separate product issue, not part of #52
+  foundation implementation.
 - Keep product entry points narrow; do not expose every possible namespace in
   the first UI.
 

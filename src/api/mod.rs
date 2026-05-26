@@ -161,4 +161,55 @@ mod tests {
         assert!(html.contains("最近的我在反复想什么"));
         assert!(!html.contains("Add memory"));
     }
+
+    #[test]
+    fn thought_review_app_has_memory_list_view() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("data-view=\"memories\""));
+        assert!(html.contains("id=\"memoriesView\""));
+        assert!(html.contains("还没有保存的想法"));
+    }
+
+    #[test]
+    fn thought_review_app_lists_memories_with_space_pagination() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("/api/v1/memories?space_id="));
+        assert!(html.contains("limit=${state.memories.limit}"));
+        assert!(html.contains("offset=${state.memories.offset}"));
+        assert!(html.contains("previousMemoriesButton"));
+        assert!(html.contains("nextMemoriesButton"));
+    }
+
+    #[test]
+    fn thought_review_app_exposes_active_space_selector() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("id=\"spaceSelect\""));
+        assert!(html.contains("id=\"activeSpaceNotice\""));
+        assert!(html.contains("state.spaces"));
+        assert!(html.contains("switchActiveSpace"));
+        assert!(html.contains("你正在保存到"));
+    }
+
+    #[test]
+    fn thought_review_app_routes_work_to_selected_space() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("setActiveSpace"));
+        assert!(html.contains("renderSpaceOptions"));
+        assert!(html.contains("/api/v1/lenses?space_id=${state.space.id}"));
+        assert!(html.contains("/api/v1/lens-runs?space_id=${state.space.id}&limit=12"));
+        assert!(html.contains("space_id: activeSpace.id"));
+    }
+
+    #[test]
+    fn thought_review_app_shows_space_errors_without_logging_out() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("showSpaceError"));
+        assert!(html.contains("spaceError"));
+        assert!(html.contains("无法访问当前空间"));
+    }
 }

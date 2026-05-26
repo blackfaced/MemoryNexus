@@ -35,6 +35,7 @@
 
     button,
     input,
+    select,
     textarea {
       font: inherit;
     }
@@ -92,6 +93,7 @@
     .panel,
     .review-card,
     .lens-card,
+    .memory-card,
     .report-card {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -135,6 +137,7 @@
     }
 
     .field,
+    .select,
     .textarea {
       width: 100%;
       color: var(--ink);
@@ -149,6 +152,11 @@
       padding: 0 12px;
     }
 
+    .select {
+      min-height: 42px;
+      padding: 0 12px;
+    }
+
     .textarea {
       min-height: 190px;
       resize: vertical;
@@ -156,6 +164,7 @@
     }
 
     .field:focus,
+    .select:focus,
     .textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(31, 111, 91, 0.14);
@@ -229,6 +238,7 @@
 
     .lens-card,
     .review-card,
+    .memory-card,
     .report-card {
       padding: 16px;
     }
@@ -271,6 +281,28 @@
       color: var(--muted);
     }
 
+    .memory-meta,
+    .memory-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .memory-tags {
+      margin-top: 12px;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
     .split {
       display: grid;
       gap: 14px;
@@ -286,6 +318,26 @@
       padding: 18px;
       color: var(--muted);
       background: rgba(255, 253, 248, 0.6);
+    }
+
+    .notice,
+    .error-box {
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 12px 0;
+      font-size: 14px;
+    }
+
+    .notice {
+      border: 1px solid #b9d5c9;
+      background: #edf6f1;
+      color: var(--accent-strong);
+    }
+
+    .error-box {
+      border: 1px solid #e0a08a;
+      background: #fff0ea;
+      color: #8a3a20;
     }
 
     .report-grid {
@@ -349,6 +401,8 @@
       <div class="panel">
         <h1>写下你现在脑子里最占空间的一件事</h1>
         <p class="prompt">不需要整理好。混乱、犹豫、情绪、项目选择，都可以直接写下来。</p>
+        <div id="activeSpaceNotice" class="notice">你正在保存到：尚未选择空间</div>
+        <div id="spaceError" class="error-box hidden" role="alert"></div>
         <textarea id="thoughtInput" class="textarea" placeholder="例如：我感觉最近做项目很多，但不知道哪个真正值得继续。"></textarea>
         <div class="actions">
           <button id="reviewButton" class="btn primary" type="button">帮我从不同视角看看</button>
@@ -358,17 +412,21 @@
         <div class="tabs" role="tablist" aria-label="Thought review views">
           <button class="tab active" data-view="current" type="button">本次复盘</button>
           <button class="tab" data-view="weekly" type="button">周复盘</button>
+          <button class="tab" data-view="memories" type="button">保存的想法</button>
           <button class="tab" data-view="history" type="button">最近记录</button>
         </div>
 
         <section id="currentView" class="stack"></section>
         <section id="weeklyView" class="stack hidden"></section>
+        <section id="memoriesView" class="stack hidden"></section>
         <section id="historyView" class="stack hidden"></section>
       </div>
 
       <aside class="panel">
         <h2>私人思考空间</h2>
         <p id="spaceName" class="prompt">登录后会使用你的默认空间。</p>
+        <label class="section-title" for="spaceSelect">当前空间</label>
+        <select id="spaceSelect" class="select" aria-label="选择当前 Cognitive Space"></select>
         <div class="split">
           <div>
             <div class="section-title">默认视角</div>
@@ -395,9 +453,16 @@
   <script>
     const state = {
       token: localStorage.getItem("memorynexus_token") || "",
+      activeSpaceId: localStorage.getItem("memorynexus_active_space_id") || "",
       user: null,
+      spaces: [],
       space: null,
-      lenses: []
+      lenses: [],
+      memories: {
+        limit: 5,
+        offset: 0,
+        total: 0
+      }
     };
 
     const defaultLenses = [
@@ -472,19 +537,103 @@
       if (!state.token) return showAuth();
       try {
         state.user = state.user || await api("/api/v1/auth/me");
-        const spaces = await api("/api/v1/spaces");
-        state.space = spaces.items[0];
-        if (!state.space) throw new Error("没有可用空间");
-        $("spaceName").textContent = state.space.name;
-        state.lenses = await ensureLenses([...defaultLenses, weeklyLens]);
-        showApp();
-        await loadHistory();
       } catch (error) {
-        localStorage.removeItem("memorynexus_token");
-        state.token = "";
+        clearSession();
         showAuth();
         setStatus(error.message);
+        return;
       }
+
+      try {
+        const spaces = await api("/api/v1/spaces");
+        state.spaces = spaces.items || [];
+        if (!state.spaces.length) throw new Error("没有可用空间");
+        renderSpaceOptions();
+        const preferred = state.spaces.find((space) => space.id === state.activeSpaceId) || state.spaces[0];
+        await setActiveSpace(preferred.id);
+        showApp();
+        await loadMemories();
+        await loadHistory();
+      } catch (error) {
+        showApp();
+        showSpaceError(error.message);
+        setStatus(error.message);
+      }
+    }
+
+    function clearSession() {
+      localStorage.removeItem("memorynexus_token");
+      localStorage.removeItem("memorynexus_active_space_id");
+      state.token = "";
+      state.activeSpaceId = "";
+      state.spaces = [];
+      state.space = null;
+      state.lenses = [];
+    }
+
+    function renderSpaceOptions() {
+      $("spaceSelect").innerHTML = state.spaces
+        .map((space) => `<option value="${escapeHtml(space.id)}">${escapeHtml(space.name)}</option>`)
+        .join("");
+    }
+
+    async function setActiveSpace(spaceId) {
+      const space = state.spaces.find((item) => item.id === spaceId);
+      if (!space) {
+        showSpaceError("无法访问当前空间，请从列表中重新选择。");
+        throw new Error("无法访问当前空间");
+      }
+      state.space = space;
+      state.activeSpaceId = space.id;
+      localStorage.setItem("memorynexus_active_space_id", space.id);
+      $("spaceSelect").value = space.id;
+      $("spaceName").textContent = space.name;
+      $("activeSpaceNotice").textContent = `你正在保存到：${space.name}`;
+      clearSpaceError();
+      state.lenses = await ensureLenses([...defaultLenses, weeklyLens]);
+    }
+
+    async function switchActiveSpace(spaceId) {
+      setStatus("正在切换空间...");
+      try {
+        await setActiveSpace(spaceId);
+        state.memories.offset = 0;
+        clearReviewViews();
+        await loadMemories();
+        await loadHistory();
+        setStatus(`已切换到 ${state.space.name}`);
+      } catch (error) {
+        showSpaceError(error.message);
+        setStatus(error.message);
+      }
+    }
+
+    function showSpaceError(message) {
+      $("spaceError").textContent = message || "无法访问当前空间";
+      $("spaceError").classList.remove("hidden");
+    }
+
+    function clearSpaceError() {
+      $("spaceError").textContent = "";
+      $("spaceError").classList.add("hidden");
+    }
+
+    function clearReviewViews() {
+      $("currentView").innerHTML = "";
+      $("weeklyView").innerHTML = "";
+      $("memoriesView").innerHTML = `<div class="empty">正在加载当前空间的保存想法...</div>`;
+      $("historyView").innerHTML = `<div class="empty">正在加载当前空间的最近记录...</div>`;
+      activateView("history");
+    }
+
+    function requireActiveSpace() {
+      if (!state.space) {
+        const message = "请先选择一个可访问的空间";
+        showSpaceError(message);
+        setStatus(message);
+        return null;
+      }
+      return state.space;
     }
 
     function showAuth() {
@@ -525,6 +674,8 @@
         setStatus("先写下一件占空间的想法");
         return;
       }
+      const activeSpace = requireActiveSpace();
+      if (!activeSpace) return;
 
       setBusy($("reviewButton"), true);
       $("currentView").innerHTML = `<div class="empty">正在整理这段想法...</div>`;
@@ -534,7 +685,7 @@
         const memory = await api("/api/v1/memories", {
           method: "POST",
           body: JSON.stringify({
-            space_id: state.space.id,
+            space_id: activeSpace.id,
             title: titleFromThought(thought),
             content: thought,
             tags: ["thought-review"],
@@ -561,8 +712,11 @@
 
         renderCurrentReview(memory, runs);
         setStatus("已保存为一次思绪复盘");
+        state.memories.offset = 0;
+        await loadMemories();
         await loadHistory();
       } catch (error) {
+        showSpaceError(error.message);
         $("currentView").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
         setStatus(error.message);
       } finally {
@@ -604,6 +758,8 @@
     }
 
     async function createWeeklyReview() {
+      const activeSpace = requireActiveSpace();
+      if (!activeSpace) return;
       setBusy($("weeklyButton"), true);
       $("weeklyView").innerHTML = `<div class="empty">正在生成周复盘...</div>`;
       activateView("weekly");
@@ -614,7 +770,7 @@
         const report = await api("/api/v1/review-reports", {
           method: "POST",
           body: JSON.stringify({
-            space_id: state.space.id,
+            space_id: activeSpace.id,
             lens_id: lens.id,
             window_start: windowStart.toISOString(),
             window_end: windowEnd.toISOString(),
@@ -625,6 +781,7 @@
         renderWeeklyReport(report.report);
         setStatus("周复盘已生成");
       } catch (error) {
+        showSpaceError(error.message);
         $("weeklyView").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
         setStatus(error.message);
       } finally {
@@ -668,12 +825,80 @@
         }
         $("historyView").innerHTML = data.items.map((run) => lensRunCard(run)).join("");
       } catch (error) {
+        showSpaceError(error.message);
         $("historyView").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
       }
     }
 
+    async function loadMemories() {
+      if (!state.space) return;
+      const query = `/api/v1/memories?space_id=${encodeURIComponent(state.space.id)}&limit=${state.memories.limit}&offset=${state.memories.offset}`;
+      try {
+        const data = await api(query);
+        state.memories.total = Number(data.total || 0);
+        state.memories.limit = Number(data.limit || state.memories.limit);
+        state.memories.offset = Number(data.offset || 0);
+        renderMemories(data.items || []);
+      } catch (error) {
+        $("memoriesView").innerHTML = `<div class="empty">加载保存的想法失败：${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderMemories(memories) {
+      if (!memories.length) {
+        $("memoriesView").innerHTML = `<div class="empty">还没有保存的想法。写下一件现在最占空间的事，它会出现在这里。</div>`;
+        return;
+      }
+
+      const start = state.memories.offset + 1;
+      const end = state.memories.offset + memories.length;
+      const total = state.memories.total;
+      const canGoPrevious = state.memories.offset > 0;
+      const canGoNext = end < total;
+      $("memoriesView").innerHTML = `
+        <div class="pagination">
+          <button id="previousMemoriesButton" class="btn ghost" type="button" ${canGoPrevious ? "" : "disabled"}>上一页</button>
+          <span class="muted">第 ${start}-${end} 条，共 ${total} 条想法</span>
+          <button id="nextMemoriesButton" class="btn ghost" type="button" ${canGoNext ? "" : "disabled"}>下一页</button>
+        </div>
+        ${memories.map((memory) => memoryCard(memory)).join("")}
+      `;
+      $("previousMemoriesButton").addEventListener("click", () => changeMemoryPage(-1));
+      $("nextMemoriesButton").addEventListener("click", () => changeMemoryPage(1));
+    }
+
+    function changeMemoryPage(direction) {
+      const nextOffset = state.memories.offset + direction * state.memories.limit;
+      state.memories.offset = Math.max(0, nextOffset);
+      loadMemories();
+    }
+
+    function memoryCard(memory) {
+      const tags = Array.isArray(memory.tags) ? memory.tags : [];
+      const tagHtml = tags.map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("");
+      return `
+        <article class="memory-card">
+          <div class="lens-head">
+            <div>
+              <div class="lens-name">${escapeHtml(memoryTitle(memory))}</div>
+              <p class="summary">${escapeHtml(memory.snippet || memory.content || "")}</p>
+            </div>
+            <span class="pill">${escapeHtml(memory.memory_type || "text")}</span>
+          </div>
+          <div class="memory-meta">
+            <span>${escapeHtml(formatDate(memory.created_at))}</span>
+          </div>
+          ${tagHtml ? `<div class="memory-tags">${tagHtml}</div>` : ""}
+        </article>
+      `;
+    }
+
+    function memoryTitle(memory) {
+      return memory.title || titleFromThought(memory.snippet || memory.content || "未命名想法");
+    }
+
     function activateView(name) {
-      for (const view of ["current", "weekly", "history"]) {
+      for (const view of ["current", "weekly", "memories", "history"]) {
         $(`${view}View`).classList.toggle("hidden", view !== name);
       }
       document.querySelectorAll(".tab").forEach((tab) => {
@@ -690,6 +915,19 @@
       return values.map((value) => `<li>${escapeHtml(String(value))}</li>`).join("");
     }
 
+    function formatDate(value) {
+      if (!value) return "时间未知";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
     function escapeHtml(value) {
       return String(value)
         .replaceAll("&", "&amp;")
@@ -704,12 +942,15 @@
     $("reviewButton").addEventListener("click", runThoughtReview);
     $("weeklyButton").addEventListener("click", createWeeklyReview);
     $("logoutButton").addEventListener("click", () => {
-      localStorage.removeItem("memorynexus_token");
-      state.token = "";
+      clearSession();
       showAuth();
     });
+    $("spaceSelect").addEventListener("change", (event) => switchActiveSpace(event.target.value));
     document.querySelectorAll(".tab").forEach((tab) => {
-      tab.addEventListener("click", () => activateView(tab.dataset.view));
+      tab.addEventListener("click", () => {
+        activateView(tab.dataset.view);
+        if (tab.dataset.view === "memories") loadMemories();
+      });
     });
 
     bootApp();

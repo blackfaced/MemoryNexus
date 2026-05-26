@@ -100,10 +100,62 @@ fn default_limit() -> i64 {
 /// 记忆列表响应
 #[derive(Serialize)]
 pub struct MemoryListResponse {
-    pub items: Vec<MemoryDb>,
+    pub items: Vec<MemoryListItem>,
     pub total: i64,
     pub limit: i64,
     pub offset: i64,
+}
+
+/// 记忆列表项响应，保留完整 Memory 字段并补充列表展示字段。
+#[derive(Debug, Clone, Serialize)]
+pub struct MemoryListItem {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub space_id: Uuid,
+    pub title: Option<String>,
+    pub content: String,
+    pub snippet: String,
+    pub memory_type: String,
+    pub file_path: Option<String>,
+    pub thumbnail_path: Option<String>,
+    pub is_shared: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub tags: Vec<String>,
+}
+
+impl MemoryListItem {
+    fn from_memory(memory: MemoryDb, tags: Vec<String>) -> Self {
+        let snippet = memory_snippet(&memory.content);
+        Self {
+            id: memory.id,
+            user_id: memory.user_id,
+            space_id: memory.space_id,
+            title: memory.title,
+            content: memory.content,
+            snippet,
+            memory_type: memory.memory_type,
+            file_path: memory.file_path,
+            thumbnail_path: memory.thumbnail_path,
+            is_shared: memory.is_shared,
+            created_at: memory.created_at,
+            updated_at: memory.updated_at,
+            tags,
+        }
+    }
+}
+
+fn memory_snippet(content: &str) -> String {
+    const MAX_SNIPPET_CHARS: usize = 180;
+    let compact = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.chars().count() <= MAX_SNIPPET_CHARS {
+        return compact;
+    }
+
+    format!(
+        "{}...",
+        compact.chars().take(MAX_SNIPPET_CHARS).collect::<String>()
+    )
 }
 
 /// GET /api/v1/memories - 列出记忆
@@ -113,13 +165,29 @@ pub async fn list(
     Query(params): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<MemoryListResponse>>, AppError> {
     let space = resolve_space(&state, auth_user.user_id, params.space_id).await?;
+    let limit = params.limit.clamp(1, 100);
+    let offset = params.offset.max(0);
 
     let memories = state
         .repositories
         .memories
-        .list_by_space(auth_user.user_id, space.id, params.limit, params.offset)
+        .list_by_space(auth_user.user_id, space.id, limit, offset)
         .await
         .map_err(AppError::Database)?;
+
+    let mut items = Vec::with_capacity(memories.len());
+    for memory in memories {
+        let tags = state
+            .repositories
+            .tags
+            .list_memory_tags(memory.id)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect();
+        items.push(MemoryListItem::from_memory(memory, tags));
+    }
 
     let total = state
         .repositories
@@ -129,10 +197,10 @@ pub async fn list(
         .map_err(AppError::Database)?;
 
     Ok(Json(ApiResponse::success(MemoryListResponse {
-        items: memories,
+        items,
         total,
-        limit: params.limit,
-        offset: params.offset,
+        limit,
+        offset,
     })))
 }
 
@@ -444,5 +512,32 @@ mod tests {
         assert_eq!(query.space_id, None);
         assert_eq!(query.limit, 20);
         assert_eq!(query.offset, 0);
+    }
+
+    #[test]
+    fn memory_list_item_uses_title_snippet_and_tags() {
+        let memory = MemoryDb {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
+            title: Some("A saved thought".to_string()),
+            content: "This thought has enough content to become a short snippet.".to_string(),
+            memory_type: "text".to_string(),
+            file_path: None,
+            thumbnail_path: None,
+            is_shared: false,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let item = MemoryListItem::from_memory(memory, vec!["thought-review".to_string()]);
+
+        assert_eq!(item.title.as_deref(), Some("A saved thought"));
+        assert_eq!(
+            item.snippet,
+            "This thought has enough content to become a short snippet."
+        );
+        assert_eq!(item.memory_type, "text");
+        assert_eq!(item.tags, vec!["thought-review".to_string()]);
     }
 }
