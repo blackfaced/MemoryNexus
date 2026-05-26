@@ -12,6 +12,7 @@ mod health;
 mod lens_runs;
 mod lenses;
 mod memories;
+mod namespaces;
 mod profiles;
 mod reminders;
 mod review_reports;
@@ -56,6 +57,16 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v1/spaces/invites/accept",
             axum::routing::post(spaces::accept_invite),
+        )
+        // Namespace
+        .route("/api/v1/namespaces", axum::routing::get(namespaces::list))
+        .route(
+            "/api/v1/namespaces",
+            axum::routing::post(namespaces::create),
+        )
+        .route(
+            "/api/v1/namespaces/:id",
+            axum::routing::get(namespaces::get),
         )
         // Lens
         .route("/api/v1/lenses", axum::routing::get(lenses::list))

@@ -4,6 +4,7 @@ use sqlx::{postgres::PgPoolOptions, Error, PgPool};
 pub mod lens;
 pub mod lens_run;
 pub mod memory;
+pub mod namespace;
 pub mod profile;
 pub mod reminder;
 pub mod review_report;

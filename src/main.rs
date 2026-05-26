@@ -88,6 +88,9 @@ async fn main() -> anyhow::Result<()> {
         lenses: Arc::new(db::lens::PostgresLensRepository::new(pool.clone())),
         lens_runs: Arc::new(db::lens_run::PostgresLensRunRepository::new(pool.clone())),
         memories: Arc::new(db::memory::PostgresMemoryRepository::new(pool.clone())),
+        namespaces: Arc::new(db::namespace::PostgresNamespaceRepository::new(
+            pool.clone(),
+        )),
         profiles: Arc::new(db::profile::PostgresCognitiveProfileRepository::new(
             pool.clone(),
         )),
