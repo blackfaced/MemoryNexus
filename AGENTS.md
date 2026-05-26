@@ -8,6 +8,12 @@
 - Rust + Axum crate 位于仓库根目录，是唯一继续演进的主后端。
 - 记忆归属于 `CognitiveSpace`，不归属于 Agent。
 - 历史 Python/FastAPI 和空前端骨架已移除；不要重新引入双后端主线。
+- Phase 4 第一版 UI 是 Rust 服务直接提供的静态 Thought Review MVP，入口在
+  `web/thought_review.html`，路由在 `src/api/web.rs`。
+- 不要在没有 ADR 的情况下引入 React/Vite/Next、Node dev server、BFF 或第二套
+  frontend/backend 主线。
+- 长期方向见 ADR-014：MemoryNexus 正在扩展为 namespace-based long-term
+  feedback substrate，但 `CognitiveSpace` 仍然是 ownership / permission boundary。
 
 ## 架构决策
 
@@ -15,11 +21,22 @@
 - 新增 ADR 后必须更新 `decisions/README.md`。
 - 不要把长期架构决策只写在 `docs/` 或对话总结里。
 - 当前 Rust-first 主线见 `decisions/ADR-009-rust-first-backend.md`。
+- Thought Review UI MVP 见 `decisions/ADR-013-thought-review-ui-mvp.md`。
+- Namespace / FeedbackLoop 长期模型见 `decisions/ADR-014-namespace-feedback-loop.md`。
 
 ## 开发规则
 
 - 新增 API、数据库访问、对象存储、向量检索、AI 编排默认落在 Rust 服务。
 - 修改 Rust 行为时优先补单元测试或端到端验收；至少运行 `cargo test`。
+- 修改静态 UI 时优先保持现有 `web/thought_review.html` 轻量实现，除非 issue/ADR
+  明确要求升级前端栈。
+- UI 文案优先使用用户语言：thought / perspective / review / recurring theme /
+  inner tension。不要把 `Memory`、`Lens Run`、`CognitiveState` 等后端术语过早暴露为
+  普通用户主入口。
+- `Namespace` 只是 `CognitiveSpace` 内的领域分区，不是新的权限边界；不要把权限从
+  Space membership 挪到 Namespace。
+- `FeedbackLoop` 是长期方向，落地时应从具体 namespace 的最小验收场景反推字段，
+  不要一次性做 learning / piano / chess / drawing / programming 全部产品。
 - 本地没有 Rust 工具链时，可以用 Docker 验证：
 
 ```bash
@@ -32,12 +49,47 @@ docker run --rm \
 - 不要把生成的 `*.profraw`、`target/`、临时测试产物提交进仓库。
 - 不要回退用户已有改动；遇到无关脏文件时保持原样。
 
+## 分支与 PR 规则
+
+- 不要直接在 `main` 上开发。每个 issue / 子任务使用独立分支或 worktree。
+- `main` 通过 GitHub branch protection 保护：必须走 PR，且 `Format`、`Clippy`、
+  `Build`、`Test` 必须通过。
+- 当前只有一个主要开发者，不要求 approving review；但 PR 仍必须通过 CI。
+- 默认合并方式使用 squash 或 rebase，避免 merge commit；PR 合并后删除分支。
+- 开 PR 前至少运行：
+
+```bash
+cargo fmt --check
+cargo test
+cargo clippy --all-targets --all-features -- -D clippy::all
+```
+
+如果只改 Markdown 文档，可以说明未跑 Rust 测试的原因；但涉及 Rust 代码或 UI 行为时
+必须跑对应验证。
+
+## Issue / 子 Agent 工作流
+
+- 子 Agent 开工前必须阅读本文件、相关 issue、`README.md`、`docs/TODO.md` 和相关
+  ADR。
+- 如果 issue 描述不足，不要猜大方向；先补充 issue 评论或拆小任务。
+- 每个 issue 应有明确验收标准、相关文件、非目标和验证命令。
+- Phase 4 UI issue 默认基于 Rust-served Thought Review UI 继续演进，不另建前端工程。
+- Phase 5 Namespace / FeedbackLoop issue 默认先做设计和最小模型/API 方案，不直接铺开
+  多个垂直产品。
+
 ## P0 优先级
 
 1. Embedding -> Qdrant -> Rust search API 的语义检索闭环。
 2. 注册登录、创建记忆、搜索召回、摘要生成的端到端验收。
 3. Lens 最小模型：Lens 配置、Lens Run、可追溯输出。
 4. 文档口径统一：README、architecture、TODO 都应以 Rust 主线和 Cognitive Space 为准。
+
+## 当前产品入口
+
+- 当前普通用户入口是 Thought Review：写下一条混乱想法，用多个 perspective 帮用户看清
+  反复主题、内在张力和下一步。
+- Thought Review 属于 reflective namespace，可视为 `personal.thoughts` 的第一版。
+- 后续 Skill Namespace（例如 `learning.math`）必须通过单独 issue/ADR/验收场景推进。
 
 ## 文档位置
 
