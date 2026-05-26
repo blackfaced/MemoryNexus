@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
@@ -45,6 +46,8 @@ pub struct MemoryDb {
     pub file_path: Option<String>,
     pub thumbnail_path: Option<String>,
     pub is_shared: bool,
+    pub source_type: String,
+    pub source_metadata: Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -59,6 +62,8 @@ pub struct CreateMemory {
     pub memory_type: MemoryType,
     pub file_path: Option<String>,
     pub is_shared: bool,
+    pub source_type: String,
+    pub source_metadata: Value,
     pub tags: Vec<String>,
 }
 
@@ -196,8 +201,18 @@ impl MemoryRepository for PostgresMemoryRepository {
         let mut tx = self.pool.begin().await?;
         let result = sqlx::query_as::<_, MemoryDb>(
             r#"
-            INSERT INTO memories (user_id, space_id, title, content, memory_type, file_path, is_shared)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO memories (
+                user_id,
+                space_id,
+                title,
+                content,
+                memory_type,
+                file_path,
+                is_shared,
+                source_type,
+                source_metadata
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
             "#,
         )
@@ -208,6 +223,8 @@ impl MemoryRepository for PostgresMemoryRepository {
         .bind(memory.memory_type.to_string())
         .bind(&memory.file_path)
         .bind(memory.is_shared)
+        .bind(&memory.source_type)
+        .bind(&memory.source_metadata)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -515,6 +532,8 @@ mod tests {
             memory_type: MemoryType::Text,
             file_path: None,
             is_shared: false,
+            source_type: "manual".to_string(),
+            source_metadata: serde_json::json!({}),
             tags: vec![],
         };
 

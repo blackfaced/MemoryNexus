@@ -389,6 +389,28 @@ If `space_id` is omitted, the default Cognitive Space is used.
 
 Memory access is checked against ownership and Cognitive Space membership.
 
+## Voice Capture
+
+### Transcribe Audio And Create Memory
+
+`POST /api/v1/voice-captures?space_id=<SPACE_ID>&filename=thought.webm&language=zh`
+
+The request body is the uploaded audio bytes. The endpoint requires
+authentication and Space write permission, transcribes the audio through the
+configured transcription provider, then creates an `audio` Memory in the same
+Cognitive Space.
+
+Configuration:
+
+- `MEMORYNEXUS_TRANSCRIPTION_PROVIDER=openai`
+- `OPENAI_API_KEY` or `MEMORYNEXUS_TRANSCRIPTION_API_KEY`
+- Optional `MEMORYNEXUS_TRANSCRIPTION_MODEL`, defaulting to `whisper-1`
+
+If no transcription provider is configured, the endpoint returns a visible
+client error instead of creating a Memory. Created memories include
+`source_type = "voice_transcription"` and `source_metadata` with provider,
+model, language, filename, content type, audio size, and provider metadata.
+
 ## Reminders
 
 Reminders are scheduled recall items scoped to a `CognitiveSpace`. They can

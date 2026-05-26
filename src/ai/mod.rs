@@ -5,6 +5,7 @@
 
 pub mod embedding;
 pub mod summary;
+pub mod transcription;
 
 #[allow(unused_imports)]
 pub use embedding::{Embedder, EmbeddingError, EmbeddingResult, OpenAIEmbedder};
