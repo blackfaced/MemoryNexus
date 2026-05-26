@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
-use crate::db::memory::{CreateMemory, MemoryDb, MemoryType, UpdateMemory};
+use crate::db::memory::{
+    CreateMemory, MemoryDb, MemoryListFilter, MemoryListSort, MemoryType, UpdateMemory,
+};
 use crate::db::space::SpaceMemberRole;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
@@ -87,10 +89,10 @@ pub struct ListQuery {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
-    #[allow(dead_code)]
     pub tag: Option<String>,
-    #[allow(dead_code)]
     pub memory_type: Option<ApiMemoryType>,
+    #[serde(default)]
+    pub sort: MemoryListSort,
 }
 
 fn default_limit() -> i64 {
@@ -203,11 +205,16 @@ pub async fn list(
     let space = resolve_space(&state, auth_user.user_id, params.space_id).await?;
     let limit = params.limit.clamp(1, 100);
     let offset = params.offset.max(0);
+    let filter = MemoryListFilter {
+        tag: params.tag,
+        memory_type: params.memory_type.map(Into::into),
+        sort: params.sort,
+    };
 
     let memories = state
         .repositories
         .memories
-        .list_by_space(auth_user.user_id, space.id, limit, offset)
+        .list_by_space(auth_user.user_id, space.id, limit, offset, filter.clone())
         .await
         .map_err(AppError::Database)?;
 
@@ -220,7 +227,7 @@ pub async fn list(
     let total = state
         .repositories
         .memories
-        .count_by_space(auth_user.user_id, space.id)
+        .count_by_space(auth_user.user_id, space.id, filter)
         .await
         .map_err(AppError::Database)?;
 
@@ -570,6 +577,16 @@ mod tests {
         assert_eq!(query.space_id, None);
         assert_eq!(query.limit, 20);
         assert_eq!(query.offset, 0);
+    }
+
+    #[test]
+    fn list_query_accepts_filters_and_oldest_sort() {
+        let json = r#"{"tag":"thought-review","memory_type":"text","sort":"oldest"}"#;
+        let query: ListQuery = serde_json::from_str(json).unwrap();
+
+        assert_eq!(query.tag.as_deref(), Some("thought-review"));
+        assert_eq!(query.memory_type, Some(ApiMemoryType::Text));
+        assert_eq!(query.sort, MemoryListSort::Oldest);
     }
 
     #[test]

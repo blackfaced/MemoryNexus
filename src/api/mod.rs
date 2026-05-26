@@ -175,11 +175,26 @@ mod tests {
     fn thought_review_app_lists_memories_with_space_pagination() {
         let html = super::web::thought_review_app_source();
 
-        assert!(html.contains("/api/v1/memories?space_id="));
-        assert!(html.contains("limit=${state.memories.limit}"));
-        assert!(html.contains("offset=${state.memories.offset}"));
+        assert!(html.contains("/api/v1/memories?${memoryParams.toString()}"));
+        assert!(html.contains("memoryParams.set(\"space_id\", state.space.id)"));
+        assert!(html.contains("memoryParams.set(\"limit\", String(state.memories.limit))"));
+        assert!(html.contains("memoryParams.set(\"offset\", String(state.memories.offset))"));
         assert!(html.contains("previousMemoriesButton"));
         assert!(html.contains("nextMemoriesButton"));
+    }
+
+    #[test]
+    fn thought_review_app_exposes_memory_filter_and_sort_controls() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("id=\"memoryFilterTagInput\""));
+        assert!(html.contains("id=\"memoryTypeFilterSelect\""));
+        assert!(html.contains("id=\"memorySortSelect\""));
+        assert!(html.contains("memoryParams.set(\"tag\""));
+        assert!(html.contains("memoryParams.set(\"memory_type\""));
+        assert!(html.contains("memoryParams.set(\"sort\", state.memories.sort)"));
+        assert!(html.contains("applyMemoryFilters"));
+        assert!(html.contains("clearMemoryFilters"));
     }
 
     #[test]

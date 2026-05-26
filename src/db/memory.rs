@@ -72,6 +72,47 @@ pub struct UpdateMemory {
     pub tags: Option<Vec<String>>,
 }
 
+/// 记忆列表排序方式。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryListSort {
+    /// 最新创建的记忆在前。
+    #[default]
+    Newest,
+    /// 最早创建的记忆在前。
+    Oldest,
+}
+
+impl std::fmt::Display for MemoryListSort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Newest => write!(f, "newest"),
+            Self::Oldest => write!(f, "oldest"),
+        }
+    }
+}
+
+/// 记忆列表过滤参数。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MemoryListFilter {
+    pub tag: Option<String>,
+    pub memory_type: Option<MemoryType>,
+    pub sort: MemoryListSort,
+}
+
+impl MemoryListFilter {
+    pub fn normalized(self) -> Self {
+        Self {
+            tag: self
+                .tag
+                .map(|tag| tag.trim().to_string())
+                .filter(|tag| !tag.is_empty()),
+            memory_type: self.memory_type,
+            sort: self.sort,
+        }
+    }
+}
+
 /// 记忆仓储 trait
 #[async_trait::async_trait]
 pub trait MemoryRepository: Send + Sync {
@@ -90,6 +131,7 @@ pub trait MemoryRepository: Send + Sync {
         space_id: Uuid,
         limit: i64,
         offset: i64,
+        filter: MemoryListFilter,
     ) -> Result<Vec<MemoryDb>, sqlx::Error>;
     async fn list_by_space_window(
         &self,
@@ -99,7 +141,12 @@ pub trait MemoryRepository: Send + Sync {
         window_end: DateTime<Utc>,
         limit: i64,
     ) -> Result<Vec<MemoryDb>, sqlx::Error>;
-    async fn count_by_space(&self, user_id: Uuid, space_id: Uuid) -> Result<i64, sqlx::Error>;
+    async fn count_by_space(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+        filter: MemoryListFilter,
+    ) -> Result<i64, sqlx::Error>;
     async fn update(&self, id: Uuid, update: UpdateMemory) -> Result<MemoryDb, sqlx::Error>;
     async fn delete(&self, id: Uuid) -> Result<bool, sqlx::Error>;
 }
@@ -244,7 +291,15 @@ impl MemoryRepository for PostgresMemoryRepository {
         space_id: Uuid,
         limit: i64,
         offset: i64,
+        filter: MemoryListFilter,
     ) -> Result<Vec<MemoryDb>, sqlx::Error> {
+        let filter = filter.normalized();
+        let memory_type = filter
+            .memory_type
+            .map(|memory_type| memory_type.to_string());
+        let tag = filter.tag;
+        let sort = filter.sort.to_string();
+
         sqlx::query_as::<_, MemoryDb>(
             r#"
             SELECT * FROM memories
@@ -258,7 +313,21 @@ impl MemoryRepository for PostgresMemoryRepository {
                       AND cognitive_space_members.user_id = $1
                 )
               )
-            ORDER BY created_at DESC
+              AND ($5::text IS NULL OR memory_type = $5)
+              AND (
+                $6::text IS NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM memory_tags
+                    JOIN tags ON tags.id = memory_tags.tag_id
+                    WHERE memory_tags.memory_id = memories.id
+                      AND tags.name = $6
+                )
+              )
+            ORDER BY
+              CASE WHEN $7 = 'oldest' THEN created_at END ASC,
+              CASE WHEN $7 = 'newest' THEN created_at END DESC,
+              id ASC
             LIMIT $3 OFFSET $4
             "#,
         )
@@ -266,11 +335,25 @@ impl MemoryRepository for PostgresMemoryRepository {
         .bind(space_id)
         .bind(limit)
         .bind(offset)
+        .bind(memory_type)
+        .bind(tag)
+        .bind(sort)
         .fetch_all(&self.pool)
         .await
     }
 
-    async fn count_by_space(&self, user_id: Uuid, space_id: Uuid) -> Result<i64, sqlx::Error> {
+    async fn count_by_space(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+        filter: MemoryListFilter,
+    ) -> Result<i64, sqlx::Error> {
+        let filter = filter.normalized();
+        let memory_type = filter
+            .memory_type
+            .map(|memory_type| memory_type.to_string());
+        let tag = filter.tag;
+
         let result: (i64,) = sqlx::query_as(
             r#"
             SELECT COUNT(*) FROM memories
@@ -284,10 +367,23 @@ impl MemoryRepository for PostgresMemoryRepository {
                       AND cognitive_space_members.user_id = $1
                 )
               )
+              AND ($3::text IS NULL OR memory_type = $3)
+              AND (
+                $4::text IS NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM memory_tags
+                    JOIN tags ON tags.id = memory_tags.tag_id
+                    WHERE memory_tags.memory_id = memories.id
+                      AND tags.name = $4
+                )
+              )
             "#,
         )
         .bind(user_id)
         .bind(space_id)
+        .bind(memory_type)
+        .bind(tag)
         .fetch_one(&self.pool)
         .await?;
         Ok(result.0)

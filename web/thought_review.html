@@ -173,6 +173,7 @@
     .actions,
     .tabs,
     .inline-actions,
+    .memory-controls,
     .search-controls {
       display: flex;
       flex-wrap: wrap;
@@ -308,6 +309,23 @@
       justify-content: space-between;
       gap: 12px;
       align-items: center;
+    }
+
+    .memory-controls {
+      align-items: stretch;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 253, 248, 0.68);
+    }
+
+    .memory-controls .field {
+      flex: 1 1 180px;
+    }
+
+    .memory-controls .select {
+      width: auto;
+      min-width: 132px;
     }
 
     .search-controls {
@@ -550,7 +568,10 @@
       memories: {
         limit: 5,
         offset: 0,
-        total: 0
+        total: 0,
+        tag: "",
+        memory_type: "",
+        sort: "newest"
       },
       search: {
         limit: 10
@@ -1125,7 +1146,14 @@
     async function loadMemories() {
       if (!state.space) return;
       state.selectedMemory = null;
-      const query = `/api/v1/memories?space_id=${encodeURIComponent(state.space.id)}&limit=${state.memories.limit}&offset=${state.memories.offset}`;
+      const memoryParams = new URLSearchParams();
+      memoryParams.set("space_id", state.space.id);
+      memoryParams.set("limit", String(state.memories.limit));
+      memoryParams.set("offset", String(state.memories.offset));
+      if (state.memories.tag.trim()) memoryParams.set("tag", state.memories.tag.trim());
+      if (state.memories.memory_type) memoryParams.set("memory_type", state.memories.memory_type);
+      memoryParams.set("sort", state.memories.sort);
+      const query = `/api/v1/memories?${memoryParams.toString()}`;
       try {
         const data = await api(query);
         state.memories.total = Number(data.total || 0);
@@ -1133,13 +1161,20 @@
         state.memories.offset = Number(data.offset || 0);
         renderMemories(data.items || []);
       } catch (error) {
-        $("memoriesView").innerHTML = `<div class="empty">加载保存的想法失败：${escapeHtml(error.message)}</div>`;
+        showSpaceError(error.message);
+        $("memoriesView").innerHTML = `${memoryFilterControls()}<div class="empty">加载保存的想法失败：${escapeHtml(error.message)}</div>`;
+        bindMemoryFilterControls();
       }
     }
 
     function renderMemories(memories) {
+      const controls = memoryFilterControls();
       if (!memories.length) {
-        $("memoriesView").innerHTML = `<div class="empty">还没有保存的想法。写下一件现在最占空间的事，它会出现在这里。</div>`;
+        const emptyText = hasActiveMemoryFilters()
+          ? "当前过滤条件下没有保存的想法。可以换个标签、类型或清空过滤。"
+          : "还没有保存的想法。写下一件现在最占空间的事，它会出现在这里。";
+        $("memoriesView").innerHTML = `${controls}<div class="empty">${emptyText}</div>`;
+        bindMemoryFilterControls();
         return;
       }
 
@@ -1149,6 +1184,7 @@
       const canGoPrevious = state.memories.offset > 0;
       const canGoNext = end < total;
       $("memoriesView").innerHTML = `
+        ${controls}
         <div class="pagination">
           <button id="previousMemoriesButton" class="btn ghost" type="button" ${canGoPrevious ? "" : "disabled"}>上一页</button>
           <span class="muted">第 ${start}-${end} 条，共 ${total} 条想法</span>
@@ -1156,9 +1192,66 @@
         </div>
         ${memories.map((memory) => memoryCard(memory)).join("")}
       `;
+      bindMemoryFilterControls();
       $("previousMemoriesButton").addEventListener("click", () => changeMemoryPage(-1));
       $("nextMemoriesButton").addEventListener("click", () => changeMemoryPage(1));
       bindMemoryDetailButtons("memoriesView");
+    }
+
+    function memoryFilterControls() {
+      return `
+        <div class="memory-controls" aria-label="保存的想法过滤和排序">
+          <input id="memoryFilterTagInput" class="field" value="${escapeAttribute(state.memories.tag)}" placeholder="按标签过滤">
+          <select id="memoryTypeFilterSelect" class="select" aria-label="按类型过滤">
+            <option value="" ${state.memories.memory_type ? "" : "selected"}>全部类型</option>
+            <option value="text" ${state.memories.memory_type === "text" ? "selected" : ""}>文本</option>
+            <option value="image" ${state.memories.memory_type === "image" ? "selected" : ""}>图片</option>
+            <option value="audio" ${state.memories.memory_type === "audio" ? "selected" : ""}>音频</option>
+            <option value="video" ${state.memories.memory_type === "video" ? "selected" : ""}>视频</option>
+          </select>
+          <select id="memorySortSelect" class="select" aria-label="排序">
+            <option value="newest" ${state.memories.sort === "newest" ? "selected" : ""}>最新优先</option>
+            <option value="oldest" ${state.memories.sort === "oldest" ? "selected" : ""}>最早优先</option>
+          </select>
+          <button id="applyMemoryFiltersButton" class="btn primary" type="button">应用</button>
+          <button id="clearMemoryFiltersButton" class="btn ghost" type="button">清空</button>
+        </div>
+      `;
+    }
+
+    function bindMemoryFilterControls() {
+      const tagInput = $("memoryFilterTagInput");
+      const typeSelect = $("memoryTypeFilterSelect");
+      const sortSelect = $("memorySortSelect");
+      const applyButton = $("applyMemoryFiltersButton");
+      const clearButton = $("clearMemoryFiltersButton");
+      if (!tagInput || !typeSelect || !sortSelect || !applyButton || !clearButton) return;
+
+      applyButton.addEventListener("click", applyMemoryFilters);
+      tagInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") applyMemoryFilters();
+      });
+      clearButton.addEventListener("click", clearMemoryFilters);
+    }
+
+    function applyMemoryFilters() {
+      state.memories.tag = $("memoryFilterTagInput").value.trim();
+      state.memories.memory_type = $("memoryTypeFilterSelect").value;
+      state.memories.sort = $("memorySortSelect").value || "newest";
+      state.memories.offset = 0;
+      loadMemories();
+    }
+
+    function clearMemoryFilters() {
+      state.memories.tag = "";
+      state.memories.memory_type = "";
+      state.memories.sort = "newest";
+      state.memories.offset = 0;
+      loadMemories();
+    }
+
+    function hasActiveMemoryFilters() {
+      return Boolean(state.memories.tag.trim() || state.memories.memory_type);
     }
 
     function changeMemoryPage(direction) {
