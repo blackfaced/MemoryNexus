@@ -172,7 +172,8 @@
 
     .actions,
     .tabs,
-    .inline-actions {
+    .inline-actions,
+    .search-controls {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
@@ -205,6 +206,12 @@
     .btn.ghost {
       background: transparent;
       border-color: var(--line);
+    }
+
+    .btn.danger {
+      background: #fff0ea;
+      color: #8a3a20;
+      border-color: #e0a08a;
     }
 
     .btn:disabled {
@@ -303,6 +310,20 @@
       align-items: center;
     }
 
+    .search-controls {
+      align-items: stretch;
+      margin-bottom: 14px;
+    }
+
+    .search-controls .field {
+      flex: 1 1 260px;
+    }
+
+    .search-controls .select {
+      width: auto;
+      min-width: 140px;
+    }
+
     .split {
       display: grid;
       gap: 14px;
@@ -352,10 +373,40 @@
       padding-left: 12px;
     }
 
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .detail-field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .detail-field.full {
+      grid-column: 1 / -1;
+    }
+
+    .trace-block {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: rgba(247, 245, 240, 0.52);
+    }
+
+    .trace-block strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent-strong);
+    }
+
     @media (max-width: 860px) {
       .grid,
       .auth-grid,
-      .report-grid {
+      .report-grid,
+      .detail-grid {
         grid-template-columns: 1fr;
       }
 
@@ -413,12 +464,48 @@
           <button class="tab active" data-view="current" type="button">本次复盘</button>
           <button class="tab" data-view="weekly" type="button">周复盘</button>
           <button class="tab" data-view="memories" type="button">保存的想法</button>
+          <button class="tab" data-view="search" type="button">搜索</button>
+          <button class="tab" data-view="lensRun" type="button">Lens Run</button>
           <button class="tab" data-view="history" type="button">最近记录</button>
         </div>
 
         <section id="currentView" class="stack"></section>
         <section id="weeklyView" class="stack hidden"></section>
         <section id="memoriesView" class="stack hidden"></section>
+        <section id="searchView" class="stack hidden">
+          <div class="search-controls" role="search">
+            <input id="searchInput" class="field" placeholder="在当前空间里搜索保存的想法">
+            <select id="searchModeSelect" class="select" aria-label="选择搜索模式">
+              <option value="keyword">keyword</option>
+              <option value="semantic">semantic</option>
+            </select>
+            <button id="searchButton" class="btn primary" type="button">搜索</button>
+          </div>
+          <div id="searchResults" class="stack">
+            <div class="empty">搜索只会查询当前选中的 Cognitive Space。</div>
+          </div>
+        </section>
+        <section id="lensRunView" class="stack hidden">
+          <article class="review-card">
+            <div class="lens-head">
+              <div>
+                <div class="lens-name">通用 Lens Run</div>
+                <p class="summary">选择一个 Lens，输入 query，查看可追溯的结构化 interpretation。</p>
+              </div>
+              <span class="pill">traceable</span>
+            </div>
+            <label class="section-title" for="lensRunSelect">Lens</label>
+            <select id="lensRunSelect" class="select" aria-label="选择 Lens"></select>
+            <label class="section-title" for="lensRunQueryInput">Query</label>
+            <textarea id="lensRunQueryInput" class="textarea" placeholder="例如：总结最近关于项目方向的线索。"></textarea>
+            <div class="actions">
+              <button id="runLensButton" class="btn primary" type="button">运行 Lens</button>
+            </div>
+          </article>
+          <div id="lensRunDetail" class="stack">
+            <div class="empty">运行一个 Lens，或从最近记录里打开过去结果。</div>
+          </div>
+        </section>
         <section id="historyView" class="stack hidden"></section>
       </div>
 
@@ -458,10 +545,14 @@
       spaces: [],
       space: null,
       lenses: [],
+      selectedMemory: null,
       memories: {
         limit: 5,
         offset: 0,
         total: 0
+      },
+      search: {
+        limit: 10
       }
     };
 
@@ -569,6 +660,7 @@
       state.spaces = [];
       state.space = null;
       state.lenses = [];
+      state.selectedMemory = null;
     }
 
     function renderSpaceOptions() {
@@ -591,6 +683,7 @@
       $("activeSpaceNotice").textContent = `你正在保存到：${space.name}`;
       clearSpaceError();
       state.lenses = await ensureLenses([...defaultLenses, weeklyLens]);
+      renderLensRunOptions();
     }
 
     async function switchActiveSpace(spaceId) {
@@ -619,9 +712,12 @@
     }
 
     function clearReviewViews() {
+      state.selectedMemory = null;
       $("currentView").innerHTML = "";
       $("weeklyView").innerHTML = "";
       $("memoriesView").innerHTML = `<div class="empty">正在加载当前空间的保存想法...</div>`;
+      $("searchResults").innerHTML = `<div class="empty">搜索只会查询当前选中的 Cognitive Space。</div>`;
+      $("lensRunDetail").innerHTML = `<div class="empty">运行一个 Lens，或从最近记录里打开过去结果。</div>`;
       $("historyView").innerHTML = `<div class="empty">正在加载当前空间的最近记录...</div>`;
       activateView("history");
     }
@@ -666,6 +762,54 @@
         }
       }
       return lenses;
+    }
+
+    function renderLensRunOptions() {
+      const options = state.lenses
+        .map((lens) => {
+          const label = `${lens.name} · ${lens.strategy}`;
+          return `<option value="${escapeHtml(lens.id)}">${escapeHtml(label)}</option>`;
+        })
+        .join("");
+      $("lensRunSelect").innerHTML = options || `<option value="">暂无 Lens</option>`;
+    }
+
+    async function runSelectedLens() {
+      const activeSpace = requireActiveSpace();
+      if (!activeSpace) return;
+      const lensId = $("lensRunSelect").value;
+      const query = $("lensRunQueryInput").value.trim();
+      if (!lensId) {
+        setStatus("请先选择一个 Lens");
+        return;
+      }
+      if (!query) {
+        setStatus("请输入 Lens Run query");
+        return;
+      }
+
+      setBusy($("runLensButton"), true);
+      $("lensRunDetail").innerHTML = `<div class="empty">正在运行 Lens Run...</div>`;
+      activateView("lensRun");
+      try {
+        const run = await api("/api/v1/lens-runs", {
+          method: "POST",
+          body: JSON.stringify({
+            lens_id: lensId,
+            query,
+            limit: 5
+          })
+        });
+        renderLensRunDetail(run);
+        await loadHistory();
+        setStatus("Lens Run 已完成");
+      } catch (error) {
+        showSpaceError(error.message);
+        $("lensRunDetail").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+        setStatus(error.message);
+      } finally {
+        setBusy($("runLensButton"), false);
+      }
     }
 
     async function runThoughtReview() {
@@ -738,12 +882,11 @@
         </article>
         ${cards}
       `;
+      bindLensRunOpenButtons("currentView");
     }
 
     function lensRunCard(run) {
       const output = run.output || {};
-      const questions = listItems(output.open_questions || []);
-      const actions = listItems(output.suggested_next_actions || []);
       return `
         <article class="lens-card">
           <div class="lens-head">
@@ -751,8 +894,88 @@
             <span class="pill">${escapeHtml(output.summary_source || "review")}</span>
           </div>
           <p class="summary">${escapeHtml(output.summary || "这条视角还没有生成内容。")}</p>
-          ${questions ? `<ul class="small-list">${questions}</ul>` : ""}
-          ${actions ? `<ul class="small-list">${actions}</ul>` : ""}
+          ${lensRunTraceSummary(output)}
+          <div class="actions">
+            <button class="btn ghost" type="button" data-run-id="${escapeHtml(run.id)}">打开 Lens Run 结果</button>
+          </div>
+        </article>
+      `;
+    }
+
+    function lensRunTraceSummary(output) {
+      const points = listItems((output.key_points || []).map(formatKeyPoint));
+      const questions = listItems(output.open_questions || []);
+      const actions = listItems(output.suggested_next_actions || []);
+      return `
+        ${points ? `<div class="trace-block"><strong>Key points</strong><ul class="small-list">${points}</ul></div>` : ""}
+        ${questions ? `<div class="trace-block"><strong>Open questions</strong><ul class="small-list">${questions}</ul></div>` : ""}
+        ${actions ? `<div class="trace-block"><strong>Suggested next actions</strong><ul class="small-list">${actions}</ul></div>` : ""}
+      `;
+    }
+
+    async function openLensRunDetail(runId) {
+      if (!runId) return;
+      $("lensRunDetail").innerHTML = `<div class="empty">正在打开历史 Lens Run...</div>`;
+      activateView("lensRun");
+      try {
+        const run = await api(`/api/v1/lens-runs/${runId}`);
+        renderLensRunDetail(run);
+        setStatus("已打开历史 Lens Run");
+      } catch (error) {
+        showSpaceError(error.message);
+        $("lensRunDetail").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+        setStatus(error.message);
+      }
+    }
+
+    function renderLensRunDetail(run) {
+      const output = run.output || {};
+      const keyPoints = listItems((output.key_points || []).map(formatKeyPoint));
+      const questions = listItems(output.open_questions || []);
+      const actions = listItems(output.suggested_next_actions || []);
+      const citations = listItems((output.citations || []).map(formatCitation));
+      const memories = listItems((output.memories || []).map(formatMemoryTrace));
+      $("lensRunDetail").innerHTML = `
+        <article class="lens-card">
+          <div class="lens-head">
+            <div>
+              <div class="lens-name">${escapeHtml(output.lens?.name || "Lens Run")}</div>
+              <p class="summary"><strong>Query：</strong>${escapeHtml(output.query || run.query || "")}</p>
+            </div>
+            <span class="pill">${escapeHtml(run.status || "completed")}</span>
+          </div>
+          <p class="summary">${escapeHtml(output.summary || "这次 Lens Run 还没有 summary。")}</p>
+          <div class="detail-grid">
+            <div class="trace-block"><strong>summary_provider</strong>${escapeHtml(displayValue(output.summary_provider))}</div>
+            <div class="trace-block"><strong>summary_source</strong>${escapeHtml(displayValue(output.summary_source))}</div>
+            <div class="trace-block"><strong>summary_model</strong>${escapeHtml(displayValue(output.summary_model))}</div>
+            <div class="trace-block"><strong>summary_fallback_reason</strong>${escapeHtml(displayValue(output.summary_fallback_reason))}</div>
+          </div>
+          <div class="detail-grid">
+            <div class="trace-block"><strong>Lens provenance</strong>
+              <ul class="small-list">
+                <li>lens_id: ${escapeHtml(output.lens?.id || run.lens_id || "未知")}</li>
+                <li>strategy: ${escapeHtml(output.lens?.strategy || "未知")}</li>
+                <li>retrieval_mode: ${escapeHtml(output.lens?.retrieval_mode || "未知")}</li>
+                <li>search_mode: ${escapeHtml(output.search_mode || "未知")}</li>
+              </ul>
+            </div>
+            <div class="trace-block"><strong>Run provenance</strong>
+              <ul class="small-list">
+                <li>run_id: ${escapeHtml(run.id || "未知")}</li>
+                <li>space_id: ${escapeHtml(run.space_id || "未知")}</li>
+                <li>created_at: ${escapeHtml(formatDate(run.created_at))}</li>
+                <li>memory_count: ${escapeHtml(displayValue(output.memory_count))}</li>
+              </ul>
+            </div>
+          </div>
+          <div class="detail-grid">
+            <div class="trace-block"><strong>key_points</strong><ul class="small-list">${keyPoints || "<li>暂无 key point。</li>"}</ul></div>
+            <div class="trace-block"><strong>open_questions</strong><ul class="small-list">${questions || "<li>暂无 open question。</li>"}</ul></div>
+            <div class="trace-block"><strong>suggested_next_actions</strong><ul class="small-list">${actions || "<li>暂无 next action。</li>"}</ul></div>
+            <div class="trace-block"><strong>citations</strong><ul class="small-list">${citations || "<li>暂无 citation。</li>"}</ul></div>
+          </div>
+          ${memories ? `<div class="trace-block"><strong>Retrieved memories</strong><ul class="small-list">${memories}</ul></div>` : ""}
         </article>
       `;
     }
@@ -819,11 +1042,13 @@
       if (!state.space) return;
       try {
         const data = await api(`/api/v1/lens-runs?space_id=${state.space.id}&limit=12`);
-        if (!data.items.length) {
+        const runs = data.items || [];
+        if (!runs.length) {
           $("historyView").innerHTML = `<div class="empty">还没有思绪复盘。</div>`;
           return;
         }
-        $("historyView").innerHTML = data.items.map((run) => lensRunCard(run)).join("");
+        $("historyView").innerHTML = runs.map((run) => lensRunCard(run)).join("");
+        bindLensRunOpenButtons("historyView");
       } catch (error) {
         showSpaceError(error.message);
         $("historyView").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
@@ -832,6 +1057,7 @@
 
     async function loadMemories() {
       if (!state.space) return;
+      state.selectedMemory = null;
       const query = `/api/v1/memories?space_id=${encodeURIComponent(state.space.id)}&limit=${state.memories.limit}&offset=${state.memories.offset}`;
       try {
         const data = await api(query);
@@ -865,12 +1091,152 @@
       `;
       $("previousMemoriesButton").addEventListener("click", () => changeMemoryPage(-1));
       $("nextMemoriesButton").addEventListener("click", () => changeMemoryPage(1));
+      bindMemoryDetailButtons("memoriesView");
     }
 
     function changeMemoryPage(direction) {
       const nextOffset = state.memories.offset + direction * state.memories.limit;
       state.memories.offset = Math.max(0, nextOffset);
       loadMemories();
+    }
+
+    async function performSearch() {
+      const query = $("searchInput").value.trim();
+      if (!query) {
+        setStatus("请输入要搜索的内容");
+        return;
+      }
+      const activeSpace = requireActiveSpace();
+      if (!activeSpace) return;
+
+      const mode = $("searchModeSelect").value;
+      const searchParams = new URLSearchParams();
+      searchParams.set("space_id", activeSpace.id);
+      searchParams.set("q", query);
+      searchParams.set("limit", String(state.search.limit));
+
+      setBusy($("searchButton"), true);
+      $("searchResults").innerHTML = `<div class="empty">正在当前空间搜索...</div>`;
+      activateView("search");
+
+      try {
+        const data = mode === "semantic"
+          ? await api(`/api/v1/search/semantic?${searchParams.toString()}`)
+          : await api(`/api/v1/search?${searchParams.toString()}`);
+        const results = mode === "semantic"
+          ? await hydrateSemanticSearchResults(normalizeSemanticSearchResults(data.results || []))
+          : normalizeKeywordSearchResults(data.items || []);
+        renderSearchResults(results, mode);
+        setStatus(results.length ? `找到 ${results.length} 条匹配想法` : "没有找到匹配的想法");
+      } catch (error) {
+        const message = providerFriendlySearchError(error.message);
+        $("searchResults").innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
+        setStatus(message);
+      } finally {
+        setBusy($("searchButton"), false);
+      }
+    }
+
+    function normalizeKeywordSearchResults(items) {
+      return items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        snippet: item.content,
+        memory_type: item.memory_type,
+        relevance: item.relevance,
+        matched_on: item.matched_on,
+        space_id: item.space_id,
+        created_at: item.created_at
+      }));
+    }
+
+    function normalizeSemanticSearchResults(items) {
+      return items.map((item) => ({
+        id: item.memory_id,
+        title: item.title,
+        snippet: item.content_snippet,
+        memory_type: item.memory_type,
+        relevance: item.score,
+        matched_on: ["semantic"],
+        space_id: state.activeSpaceId,
+        created_at: item.created_at,
+        tags: item.tags || []
+      }));
+    }
+
+    async function hydrateSemanticSearchResults(results) {
+      const hydrated = [];
+      for (const result of results) {
+        if (result.title && result.snippet && result.memory_type) {
+          hydrated.push(result);
+          continue;
+        }
+
+        try {
+          const memory = await api(`/api/v1/memories/${encodeURIComponent(result.id)}`);
+          hydrated.push({
+            ...result,
+            title: result.title || memory.title,
+            snippet: result.snippet || memory.content,
+            memory_type: result.memory_type || memory.memory_type,
+            space_id: memory.space_id || result.space_id,
+            created_at: result.created_at || memory.created_at
+          });
+        } catch (_error) {
+          hydrated.push(result);
+        }
+      }
+      return hydrated;
+    }
+
+    function renderSearchResults(results, mode) {
+      if (!results.length) {
+        $("searchResults").innerHTML = `<div class="empty">没有找到匹配的想法。请换个关键词，或确认当前 Cognitive Space 中已经保存相关想法。</div>`;
+        return;
+      }
+      $("searchResults").innerHTML = `
+        <div class="muted">${escapeHtml(mode)} search · 当前空间：${escapeHtml(state.space?.name || state.activeSpaceId)}</div>
+        ${results.map((result) => searchResultCard(result)).join("")}
+      `;
+      bindMemoryDetailButtons("searchResults");
+    }
+
+    function searchResultCard(result) {
+      const matched = Array.isArray(result.matched_on) && result.matched_on.length
+        ? result.matched_on.join(", ")
+        : "unknown";
+      const relevance = typeof result.relevance === "number"
+        ? result.relevance.toFixed(3)
+        : "n/a";
+      return `
+        <article class="memory-card">
+          <div class="lens-head">
+            <div>
+              <div class="lens-name">${escapeHtml(result.title || titleFromThought(result.snippet || "未命名想法"))}</div>
+              <p class="summary">${escapeHtml(result.snippet || "没有可展示的内容片段。")}</p>
+            </div>
+            <span class="pill">${escapeHtml(result.memory_type || "text")}</span>
+          </div>
+          <div class="memory-meta">
+            <span>relevance: ${escapeHtml(relevance)}</span>
+            <span>matched_on: ${escapeHtml(matched)}</span>
+            <span>memory: ${escapeHtml(result.id || "unknown")}</span>
+            <span>space: ${escapeHtml(result.space_id || state.activeSpaceId || "unknown")}</span>
+            <span>${escapeHtml(formatDate(result.created_at))}</span>
+          </div>
+          ${result.id ? `<div class="actions"><button class="btn ghost" type="button" data-memory-detail="${escapeAttribute(result.id)}">打开详情</button></div>` : ""}
+        </article>
+      `;
+    }
+
+    function providerFriendlySearchError(message) {
+      if (message.includes("AI 功能未配置") || message.includes("Embedding provider 未配置")) {
+        return "Embedding provider 未配置：请配置 local/OpenAI/OpenRouter embedding 后再使用 semantic search。";
+      }
+      if (message.includes("Qdrant 向量存储未配置") || message.includes("向量搜索失败") || message.includes("vector")) {
+        return "Qdrant 向量存储未配置或不可用：请确认 QDRANT_URL/QDRANT_COLLECTION 与服务状态。";
+      }
+      return message;
     }
 
     function memoryCard(memory) {
@@ -889,8 +1255,150 @@
             <span>${escapeHtml(formatDate(memory.created_at))}</span>
           </div>
           ${tagHtml ? `<div class="memory-tags">${tagHtml}</div>` : ""}
+          <div class="actions">
+            <button class="btn ghost" type="button" data-memory-detail="${escapeAttribute(memory.id)}">打开详情</button>
+          </div>
         </article>
       `;
+    }
+
+    function bindMemoryDetailButtons(containerId) {
+      $(containerId).querySelectorAll("[data-memory-detail]").forEach((button) => {
+        button.addEventListener("click", () => openMemoryDetail(button.dataset.memoryDetail));
+      });
+    }
+
+    async function openMemoryDetail(memoryId) {
+      if (!memoryId) return;
+      $("memoriesView").innerHTML = `<div class="empty">正在打开保存的想法...</div>`;
+      activateView("memories");
+      try {
+        const memory = await api(`/api/v1/memories/${encodeURIComponent(memoryId)}`);
+        state.selectedMemory = memory;
+        renderMemoryDetail(memory);
+      } catch (error) {
+        showDetailError(error.message);
+        setStatus(error.message);
+      }
+    }
+
+    function renderMemoryDetail(memory) {
+      const tags = Array.isArray(memory.tags) ? memory.tags.join(", ") : "";
+      $("memoriesView").innerHTML = `
+        <article class="memory-card">
+          <div class="lens-head">
+            <div>
+              <div class="lens-name">想法详情</div>
+              <p class="summary">当前空间：${escapeHtml(state.space?.name || memory.space_id)}</p>
+            </div>
+            <span class="pill">${escapeHtml(memory.memory_type || "text")}</span>
+          </div>
+          <div id="memoryDetailError" class="error-box hidden" role="alert"></div>
+          <div class="detail-grid">
+            <label class="detail-field">
+              <span class="section-title">标题</span>
+              <input id="memoryDetailTitle" class="field" value="${escapeAttribute(memory.title || "")}">
+            </label>
+            <label class="detail-field">
+              <span class="section-title">标签</span>
+              <input id="memoryDetailTags" class="field" value="${escapeAttribute(tags)}" placeholder="用逗号分隔">
+            </label>
+            <label class="detail-field full">
+              <span class="section-title">内容</span>
+              <textarea id="memoryDetailContent" class="textarea">${escapeHtml(memory.content || "")}</textarea>
+            </label>
+          </div>
+          <div class="memory-meta">
+            <span>memory: ${escapeHtml(memory.id)}</span>
+            <span>space: ${escapeHtml(memory.space_id)}</span>
+            <span>created: ${escapeHtml(formatDate(memory.created_at))}</span>
+            <span>updated: ${escapeHtml(formatDate(memory.updated_at))}</span>
+          </div>
+          <div class="actions">
+            <button id="saveMemoryDetailButton" class="btn primary" type="button">保存修改</button>
+            <button id="deleteMemoryDetailButton" class="btn danger" type="button">删除想法</button>
+            <button id="backToMemoriesButton" class="btn ghost" type="button">返回列表</button>
+          </div>
+        </article>
+      `;
+      $("saveMemoryDetailButton").addEventListener("click", saveMemoryDetail);
+      $("deleteMemoryDetailButton").addEventListener("click", deleteMemoryDetail);
+      $("backToMemoriesButton").addEventListener("click", loadMemories);
+    }
+
+    async function saveMemoryDetail() {
+      const memory = state.selectedMemory;
+      if (!memory) return;
+      const titleInput = $("memoryDetailTitle");
+      const contentInput = $("memoryDetailContent");
+      const tagsInput = $("memoryDetailTags");
+      const content = contentInput.value.trim();
+      if (!content) {
+        showDetailError("内容不能为空");
+        return;
+      }
+
+      setBusy($("saveMemoryDetailButton"), true);
+      try {
+        const updated = await api(`/api/v1/memories/${encodeURIComponent(memory.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            title: titleInput.value.trim(),
+            content,
+            tags: parseTags(tagsInput.value)
+          })
+        });
+        state.selectedMemory = updated;
+        renderMemoryDetail(updated);
+        setStatus("想法已更新");
+      } catch (error) {
+        showDetailError(error.message);
+        setStatus(error.message);
+      } finally {
+        const button = $("saveMemoryDetailButton");
+        if (button) setBusy(button, false);
+      }
+    }
+
+    async function deleteMemoryDetail() {
+      const memory = state.selectedMemory;
+      if (!memory) return;
+      if (!window.confirm("确定删除这条保存的想法吗？")) return;
+
+      setBusy($("deleteMemoryDetailButton"), true);
+      try {
+        await api(`/api/v1/memories/${encodeURIComponent(memory.id)}`, {
+          method: "DELETE"
+        });
+        state.selectedMemory = null;
+        state.memories.offset = 0;
+        await loadMemories();
+        setStatus("想法已删除");
+      } catch (error) {
+        showDetailError(error.message);
+        setStatus(error.message);
+      } finally {
+        const button = $("deleteMemoryDetailButton");
+        if (button) setBusy(button, false);
+      }
+    }
+
+    function showDetailError(message) {
+      const detailError = $("memoryDetailError");
+      if (!detailError) {
+        $("memoriesView").innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
+        return;
+      }
+      detailError.textContent = message;
+      detailError.classList.remove("hidden");
+    }
+
+    function parseTags(value) {
+      const seen = new Set();
+      return value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag && !seen.has(tag) && seen.add(tag));
     }
 
     function memoryTitle(memory) {
@@ -898,7 +1406,7 @@
     }
 
     function activateView(name) {
-      for (const view of ["current", "weekly", "memories", "history"]) {
+      for (const view of ["current", "weekly", "memories", "search", "lensRun", "history"]) {
         $(`${view}View`).classList.toggle("hidden", view !== name);
       }
       document.querySelectorAll(".tab").forEach((tab) => {
@@ -913,6 +1421,37 @@
 
     function listItems(values) {
       return values.map((value) => `<li>${escapeHtml(String(value))}</li>`).join("");
+    }
+
+    function bindLensRunOpenButtons(containerId) {
+      $(containerId).querySelectorAll("[data-run-id]").forEach((button) => {
+        button.addEventListener("click", () => openLensRunDetail(button.dataset.runId));
+      });
+    }
+
+    function formatKeyPoint(point) {
+      if (typeof point === "string") return point;
+      const title = point.title ? `${point.title}: ` : "";
+      const memory = point.memory_id ? ` [memory:${point.memory_id}]` : "";
+      return `${title}${point.point || ""}${memory}`;
+    }
+
+    function formatCitation(citation) {
+      if (typeof citation === "string") return citation;
+      const title = citation.title || "untitled";
+      const relevance = citation.relevance === undefined || citation.relevance === null ? "" : ` · relevance ${citation.relevance}`;
+      return `${title} · memory:${citation.memory_id || "未知"}${relevance}`;
+    }
+
+    function formatMemoryTrace(memory) {
+      if (typeof memory === "string") return memory;
+      const title = memory.title || "untitled";
+      return `${title} · memory:${memory.id || "未知"} · ${memory.content || ""}`;
+    }
+
+    function displayValue(value) {
+      if (value === undefined || value === null || value === "") return "未提供";
+      return value;
     }
 
     function formatDate(value) {
@@ -937,10 +1476,19 @@
         .replaceAll("'", "&#039;");
     }
 
+    function escapeAttribute(value) {
+      return escapeHtml(value);
+    }
+
     $("registerButton").addEventListener("click", () => authenticate("register").catch((error) => setStatus(error.message)));
     $("loginButton").addEventListener("click", () => authenticate("login").catch((error) => setStatus(error.message)));
     $("reviewButton").addEventListener("click", runThoughtReview);
     $("weeklyButton").addEventListener("click", createWeeklyReview);
+    $("searchButton").addEventListener("click", performSearch);
+    $("searchInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") performSearch();
+    });
+    $("runLensButton").addEventListener("click", runSelectedLens);
     $("logoutButton").addEventListener("click", () => {
       clearSession();
       showAuth();
@@ -950,6 +1498,7 @@
       tab.addEventListener("click", () => {
         activateView(tab.dataset.view);
         if (tab.dataset.view === "memories") loadMemories();
+        if (tab.dataset.view === "history") loadHistory();
       });
     });
 

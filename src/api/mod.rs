@@ -212,4 +212,75 @@ mod tests {
         assert!(html.contains("spaceError"));
         assert!(html.contains("无法访问当前空间"));
     }
+
+    #[test]
+    fn thought_review_app_exposes_generic_lens_run_detail_flow() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("id=\"lensRunSelect\""));
+        assert!(html.contains("id=\"lensRunQueryInput\""));
+        assert!(html.contains("id=\"runLensButton\""));
+        assert!(html.contains("/api/v1/lens-runs"));
+        assert!(html.contains("openLensRunDetail"));
+        assert!(html.contains("/api/v1/lens-runs/${runId}"));
+        assert!(html.contains("summary_provider"));
+        assert!(html.contains("summary_source"));
+        assert!(html.contains("summary_model"));
+        assert!(html.contains("summary_fallback_reason"));
+        assert!(html.contains("key_points"));
+        assert!(html.contains("open_questions"));
+        assert!(html.contains("suggested_next_actions"));
+        assert!(html.contains("citations"));
+    }
+
+    #[test]
+    fn thought_review_app_has_space_scoped_search_view() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("data-view=\"search\""));
+        assert!(html.contains("id=\"searchView\""));
+        assert!(html.contains("id=\"searchInput\""));
+        assert!(html.contains("id=\"searchModeSelect\""));
+        assert!(html.contains("searchParams.set(\"space_id\", activeSpace.id)"));
+        assert!(html.contains("/api/v1/search?"));
+        assert!(html.contains("/api/v1/search/semantic"));
+        assert!(html.contains("hydrateSemanticSearchResults"));
+        assert!(html.contains("/api/v1/memories/${encodeURIComponent(result.id)}"));
+    }
+
+    #[test]
+    fn thought_review_app_renders_search_result_provenance_and_provider_errors() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("renderSearchResults"));
+        assert!(html.contains("searchResultCard"));
+        assert!(html.contains("memory_type"));
+        assert!(html.contains("relevance"));
+        assert!(html.contains("matched_on"));
+        assert!(html.contains("providerFriendlySearchError"));
+        assert!(html.contains("Embedding provider 未配置"));
+        assert!(html.contains("Qdrant 向量存储未配置"));
+        assert!(html.contains("没有找到匹配的想法"));
+    }
+
+    #[test]
+    fn thought_review_app_has_memory_detail_edit_and_delete_flow() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("data-memory-detail"));
+        assert!(html.contains("openMemoryDetail"));
+        assert!(html.contains("saveMemoryDetail"));
+        assert!(html.contains("deleteMemoryDetail"));
+        assert!(html.contains("/api/v1/memories/${encodeURIComponent(memoryId)}"));
+        assert!(html.contains("method: \"PATCH\""));
+        assert!(html.contains("method: \"DELETE\""));
+    }
+
+    #[test]
+    fn thought_review_app_sends_empty_title_as_explicit_clear() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("title: titleInput.value.trim()"));
+        assert!(!html.contains("title: titleInput.value.trim() || null"));
+    }
 }

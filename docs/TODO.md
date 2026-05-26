@@ -97,11 +97,7 @@ provenance, and summarize recurring weekly themes.
 Current open work:
 
 - [#10 Login and registration UI](https://github.com/blackfaced/MemoryNexus/issues/10)
-- [#25 Cognitive Space list and switch UI](https://github.com/blackfaced/MemoryNexus/issues/25)
 - [#11 Memory create, list, and detail UI](https://github.com/blackfaced/MemoryNexus/issues/11)
-- [#12 Memory detail and delete flow](https://github.com/blackfaced/MemoryNexus/issues/12)
-- [#23 Semantic search UI](https://github.com/blackfaced/MemoryNexus/issues/23)
-- [#22 Lens Run result UI](https://github.com/blackfaced/MemoryNexus/issues/22)
 
 Recently completed:
 
@@ -123,6 +119,16 @@ Recently completed:
   README now leads with AI thought organizer positioning.
 - [#46 User-facing terminology map for Thought Review UI](https://github.com/blackfaced/MemoryNexus/issues/46):
   UI and docs separate user-facing language from backend model terms.
+- [#25 Cognitive Space list and switch UI](https://github.com/blackfaced/MemoryNexus/issues/25):
+  Thought Review lists accessible spaces, persists the active space, routes
+  Memory/Lens/Lens Run/Search/Review work to it, and shows visible space errors.
+- [#22 Lens Run result UI](https://github.com/blackfaced/MemoryNexus/issues/22):
+  Thought Review can run a selected Lens and inspect traceable Lens Run output.
+- [#23 Semantic search UI](https://github.com/blackfaced/MemoryNexus/issues/23):
+  Thought Review exposes space-scoped keyword and semantic search with provider
+  error handling.
+- [#12 Memory detail and delete flow](https://github.com/blackfaced/MemoryNexus/issues/12):
+  saved thoughts can be opened, edited with tags, and deleted from the static UI.
 
 ## Phase 5: Namespace Feedback Loops
 
@@ -142,9 +148,12 @@ Direction:
 - Skill namespaces focus on practice, error pattern, progress, feedback, and
   next practice.
 
-Current open work:
+Recently completed:
 
-- [#52 Define Namespace and FeedbackLoop foundation](https://github.com/blackfaced/MemoryNexus/issues/52)
+- [#52 Define Namespace and FeedbackLoop foundation](https://github.com/blackfaced/MemoryNexus/issues/52):
+  minimal Namespace and FeedbackLoop design documented in
+  [Namespace and Feedback Loop Minimal Design](namespace-feedback-loop-design.md),
+  with ADR-014 supplemented and implementation work split below.
 
 Candidate follow-up work:
 
