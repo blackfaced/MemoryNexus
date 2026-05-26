@@ -442,6 +442,7 @@
         <input id="usernameInput" class="field" autocomplete="username" placeholder="名字">
         <input id="passwordInput" class="field" autocomplete="current-password" type="password" placeholder="密码">
       </div>
+      <div id="authError" class="error-box hidden" role="alert" aria-live="polite"></div>
       <div class="actions">
         <button id="registerButton" class="btn primary" type="button">创建空间</button>
         <button id="loginButton" class="btn" type="button">登录</button>
@@ -598,6 +599,33 @@
       button.disabled = busy;
     }
 
+    function setButtonBusy(button, busy, busyLabel) {
+      if (!button.dataset.idleLabel) button.dataset.idleLabel = button.textContent;
+      button.disabled = busy;
+      button.textContent = busy ? busyLabel : button.dataset.idleLabel;
+    }
+
+    function setAuthBusy(mode, busy) {
+      setButtonBusy($("registerButton"), busy, mode === "register" ? "正在创建..." : "创建空间");
+      setButtonBusy($("loginButton"), busy, mode === "login" ? "正在登录..." : "登录");
+    }
+
+    function showAuthError(message) {
+      $("authError").textContent = message;
+      $("authError").classList.remove("hidden");
+    }
+
+    function clearAuthError() {
+      $("authError").textContent = "";
+      $("authError").classList.add("hidden");
+    }
+
+    function clearAuthInputs() {
+      for (const id of ["emailInput", "usernameInput", "passwordInput"]) {
+        $(id).value = "";
+      }
+    }
+
     async function api(path, options = {}) {
       const headers = new Headers(options.headers || {});
       headers.set("Content-Type", "application/json");
@@ -606,22 +634,54 @@
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok === false) {
         const message = payload.error?.message || `Request failed: ${response.status}`;
+        if (response.status === 401 && !path.startsWith("/api/v1/auth/login") && !path.startsWith("/api/v1/auth/register")) {
+          handleAuthExpired();
+          throw new Error("登录已过期，请重新登录。");
+        }
         throw new Error(message);
       }
       return payload.data;
     }
 
     async function authenticate(mode) {
+      clearAuthError();
       const email = $("emailInput").value.trim();
       const username = $("usernameInput").value.trim() || email.split("@")[0] || "me";
       const password = $("passwordInput").value;
+      if (!email) {
+        showAuthError("请输入邮箱");
+        setStatus("请输入邮箱");
+        return;
+      }
+      if (!password) {
+        showAuthError("请输入密码");
+        setStatus("请输入密码");
+        return;
+      }
       const path = mode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login";
       const body = mode === "register" ? { email, username, password } : { email, password };
-      const data = await api(path, { method: "POST", body: JSON.stringify(body) });
-      state.token = data.token;
-      state.user = data.user;
-      localStorage.setItem("memorynexus_token", state.token);
-      await bootApp();
+      setAuthBusy(mode, true);
+      setStatus(mode === "register" ? "正在创建账号..." : "正在登录...");
+      try {
+        const data = await api(path, { method: "POST", body: JSON.stringify(body) });
+        state.token = data.token;
+        state.user = data.user;
+        localStorage.setItem("memorynexus_token", state.token);
+        clearAuthInputs();
+        await bootApp();
+      } catch (error) {
+        showAuthError(authFriendlyError(error.message));
+        setStatus(authFriendlyError(error.message));
+      } finally {
+        setAuthBusy(mode, false);
+      }
+    }
+
+    function authFriendlyError(message) {
+      if (message.includes("认证失败") || message.includes("Invalid credentials") || message.includes("invalid credentials")) {
+        return "邮箱或密码不正确，请检查后再试。";
+      }
+      return message || "认证请求失败，请稍后再试。";
     }
 
     async function bootApp() {
@@ -629,9 +689,7 @@
       try {
         state.user = state.user || await api("/api/v1/auth/me");
       } catch (error) {
-        clearSession();
-        showAuth();
-        setStatus(error.message);
+        handleAuthExpired();
         return;
       }
 
@@ -652,15 +710,24 @@
       }
     }
 
-    function clearSession() {
+    function clearSession({ preserveAuthInputs } = { preserveAuthInputs: true }) {
       localStorage.removeItem("memorynexus_token");
       localStorage.removeItem("memorynexus_active_space_id");
       state.token = "";
+      state.user = null;
       state.activeSpaceId = "";
       state.spaces = [];
       state.space = null;
       state.lenses = [];
       state.selectedMemory = null;
+      if (!preserveAuthInputs) clearAuthInputs();
+    }
+
+    function handleAuthExpired() {
+      clearSession({ preserveAuthInputs: true });
+      showAuth();
+      showAuthError("登录已过期，请重新登录。");
+      setStatus("登录已过期，请重新登录。");
     }
 
     function renderSpaceOptions() {
@@ -1480,8 +1547,8 @@
       return escapeHtml(value);
     }
 
-    $("registerButton").addEventListener("click", () => authenticate("register").catch((error) => setStatus(error.message)));
-    $("loginButton").addEventListener("click", () => authenticate("login").catch((error) => setStatus(error.message)));
+    $("registerButton").addEventListener("click", () => authenticate("register"));
+    $("loginButton").addEventListener("click", () => authenticate("login"));
     $("reviewButton").addEventListener("click", runThoughtReview);
     $("weeklyButton").addEventListener("click", createWeeklyReview);
     $("searchButton").addEventListener("click", performSearch);
@@ -1490,7 +1557,7 @@
     });
     $("runLensButton").addEventListener("click", runSelectedLens);
     $("logoutButton").addEventListener("click", () => {
-      clearSession();
+      clearSession({ preserveAuthInputs: false });
       showAuth();
     });
     $("spaceSelect").addEventListener("change", (event) => switchActiveSpace(event.target.value));
