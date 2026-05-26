@@ -8,6 +8,7 @@ mod agent_router;
 mod ai;
 mod auth;
 mod embedding;
+mod feedback_loops;
 mod health;
 mod lens_runs;
 mod lenses;
@@ -67,6 +68,23 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v1/namespaces/:id",
             axum::routing::get(namespaces::get),
+        )
+        // FeedbackLoop
+        .route(
+            "/api/v1/feedback-loops",
+            axum::routing::get(feedback_loops::list),
+        )
+        .route(
+            "/api/v1/feedback-loops",
+            axum::routing::post(feedback_loops::create),
+        )
+        .route(
+            "/api/v1/feedback-loops/:id",
+            axum::routing::get(feedback_loops::get),
+        )
+        .route(
+            "/api/v1/feedback-loops/:id",
+            axum::routing::patch(feedback_loops::patch),
         )
         // Lens
         .route("/api/v1/lenses", axum::routing::get(lenses::list))
