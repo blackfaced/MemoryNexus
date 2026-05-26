@@ -38,6 +38,36 @@ and MCP client JSON snippets.
 If another agent should perform the setup itself, give it
 [Agent Self-Install Guide](agent-self-install.md).
 
+## Upgrade Behavior
+
+An MCP client keeps using the MCP server process it started. Updating the
+MemoryNexus source checkout is not enough; restart or reload the MCP client so
+it starts a fresh `memorynexus-mcp` process.
+
+There are two common configurations:
+
+- `cargo run --quiet --bin memorynexus-mcp`: source changes are picked up on the
+  next MCP server start, but the agent client still needs to restart the stdio
+  server.
+- `target/debug/memorynexus-mcp`: rebuild the binary with `cargo build --bin
+  memorynexus-mcp`, then restart or reload the agent client.
+
+When backend API code or migrations change, restart `memorynexus` as well. The
+API runs SQLx migrations on startup.
+
+Minimal upgrade sequence:
+
+```bash
+cd /path/to/MemoryNexus
+git pull
+cargo test
+cargo build --bin memorynexus-mcp
+```
+
+Skip `git pull` when the latest changes are already local edits in this
+checkout. Skip the build step only when the MCP config uses `cargo run`. Rebuild
+`memorynexus` too if the API is launched from a built binary.
+
 ## Tools
 
 | Tool | Purpose |
@@ -55,6 +85,8 @@ If another agent should perform the setup itself, give it
 | `list_reminders` | List pending or due scheduled recall reminders |
 | `complete_reminder` | Mark a pending reminder as completed |
 | `route_agent_context` | Recommend write/search/lens/profile/ignore for agent context |
+| `get_install_status` | Inspect local version, checkout state, and API health/version before install or upgrade |
+| `upgrade_install` | Return or apply a local upgrade plan for source, tests, and built binaries |
 
 ## Smoke Test
 
@@ -114,6 +146,34 @@ printf '%s\n' \
 
 The tool response returns MemoryNexus API JSON as text content so MCP clients can
 read the same traceable payload that the CLI sees.
+
+Install or upgrade inspection:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_install_status","arguments":{"checkout_dir":"/path/to/MemoryNexus"}}}' \
+  | cargo run --quiet --bin memorynexus-mcp
+```
+
+Plan an upgrade without executing local commands:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"checkout_dir":"/path/to/MemoryNexus","pull":true,"rebuild_mcp":true}}}' \
+  | cargo run --quiet --bin memorynexus-mcp
+```
+
+Apply an upgrade explicitly:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"checkout_dir":"/path/to/MemoryNexus","apply":true,"pull":true,"rebuild_mcp":true}}}' \
+  | cargo run --quiet --bin memorynexus-mcp
+```
+
+`upgrade_install` defaults to plan-only. It refuses `git pull` when local files
+are dirty. It does not restart the API or the current MCP client; the response
+reports which restarts are still required.
 
 ## MCP vs CLI
 

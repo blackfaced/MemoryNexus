@@ -297,6 +297,31 @@ fn tools_list_result() -> Value {
                     "required": ["message"]
                 }),
             ),
+            tool_schema(
+                "get_install_status",
+                "Inspect the local MemoryNexus checkout, local MCP binary version, and API health before deciding whether to install or upgrade.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "checkout_dir": {"type": "string"}
+                    }
+                }),
+            ),
+            tool_schema(
+                "upgrade_install",
+                "Plan or apply a local MemoryNexus upgrade. Defaults to plan-only; set apply=true to run local commands.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "checkout_dir": {"type": "string"},
+                        "apply": {"type": "boolean", "default": false},
+                        "pull": {"type": "boolean", "default": false},
+                        "rebuild_mcp": {"type": "boolean", "default": false},
+                        "rebuild_api": {"type": "boolean", "default": false},
+                        "skip_tests": {"type": "boolean", "default": false}
+                    }
+                }),
+            ),
         ]
     })
 }
@@ -503,6 +528,20 @@ async fn call_tool(config: &Config, params: &Value) -> Result<Value, McpError> {
         .and_then(Value::as_str)
         .ok_or_else(|| McpError::new("tools/call params.name is required"))?;
     let arguments = params.get("arguments").unwrap_or(&Value::Null);
+    if is_local_tool(tool_name) {
+        let response = call_local_tool(config, tool_name, arguments).await?;
+        return Ok(json!({
+            "content": [
+                {
+                    "type": "text",
+                    "text": serde_json::to_string_pretty(&response)
+                        .map_err(|error| McpError::new(error.to_string()))?,
+                }
+            ],
+            "isError": false,
+        }));
+    }
+
     let request = build_api_request_for_tool(config, tool_name, arguments)?;
     let response = execute_api_request(request).await?;
 
@@ -515,6 +554,118 @@ async fn call_tool(config: &Config, params: &Value) -> Result<Value, McpError> {
             }
         ],
         "isError": false,
+    }))
+}
+
+fn is_local_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "get_install_status" | "upgrade_install")
+}
+
+async fn call_local_tool(
+    config: &Config,
+    tool_name: &str,
+    arguments: &Value,
+) -> Result<Value, McpError> {
+    match tool_name {
+        "get_install_status" => {
+            let checkout =
+                resolve_checkout_dir(optional_string(arguments, "checkout_dir").as_deref())?;
+            let api_health = fetch_api_health(config).await.unwrap_or_else(|error| {
+                json!({
+                    "reachable": false,
+                    "error": error.message,
+                })
+            });
+
+            Ok(json!({
+                "local": local_version_data(),
+                "checkout": checkout_status(&checkout),
+                "api": api_health,
+                "upgrade": upgrade_plan_value(false, false, true, false),
+            }))
+        }
+        "upgrade_install" => {
+            let checkout =
+                resolve_checkout_dir(optional_string(arguments, "checkout_dir").as_deref())?;
+            let apply = optional_bool(arguments, "apply").unwrap_or(false);
+            let pull = optional_bool(arguments, "pull").unwrap_or(false);
+            let rebuild_mcp = optional_bool(arguments, "rebuild_mcp").unwrap_or(false);
+            let rebuild_api = optional_bool(arguments, "rebuild_api").unwrap_or(false);
+            let skip_tests = optional_bool(arguments, "skip_tests").unwrap_or(false);
+            let plan = upgrade_plan_value(pull, rebuild_mcp, !skip_tests, rebuild_api);
+
+            if !apply {
+                return Ok(json!({
+                    "mode": "plan",
+                    "checkout": checkout.display().to_string(),
+                    "plan": plan,
+                    "apply_hint": "call upgrade_install with apply=true to execute these local commands",
+                }));
+            }
+
+            let dirty = git_status_short(&checkout)?;
+            if pull && !dirty.trim().is_empty() {
+                return Err(McpError::new(
+                    "refusing to git pull with local changes; commit/stash them or rerun with pull=false",
+                ));
+            }
+
+            let mut results = Vec::new();
+            if pull {
+                results.push(run_local_command(&checkout, "git", &["pull"])?);
+            }
+            if !skip_tests {
+                results.push(run_local_command(&checkout, "cargo", &["test"])?);
+            }
+            if rebuild_mcp {
+                results.push(run_local_command(
+                    &checkout,
+                    "cargo",
+                    &["build", "--bin", "memorynexus-mcp"],
+                )?);
+            }
+            if rebuild_api {
+                results.push(run_local_command(
+                    &checkout,
+                    "cargo",
+                    &["build", "--bin", "memorynexus"],
+                )?);
+            }
+
+            Ok(json!({
+                "mode": "applied",
+                "checkout": checkout.display().to_string(),
+                "plan": plan,
+                "results": results,
+                "restart_required": {
+                    "api": rebuild_api,
+                    "mcp_client": true,
+                    "note": "Restart the API after backend changes and reload the agent MCP client so it starts a fresh memorynexus-mcp process."
+                }
+            }))
+        }
+        _ => Err(McpError::new(format!("unknown local tool: {tool_name}"))),
+    }
+}
+
+async fn fetch_api_health(config: &Config) -> Result<Value, McpError> {
+    let base_url = config.api_url.trim_end_matches('/');
+    let response = reqwest::Client::new()
+        .get(format!("{base_url}/api/v1/health"))
+        .send()
+        .await
+        .map_err(|error| McpError::new(error.to_string()))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| McpError::new(error.to_string()))?;
+    let body = serde_json::from_str::<Value>(&text).unwrap_or_else(|_| json!({ "raw": text }));
+
+    Ok(json!({
+        "reachable": status.is_success(),
+        "status_code": status.as_u16(),
+        "body": body,
     }))
 }
 
@@ -608,6 +759,137 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, McpError
     Ok(url.to_string())
 }
 
+fn local_version_data() -> Value {
+    json!({
+        "name": env!("CARGO_PKG_NAME"),
+        "version": env!("CARGO_PKG_VERSION"),
+        "mcp_server": "memorynexus-mcp",
+        "binary": std::env::current_exe()
+            .ok()
+            .map(|path| path.display().to_string()),
+    })
+}
+
+fn resolve_checkout_dir(checkout_dir: Option<&str>) -> Result<std::path::PathBuf, McpError> {
+    let path = checkout_dir
+        .map(std::path::PathBuf::from)
+        .map(Ok)
+        .unwrap_or_else(std::env::current_dir)
+        .map_err(|error| McpError::new(error.to_string()))?;
+    if !path.join("Cargo.toml").exists() {
+        return Err(McpError::new(format!(
+            "{} does not look like the MemoryNexus checkout",
+            path.display()
+        )));
+    }
+    Ok(path)
+}
+
+fn checkout_status(checkout: &std::path::Path) -> Value {
+    let git_head = run_local_command(checkout, "git", &["log", "-1", "--oneline"]).ok();
+    let git_status = git_status_short(checkout).ok();
+
+    json!({
+        "path": checkout.display().to_string(),
+        "git_head": git_head.and_then(|result| result.get("stdout").cloned()),
+        "dirty": git_status
+            .as_deref()
+            .map(|status| !status.trim().is_empty())
+            .unwrap_or(false),
+        "git_status_short": git_status,
+    })
+}
+
+fn git_status_short(checkout: &std::path::Path) -> Result<String, McpError> {
+    let output = std::process::Command::new("git")
+        .arg("status")
+        .arg("--short")
+        .current_dir(checkout)
+        .output()
+        .map_err(|error| McpError::new(error.to_string()))?;
+    if !output.status.success() {
+        return Err(McpError::new(String::from_utf8_lossy(&output.stderr)));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn run_local_command(
+    checkout: &std::path::Path,
+    program: &str,
+    args: &[&str],
+) -> Result<Value, McpError> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .current_dir(checkout)
+        .output()
+        .map_err(|error| McpError::new(error.to_string()))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !output.status.success() {
+        return Err(McpError::new(format!(
+            "{} {} failed: {}",
+            program,
+            args.join(" "),
+            stderr
+        )));
+    }
+
+    Ok(json!({
+        "command": std::iter::once(program)
+            .chain(args.iter().copied())
+            .collect::<Vec<_>>()
+            .join(" "),
+        "stdout": stdout,
+        "stderr": stderr,
+    }))
+}
+
+fn upgrade_plan_value(pull: bool, rebuild_mcp: bool, run_tests: bool, rebuild_api: bool) -> Value {
+    let mut steps = Vec::new();
+    steps.push(json!({
+        "command": "git status --short",
+        "reason": "detect local edits before any source update",
+    }));
+    if pull {
+        steps.push(json!({
+            "command": "git pull",
+            "reason": "update source from the configured remote; skipped when local edits are already the desired upgrade",
+        }));
+    }
+    if run_tests {
+        steps.push(json!({
+            "command": "cargo test",
+            "reason": "verify the updated checkout before reconnecting agents",
+        }));
+    }
+    if rebuild_mcp {
+        steps.push(json!({
+            "command": "cargo build --bin memorynexus-mcp",
+            "reason": "refresh built-binary MCP installs",
+        }));
+    }
+    if rebuild_api {
+        steps.push(json!({
+            "command": "cargo build --bin memorynexus",
+            "reason": "refresh built-binary API installs",
+        }));
+    }
+    steps.push(json!({
+        "command": "restart API and reload MCP client",
+        "reason": "running processes keep old code until restarted",
+    }));
+
+    json!({
+        "steps": steps,
+        "notes": [
+            "Skip git pull when the checkout already contains the user's local edits.",
+            "Skip cargo build --bin memorynexus-mcp when the MCP config uses cargo run.",
+            "Restart the API after backend code or migrations change; migrations run on API startup."
+        ]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,8 +920,49 @@ mod tests {
                 "list_reminders",
                 "complete_reminder",
                 "route_agent_context",
+                "get_install_status",
+                "upgrade_install",
             ]
         );
+    }
+
+    #[test]
+    fn upgrade_plan_defaults_to_safe_plan_only_steps() {
+        let plan = upgrade_plan_value(false, false, true, false);
+        let steps = plan["steps"].as_array().unwrap();
+
+        assert_eq!(steps[0]["command"], "git status --short");
+        assert!(steps.iter().any(|step| step["command"] == "cargo test"));
+        assert!(steps
+            .iter()
+            .any(|step| step["command"] == "restart API and reload MCP client"));
+    }
+
+    #[tokio::test]
+    async fn upgrade_install_tool_is_local_and_does_not_require_token_for_plan() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: None,
+        };
+
+        let result = call_local_tool(
+            &config,
+            "upgrade_install",
+            &json!({
+                "apply": false,
+                "pull": true,
+                "rebuild_mcp": true
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result["mode"], "plan");
+        assert_eq!(result["plan"]["steps"][1]["command"], "git pull");
+        assert!(result["apply_hint"]
+            .as_str()
+            .unwrap()
+            .contains("apply=true"));
     }
 
     #[test]
