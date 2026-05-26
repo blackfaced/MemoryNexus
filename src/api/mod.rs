@@ -20,10 +20,12 @@ mod semantic;
 mod spaces;
 mod tags;
 mod upload;
+mod web;
 
 /// 聚合所有 API 路由
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .merge(web::routes())
         // 健康检查
         .route("/api/v1/health", axum::routing::get(health::check))
         // 认证
@@ -146,4 +148,17 @@ pub fn routes() -> Router<AppState> {
     // 文件上传 (预留)
     // .route("/api/v1/upload", axum::routing::post(upload::upload))
     // .route("/api/v1/media/:key", axum::routing::get(upload::get_media))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn thought_review_app_uses_user_facing_language() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("写下你现在脑子里最占空间的一件事"));
+        assert!(html.contains("不同视角"));
+        assert!(html.contains("最近的我在反复想什么"));
+        assert!(!html.contains("Add memory"));
+    }
 }

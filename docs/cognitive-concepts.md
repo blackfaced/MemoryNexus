@@ -4,11 +4,12 @@
 
 ## 总览
 
-这些概念可以分成三层：
+这些概念可以分成四层：
 
 1. **认知原材料**：Memory
 2. **认知加工结果**：Reflection、Concept、Belief、Relation、Contradiction
-3. **系统运行结构**：CognitiveSpace、Lens、CognitiveEvent、CognitiveState
+3. **长期反馈结构**：Namespace、FeedbackLoop
+4. **系统运行结构**：CognitiveSpace、Lens、CognitiveEvent、CognitiveState
 
 `CognitiveProfile` 是 `CognitiveState` 的对外投影视图，用于 LLM、MCP 和 UI
 消费。它不是新的所有权边界。
@@ -25,6 +26,18 @@ Memory
 → CognitiveState
 ```
 
+长期反馈链路是：
+
+```text
+FeedbackLoop
+→ Memory
+→ Lens
+→ Reflection
+→ Concept / Pattern
+→ CognitiveProfile / SkillProfile
+→ Next FeedbackLoop
+```
+
 一句话概括：
 
 ```text
@@ -36,6 +49,8 @@ Belief 是长期倾向，
 Relation 是连接，
 Contradiction 是张力，
 CognitiveSpace 是容器，
+Namespace 是领域，
+FeedbackLoop 是练习 / 反馈闭环，
 CognitiveEvent 是变化，
 CognitiveState 是变化后的整体状态。
 ```
@@ -225,6 +240,88 @@ CognitiveSpace 回答的问题是：
 
 ```text
 这些认知对象共同存在于哪个长期空间？
+```
+
+## Namespace
+
+Namespace 是 CognitiveSpace 内的领域分区。
+
+它不取代 CognitiveSpace，也不引入新的所有权边界。权限仍然由 Space membership
+决定。Namespace 只回答这些认知对象属于哪个具体领域、应该被哪些 Lens / Profile /
+反馈循环优先消费。
+
+例子：
+
+```text
+personal.thoughts
+project.memorynexus
+learning.math
+music.piano
+chess.tactics
+art.drawing
+programming.rust
+```
+
+Namespace 可以分成两类：
+
+- Reflective Namespace: 用于理解自己、项目、决策和长期主题。
+- Skill Namespace: 用于追踪学习、练习、表现、错因和下一轮任务。
+
+当前 Thought Review MVP 可以视为：
+
+```text
+namespace = personal.thoughts
+```
+
+Namespace 回答的问题是：
+
+```text
+这批 memory、reflection、feedback loop 属于哪个长期成长领域？
+```
+
+## FeedbackLoop
+
+FeedbackLoop 是跨领域的长期反馈闭环对象。
+
+它比 Memory 更面向练习、学习和持续改进。最小结构是：
+
+```text
+Goal
+Task
+Attempt
+Evaluation
+Feedback
+Adjustment
+NextTask
+```
+
+例子：
+
+```text
+learning.math:
+知识点 → 练习题 → 作答结果 → 错因分析 → 个性化强化 → 下一天练习计划
+
+music.piano:
+曲目 → 练习片段 → 节奏 / 指法反馈 → 针对性练习 → 每周进展反馈
+
+personal.thoughts:
+想法 → 多视角复盘 → 反复主题 → 内在张力 → 下一步观察问题
+```
+
+FeedbackLoop 与现有认知对象的关系是：
+
+```text
+FeedbackLoop 产生 Memory
+Memory 产生 Reflection
+Reflection 形成 Concept / Pattern
+Concept / Pattern 更新 Profile
+Profile 影响下一轮 FeedbackLoop
+```
+
+FeedbackLoop 回答的问题是：
+
+```text
+这个领域下一轮应该如何练习、复盘或调整？
 ```
 
 ## Lens

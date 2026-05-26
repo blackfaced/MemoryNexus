@@ -371,12 +371,56 @@ fn build_review_report_json(input: ReviewReportInput<'_>) -> Value {
         "memory_count": input.memories.len(),
         "source_memories": input.memories.iter().map(memory_snippet).collect::<Vec<_>>(),
         "key_points": input.memories.iter().take(5).map(key_point).collect::<Vec<_>>(),
+        "recurring_themes": recurring_themes(input.memories),
+        "inner_tensions": inner_tensions(input.memories),
+        "forming_direction": forming_direction(input.memories, &input.summary.text),
+        "next_step": review_next_step(input.memories),
         "next_actions": next_actions(input.memories),
         "summary_provider": input.summary.provider,
         "summary_source": input.summary.source,
         "summary_model": input.summary.model,
         "summary_fallback_reason": input.summary.fallback_reason,
     })
+}
+
+fn recurring_themes(memories: &[MemoryDb]) -> Vec<String> {
+    memories
+        .iter()
+        .take(4)
+        .map(|memory| first_sentence(&memory.content))
+        .filter(|theme| !theme.is_empty())
+        .collect()
+}
+
+fn inner_tensions(memories: &[MemoryDb]) -> Vec<String> {
+    if memories.len() < 2 {
+        return Vec::new();
+    }
+
+    vec![
+        "想继续推进一些事情，但也在寻找更清晰的选择标准。".to_string(),
+        "想保留更多可能性，但注意力正在要求一条更稳定的主线。".to_string(),
+    ]
+}
+
+fn forming_direction(memories: &[MemoryDb], summary: &str) -> String {
+    if memories.is_empty() {
+        return "材料还不够形成稳定主线。继续记录后再观察反复出现的方向。".to_string();
+    }
+
+    if summary.trim().is_empty() {
+        "你正在从零散记录转向观察自己的长期思考模式。".to_string()
+    } else {
+        summary.trim().to_string()
+    }
+}
+
+fn review_next_step(memories: &[MemoryDb]) -> String {
+    if memories.is_empty() {
+        return "写下一件今天最占空间的想法。".to_string();
+    }
+
+    "选择一个反复出现的主题，补充一条更具体的下一步想法。".to_string()
 }
 
 fn memory_snippet(memory: &MemoryDb) -> Value {
@@ -477,5 +521,45 @@ mod tests {
         assert_eq!(report["lens"]["id"], json!(lens.id));
         assert_eq!(report["summary_provider"], "deterministic");
         assert_eq!(report["memory_count"], 0);
+    }
+
+    #[test]
+    fn weekly_review_json_exposes_user_facing_sections() {
+        let lens = LensDb {
+            id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
+            name: "最近的我".to_string(),
+            description: None,
+            strategy: "weekly_thought_review".to_string(),
+            output_format: "bullets".to_string(),
+            retrieval_mode: "semantic".to_string(),
+            created_by: Uuid::new_v4(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let summary = ReviewSummary {
+            text: "你正在从做很多东西转向选择主线。".to_string(),
+            provider: "deterministic".to_string(),
+            source: "deterministic".to_string(),
+            model: None,
+            fallback_reason: Some("summary provider not configured".to_string()),
+        };
+
+        let report = build_review_report_json(ReviewReportInput {
+            lens: &lens,
+            report_type: "weekly_review",
+            window_start: Utc.with_ymd_and_hms(2026, 5, 18, 0, 0, 0).unwrap(),
+            window_end: Utc.with_ymd_and_hms(2026, 5, 25, 0, 0, 0).unwrap(),
+            memories: &[],
+            summary: &summary,
+        });
+
+        assert!(report["recurring_themes"].is_array());
+        assert!(report["inner_tensions"].is_array());
+        assert!(report["forming_direction"]
+            .as_str()
+            .unwrap()
+            .contains("主线"));
+        assert!(report["next_step"].as_str().unwrap().contains("写下"));
     }
 }

@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MemoryNexus Thought Review</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f5f0;
+      --ink: #202124;
+      --muted: #63665f;
+      --line: #d9d5ca;
+      --panel: #fffdf8;
+      --field: #ffffff;
+      --accent: #1f6f5b;
+      --accent-strong: #164c42;
+      --warm: #b45f3c;
+      --gold: #d9a441;
+      --shadow: 0 18px 42px rgba(43, 39, 31, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand strong {
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .brand span,
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status {
+      min-height: 20px;
+      text-align: right;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+      gap: 24px;
+      margin-top: 28px;
+      align-items: start;
+    }
+
+    .panel,
+    .review-card,
+    .lens-card,
+    .report-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .panel h1,
+    .panel h2,
+    .section-title {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    .panel h1 {
+      max-width: 720px;
+      font-size: clamp(32px, 5vw, 56px);
+      line-height: 1.04;
+    }
+
+    .panel h2,
+    .section-title {
+      font-size: 18px;
+    }
+
+    .prompt {
+      margin: 14px 0 18px;
+      color: var(--muted);
+      max-width: 680px;
+    }
+
+    .auth-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .field,
+    .textarea {
+      width: 100%;
+      color: var(--ink);
+      background: var(--field);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .field {
+      min-height: 42px;
+      padding: 0 12px;
+    }
+
+    .textarea {
+      min-height: 190px;
+      resize: vertical;
+      padding: 14px;
+    }
+
+    .field:focus,
+    .textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(31, 111, 91, 0.14);
+    }
+
+    .actions,
+    .tabs,
+    .inline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .actions {
+      margin-top: 14px;
+    }
+
+    .btn {
+      min-height: 42px;
+      border-radius: 6px;
+      padding: 0 14px;
+      background: #ede8db;
+      color: var(--ink);
+      border-color: #d8d0c0;
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .btn.primary:hover {
+      background: var(--accent-strong);
+    }
+
+    .btn.ghost {
+      background: transparent;
+      border-color: var(--line);
+    }
+
+    .btn:disabled {
+      cursor: wait;
+      opacity: 0.58;
+    }
+
+    .tabs {
+      margin: 22px 0 14px;
+    }
+
+    .tab {
+      min-height: 36px;
+      border-radius: 999px;
+      padding: 0 14px;
+      background: transparent;
+      color: var(--muted);
+      border-color: var(--line);
+    }
+
+    .tab.active {
+      color: var(--accent-strong);
+      background: #e6f0ea;
+      border-color: #b9d5c9;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .lens-card,
+    .review-card,
+    .report-card {
+      padding: 16px;
+    }
+
+    .lens-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .lens-name {
+      font-weight: 700;
+      color: var(--accent-strong);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      background: #f4ead6;
+      color: #75441d;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .summary {
+      margin: 12px 0 0;
+    }
+
+    .small-list {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .split {
+      display: grid;
+      gap: 14px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .empty {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      color: var(--muted);
+      background: rgba(255, 253, 248, 0.6);
+    }
+
+    .report-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .report-block {
+      border-left: 3px solid var(--gold);
+      padding-left: 12px;
+    }
+
+    @media (max-width: 860px) {
+      .grid,
+      .auth-grid,
+      .report-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .status {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>MemoryNexus</strong>
+        <span>一个属于你的 AI 思绪整理器</span>
+      </div>
+      <div class="inline-actions">
+        <span id="sessionStatus" class="status">未登录</span>
+        <button id="logoutButton" class="btn ghost hidden" type="button">退出</button>
+      </div>
+    </header>
+
+    <section id="authPanel" class="panel">
+      <h1>写下你的想法。让不同视角帮你看清它。</h1>
+      <p class="prompt">一个本地优先的私人思考空间，帮你记录想法、复盘困惑、发现长期模式。</p>
+      <div class="auth-grid">
+        <input id="emailInput" class="field" autocomplete="email" placeholder="邮箱">
+        <input id="usernameInput" class="field" autocomplete="username" placeholder="名字">
+        <input id="passwordInput" class="field" autocomplete="current-password" type="password" placeholder="密码">
+      </div>
+      <div class="actions">
+        <button id="registerButton" class="btn primary" type="button">创建空间</button>
+        <button id="loginButton" class="btn" type="button">登录</button>
+      </div>
+    </section>
+
+    <section id="appPanel" class="grid hidden">
+      <div class="panel">
+        <h1>写下你现在脑子里最占空间的一件事</h1>
+        <p class="prompt">不需要整理好。混乱、犹豫、情绪、项目选择，都可以直接写下来。</p>
+        <textarea id="thoughtInput" class="textarea" placeholder="例如：我感觉最近做项目很多，但不知道哪个真正值得继续。"></textarea>
+        <div class="actions">
+          <button id="reviewButton" class="btn primary" type="button">帮我从不同视角看看</button>
+          <button id="weeklyButton" class="btn" type="button">最近的我在反复想什么</button>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Thought review views">
+          <button class="tab active" data-view="current" type="button">本次复盘</button>
+          <button class="tab" data-view="weekly" type="button">周复盘</button>
+          <button class="tab" data-view="history" type="button">最近记录</button>
+        </div>
+
+        <section id="currentView" class="stack"></section>
+        <section id="weeklyView" class="stack hidden"></section>
+        <section id="historyView" class="stack hidden"></section>
+      </div>
+
+      <aside class="panel">
+        <h2>私人思考空间</h2>
+        <p id="spaceName" class="prompt">登录后会使用你的默认空间。</p>
+        <div class="split">
+          <div>
+            <div class="section-title">默认视角</div>
+            <ul class="small-list">
+              <li>工程视角：结构、标准、下一步</li>
+              <li>侦探视角：遗漏、假设、隐藏矛盾</li>
+              <li>叙事视角：阶段、主线、转变</li>
+            </ul>
+          </div>
+          <div>
+            <div class="section-title">术语翻译</div>
+            <ul class="small-list">
+              <li>Memory -> 想法</li>
+              <li>Lens -> 视角</li>
+              <li>Lens Run -> 复盘</li>
+              <li>Contradiction -> 内在张力</li>
+            </ul>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      token: localStorage.getItem("memorynexus_token") || "",
+      user: null,
+      space: null,
+      lenses: []
+    };
+
+    const defaultLenses = [
+      {
+        name: "工程视角",
+        strategy: "engineering_review",
+        description: "结构、标准、下一步",
+        output_format: "brief",
+        retrieval_mode: "semantic"
+      },
+      {
+        name: "侦探视角",
+        strategy: "detective_review",
+        description: "遗漏、假设、隐藏矛盾",
+        output_format: "brief",
+        retrieval_mode: "semantic"
+      },
+      {
+        name: "叙事视角",
+        strategy: "narrative_review",
+        description: "阶段、主线、转变",
+        output_format: "brief",
+        retrieval_mode: "semantic"
+      }
+    ];
+
+    const weeklyLens = {
+      name: "最近的我",
+      strategy: "weekly_thought_review",
+      description: "反复主题、内在张力、正在形成的主线",
+      output_format: "bullets",
+      retrieval_mode: "semantic"
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function setStatus(message) {
+      $("sessionStatus").textContent = message;
+    }
+
+    function setBusy(button, busy) {
+      button.disabled = busy;
+    }
+
+    async function api(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set("Content-Type", "application/json");
+      if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
+      const response = await fetch(path, { ...options, headers });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        const message = payload.error?.message || `Request failed: ${response.status}`;
+        throw new Error(message);
+      }
+      return payload.data;
+    }
+
+    async function authenticate(mode) {
+      const email = $("emailInput").value.trim();
+      const username = $("usernameInput").value.trim() || email.split("@")[0] || "me";
+      const password = $("passwordInput").value;
+      const path = mode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login";
+      const body = mode === "register" ? { email, username, password } : { email, password };
+      const data = await api(path, { method: "POST", body: JSON.stringify(body) });
+      state.token = data.token;
+      state.user = data.user;
+      localStorage.setItem("memorynexus_token", state.token);
+      await bootApp();
+    }
+
+    async function bootApp() {
+      if (!state.token) return showAuth();
+      try {
+        state.user = state.user || await api("/api/v1/auth/me");
+        const spaces = await api("/api/v1/spaces");
+        state.space = spaces.items[0];
+        if (!state.space) throw new Error("没有可用空间");
+        $("spaceName").textContent = state.space.name;
+        state.lenses = await ensureLenses([...defaultLenses, weeklyLens]);
+        showApp();
+        await loadHistory();
+      } catch (error) {
+        localStorage.removeItem("memorynexus_token");
+        state.token = "";
+        showAuth();
+        setStatus(error.message);
+      }
+    }
+
+    function showAuth() {
+      $("authPanel").classList.remove("hidden");
+      $("appPanel").classList.add("hidden");
+      $("logoutButton").classList.add("hidden");
+      setStatus("未登录");
+    }
+
+    function showApp() {
+      $("authPanel").classList.add("hidden");
+      $("appPanel").classList.remove("hidden");
+      $("logoutButton").classList.remove("hidden");
+      setStatus(state.user ? state.user.email : "已登录");
+    }
+
+    async function ensureLenses(definitions) {
+      const existing = await api(`/api/v1/lenses?space_id=${state.space.id}`);
+      const lenses = [...existing.items];
+      for (const definition of definitions) {
+        if (!lenses.some((lens) => lens.strategy === definition.strategy)) {
+          const created = await api("/api/v1/lenses", {
+            method: "POST",
+            body: JSON.stringify({
+              space_id: state.space.id,
+              ...definition
+            })
+          });
+          lenses.push(created);
+        }
+      }
+      return lenses;
+    }
+
+    async function runThoughtReview() {
+      const thought = $("thoughtInput").value.trim();
+      if (!thought) {
+        setStatus("先写下一件占空间的想法");
+        return;
+      }
+
+      setBusy($("reviewButton"), true);
+      $("currentView").innerHTML = `<div class="empty">正在整理这段想法...</div>`;
+      activateView("current");
+
+      try {
+        const memory = await api("/api/v1/memories", {
+          method: "POST",
+          body: JSON.stringify({
+            space_id: state.space.id,
+            title: titleFromThought(thought),
+            content: thought,
+            tags: ["thought-review"],
+            memory_type: "text"
+          })
+        });
+
+        const lenses = defaultLenses.map((definition) =>
+          state.lenses.find((lens) => lens.strategy === definition.strategy)
+        ).filter(Boolean);
+
+        const runs = [];
+        for (const lens of lenses) {
+          const run = await api("/api/v1/lens-runs", {
+            method: "POST",
+            body: JSON.stringify({
+              lens_id: lens.id,
+              query: thought,
+              limit: 5
+            })
+          });
+          runs.push({ ...run, lensName: lens.name });
+        }
+
+        renderCurrentReview(memory, runs);
+        setStatus("已保存为一次思绪复盘");
+        await loadHistory();
+      } catch (error) {
+        $("currentView").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+        setStatus(error.message);
+      } finally {
+        setBusy($("reviewButton"), false);
+      }
+    }
+
+    function renderCurrentReview(memory, runs) {
+      const cards = runs.map((run) => lensRunCard(run)).join("");
+      $("currentView").innerHTML = `
+        <article class="review-card">
+          <div class="lens-head">
+            <div>
+              <div class="lens-name">本次想法</div>
+              <p class="summary">${escapeHtml(memory.content)}</p>
+            </div>
+            <span class="pill">已保存</span>
+          </div>
+        </article>
+        ${cards}
+      `;
+    }
+
+    function lensRunCard(run) {
+      const output = run.output || {};
+      const questions = listItems(output.open_questions || []);
+      const actions = listItems(output.suggested_next_actions || []);
+      return `
+        <article class="lens-card">
+          <div class="lens-head">
+            <div class="lens-name">${escapeHtml(output.lens?.name || run.lensName || "视角")}</div>
+            <span class="pill">${escapeHtml(output.summary_source || "review")}</span>
+          </div>
+          <p class="summary">${escapeHtml(output.summary || "这条视角还没有生成内容。")}</p>
+          ${questions ? `<ul class="small-list">${questions}</ul>` : ""}
+          ${actions ? `<ul class="small-list">${actions}</ul>` : ""}
+        </article>
+      `;
+    }
+
+    async function createWeeklyReview() {
+      setBusy($("weeklyButton"), true);
+      $("weeklyView").innerHTML = `<div class="empty">正在生成周复盘...</div>`;
+      activateView("weekly");
+      try {
+        const lens = state.lenses.find((item) => item.strategy === weeklyLens.strategy);
+        const windowEnd = new Date();
+        const windowStart = new Date(windowEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const report = await api("/api/v1/review-reports", {
+          method: "POST",
+          body: JSON.stringify({
+            space_id: state.space.id,
+            lens_id: lens.id,
+            window_start: windowStart.toISOString(),
+            window_end: windowEnd.toISOString(),
+            report_type: "weekly_review",
+            limit: 50
+          })
+        });
+        renderWeeklyReport(report.report);
+        setStatus("周复盘已生成");
+      } catch (error) {
+        $("weeklyView").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+        setStatus(error.message);
+      } finally {
+        setBusy($("weeklyButton"), false);
+      }
+    }
+
+    function renderWeeklyReport(report) {
+      const themes = listItems(report.recurring_themes || []);
+      const tensions = listItems(report.inner_tensions || []);
+      $("weeklyView").innerHTML = `
+        <article class="report-card">
+          <div class="lens-head">
+            <div class="lens-name">最近的我在反复想什么</div>
+            <span class="pill">${Number(report.memory_count || 0)} 条想法</span>
+          </div>
+          <p class="summary">${escapeHtml(report.summary || "这一周还没有足够材料。")}</p>
+          <div class="report-grid">
+            <div class="report-block">
+              <strong>反复主题</strong>
+              <ul class="small-list">${themes || "<li>继续记录几条想法后再看。</li>"}</ul>
+            </div>
+            <div class="report-block">
+              <strong>内在张力</strong>
+              <ul class="small-list">${tensions || "<li>还没有稳定张力浮现。</li>"}</ul>
+            </div>
+          </div>
+          <p class="summary"><strong>可能正在形成的主线：</strong>${escapeHtml(report.forming_direction || "继续观察。")}</p>
+          <p class="summary"><strong>下一步：</strong>${escapeHtml(report.next_step || "写下一件今天最占空间的想法。")}</p>
+        </article>
+      `;
+    }
+
+    async function loadHistory() {
+      if (!state.space) return;
+      try {
+        const data = await api(`/api/v1/lens-runs?space_id=${state.space.id}&limit=12`);
+        if (!data.items.length) {
+          $("historyView").innerHTML = `<div class="empty">还没有思绪复盘。</div>`;
+          return;
+        }
+        $("historyView").innerHTML = data.items.map((run) => lensRunCard(run)).join("");
+      } catch (error) {
+        $("historyView").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function activateView(name) {
+      for (const view of ["current", "weekly", "history"]) {
+        $(`${view}View`).classList.toggle("hidden", view !== name);
+      }
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.classList.toggle("active", tab.dataset.view === name);
+      });
+    }
+
+    function titleFromThought(thought) {
+      const compact = thought.replace(/\s+/g, " ").trim();
+      return compact.length > 32 ? `${compact.slice(0, 32)}...` : compact;
+    }
+
+    function listItems(values) {
+      return values.map((value) => `<li>${escapeHtml(String(value))}</li>`).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    $("registerButton").addEventListener("click", () => authenticate("register").catch((error) => setStatus(error.message)));
+    $("loginButton").addEventListener("click", () => authenticate("login").catch((error) => setStatus(error.message)));
+    $("reviewButton").addEventListener("click", runThoughtReview);
+    $("weeklyButton").addEventListener("click", createWeeklyReview);
+    $("logoutButton").addEventListener("click", () => {
+      localStorage.removeItem("memorynexus_token");
+      state.token = "";
+      showAuth();
+    });
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => activateView(tab.dataset.view));
+    });
+
+    bootApp();
+  </script>
+</body>
+</html>
