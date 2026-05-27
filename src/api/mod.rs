@@ -8,10 +8,12 @@ mod agent_router;
 mod ai;
 mod auth;
 mod embedding;
+mod feedback_loops;
 mod health;
 mod lens_runs;
 mod lenses;
 mod memories;
+mod namespaces;
 mod profiles;
 mod reminders;
 mod review_reports;
@@ -20,10 +22,13 @@ mod semantic;
 mod spaces;
 mod tags;
 mod upload;
+mod voice;
+mod web;
 
 /// 聚合所有 API 路由
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .merge(web::routes())
         // 健康检查
         .route("/api/v1/health", axum::routing::get(health::check))
         // 认证
@@ -62,6 +67,33 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/lens-runs", axum::routing::get(lens_runs::list))
         .route("/api/v1/lens-runs", axum::routing::post(lens_runs::create))
         .route("/api/v1/lens-runs/:id", axum::routing::get(lens_runs::get))
+        // Namespace
+        .route("/api/v1/namespaces", axum::routing::get(namespaces::list))
+        .route(
+            "/api/v1/namespaces",
+            axum::routing::post(namespaces::create),
+        )
+        .route(
+            "/api/v1/namespaces/:id",
+            axum::routing::get(namespaces::get),
+        )
+        // FeedbackLoop
+        .route(
+            "/api/v1/feedback-loops",
+            axum::routing::get(feedback_loops::list),
+        )
+        .route(
+            "/api/v1/feedback-loops",
+            axum::routing::post(feedback_loops::create),
+        )
+        .route(
+            "/api/v1/feedback-loops/:id",
+            axum::routing::get(feedback_loops::get),
+        )
+        .route(
+            "/api/v1/feedback-loops/:id",
+            axum::routing::patch(feedback_loops::patch),
+        )
         // 记忆 CRUD
         .route("/api/v1/memories", axum::routing::get(memories::list))
         .route("/api/v1/memories", axum::routing::post(memories::create))
@@ -74,6 +106,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v1/memories/:id",
             axum::routing::delete(memories::delete),
         )
+        .route("/api/v1/voice-captures", axum::routing::post(voice::create))
         // Scheduled recall reminders
         .route("/api/v1/reminders", axum::routing::post(reminders::create))
         .route("/api/v1/reminders", axum::routing::get(reminders::list))
@@ -146,4 +179,185 @@ pub fn routes() -> Router<AppState> {
     // 文件上传 (预留)
     // .route("/api/v1/upload", axum::routing::post(upload::upload))
     // .route("/api/v1/media/:key", axum::routing::get(upload::get_media))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn thought_review_app_uses_user_facing_language() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("写下你现在脑子里最占空间的一件事"));
+        assert!(html.contains("不同视角"));
+        assert!(html.contains("最近的我在反复想什么"));
+        assert!(!html.contains("Add memory"));
+    }
+
+    #[test]
+    fn thought_review_app_has_memory_list_view() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("data-view=\"memories\""));
+        assert!(html.contains("id=\"memoriesView\""));
+        assert!(html.contains("还没有保存的想法"));
+    }
+
+    #[test]
+    fn thought_review_app_lists_memories_with_space_pagination() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("/api/v1/memories?${memoryParams.toString()}"));
+        assert!(html.contains("memoryParams.set(\"space_id\", state.space.id)"));
+        assert!(html.contains("memoryParams.set(\"limit\", String(state.memories.limit))"));
+        assert!(html.contains("memoryParams.set(\"offset\", String(state.memories.offset))"));
+        assert!(html.contains("previousMemoriesButton"));
+        assert!(html.contains("nextMemoriesButton"));
+    }
+
+    #[test]
+    fn thought_review_app_exposes_memory_filter_and_sort_controls() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("id=\"memoryFilterTagInput\""));
+        assert!(html.contains("id=\"memoryTypeFilterSelect\""));
+        assert!(html.contains("id=\"memorySortSelect\""));
+        assert!(html.contains("memoryParams.set(\"tag\""));
+        assert!(html.contains("memoryParams.set(\"memory_type\""));
+        assert!(html.contains("memoryParams.set(\"sort\", state.memories.sort)"));
+        assert!(html.contains("applyMemoryFilters"));
+        assert!(html.contains("clearMemoryFilters"));
+    }
+
+    #[test]
+    fn thought_review_app_exposes_active_space_selector() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("id=\"spaceSelect\""));
+        assert!(html.contains("id=\"activeSpaceNotice\""));
+        assert!(html.contains("state.spaces"));
+        assert!(html.contains("switchActiveSpace"));
+        assert!(html.contains("你正在保存到"));
+    }
+
+    #[test]
+    fn thought_review_app_routes_work_to_selected_space() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("setActiveSpace"));
+        assert!(html.contains("renderSpaceOptions"));
+        assert!(html.contains("/api/v1/lenses?space_id=${state.space.id}"));
+        assert!(html.contains("/api/v1/lens-runs?space_id=${state.space.id}&limit=12"));
+        assert!(html.contains("space_id: activeSpace.id"));
+    }
+
+    #[test]
+    fn thought_review_app_shows_space_errors_without_logging_out() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("showSpaceError"));
+        assert!(html.contains("spaceError"));
+        assert!(html.contains("无法访问当前空间"));
+    }
+
+    #[test]
+    fn thought_review_app_exposes_generic_lens_run_detail_flow() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("id=\"lensRunSelect\""));
+        assert!(html.contains("id=\"lensRunQueryInput\""));
+        assert!(html.contains("id=\"runLensButton\""));
+        assert!(html.contains("/api/v1/lens-runs"));
+        assert!(html.contains("openLensRunDetail"));
+        assert!(html.contains("/api/v1/lens-runs/${runId}"));
+        assert!(html.contains("summary_provider"));
+        assert!(html.contains("summary_source"));
+        assert!(html.contains("summary_model"));
+        assert!(html.contains("summary_fallback_reason"));
+        assert!(html.contains("key_points"));
+        assert!(html.contains("open_questions"));
+        assert!(html.contains("suggested_next_actions"));
+        assert!(html.contains("citations"));
+    }
+
+    #[test]
+    fn thought_review_app_has_space_scoped_search_view() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("data-view=\"search\""));
+        assert!(html.contains("id=\"searchView\""));
+        assert!(html.contains("id=\"searchInput\""));
+        assert!(html.contains("id=\"searchModeSelect\""));
+        assert!(html.contains("searchParams.set(\"space_id\", activeSpace.id)"));
+        assert!(html.contains("/api/v1/search?"));
+        assert!(html.contains("/api/v1/search/semantic"));
+        assert!(html.contains("hydrateSemanticSearchResults"));
+        assert!(html.contains("/api/v1/memories/${encodeURIComponent(result.id)}"));
+    }
+
+    #[test]
+    fn thought_review_app_renders_search_result_provenance_and_provider_errors() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("renderSearchResults"));
+        assert!(html.contains("searchResultCard"));
+        assert!(html.contains("memory_type"));
+        assert!(html.contains("relevance"));
+        assert!(html.contains("matched_on"));
+        assert!(html.contains("providerFriendlySearchError"));
+        assert!(html.contains("Embedding provider 未配置"));
+        assert!(html.contains("Qdrant 向量存储未配置"));
+        assert!(html.contains("没有找到匹配的想法"));
+    }
+
+    #[test]
+    fn thought_review_app_has_memory_detail_edit_and_delete_flow() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("data-memory-detail"));
+        assert!(html.contains("openMemoryDetail"));
+        assert!(html.contains("saveMemoryDetail"));
+        assert!(html.contains("deleteMemoryDetail"));
+        assert!(html.contains("/api/v1/memories/${encodeURIComponent(memoryId)}"));
+        assert!(html.contains("method: \"PATCH\""));
+        assert!(html.contains("method: \"DELETE\""));
+    }
+
+    #[test]
+    fn thought_review_app_sends_empty_title_as_explicit_clear() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("title: titleInput.value.trim()"));
+        assert!(!html.contains("title: titleInput.value.trim() || null"));
+    }
+
+    #[test]
+    fn thought_review_app_has_auth_inline_error_and_pending_state_hooks() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("id=\"authError\""));
+        assert!(html.contains("role=\"alert\""));
+        assert!(html.contains("showAuthError"));
+        assert!(html.contains("clearAuthError"));
+        assert!(html.contains("setAuthBusy"));
+        assert!(html.contains("正在创建..."));
+        assert!(html.contains("正在登录..."));
+        assert!(html.contains("请输入邮箱"));
+        assert!(html.contains("请输入密码"));
+        assert!(html.contains("认证失败"));
+        assert!(html.contains("邮箱或密码不正确，请检查后再试。"));
+    }
+
+    #[test]
+    fn thought_review_app_clears_invalid_session_without_clearing_auth_inputs() {
+        let html = super::web::thought_review_app_source();
+
+        assert!(html.contains("handleAuthExpired"));
+        assert!(html.contains("登录已过期，请重新登录。"));
+        assert!(html.contains("response.status === 401"));
+        assert!(html.contains("throw new Error(\"登录已过期，请重新登录。\")"));
+        assert!(html.contains("clearSession({ preserveAuthInputs: true })"));
+        assert!(html.contains("clearSession({ preserveAuthInputs: false })"));
+        assert!(!html.contains("$(\"emailInput\").value = \"\""));
+        assert!(!html.contains("$(\"passwordInput\").value = \"\""));
+    }
 }

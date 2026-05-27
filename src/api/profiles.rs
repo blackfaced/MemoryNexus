@@ -51,7 +51,13 @@ pub async fn create(
     let memories = state
         .repositories
         .memories
-        .list_by_space(auth_user.user_id, space.id, limit, 0)
+        .list_by_space(
+            auth_user.user_id,
+            space.id,
+            limit,
+            0,
+            crate::db::memory::MemoryListFilter::default(),
+        )
         .await
         .map_err(AppError::Database)?;
 
@@ -354,6 +360,8 @@ mod tests {
             file_path: None,
             thumbnail_path: None,
             is_shared: false,
+            source_type: "manual".to_string(),
+            source_metadata: serde_json::json!({}),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

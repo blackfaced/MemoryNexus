@@ -296,6 +296,65 @@ Returns a run only if the current user can access its Cognitive Space.
 Returns visible Lens Runs ordered by newest first. At least one of `lens_id` or
 `space_id` is required.
 
+## Feedback Loops
+
+FeedbackLoop captures one long-running feedback cycle inside a Namespace and
+Cognitive Space. The first API stores the loop state itself; creating Memory
+snapshots and threading `feedback_loop_id` provenance through Memory, Lens Run,
+Review Report, and Profile remains a follow-up boundary.
+
+### Create Feedback Loop
+
+`POST /api/v1/feedback-loops`
+
+```json
+{
+  "space_id": "space-uuid",
+  "namespace_id": "namespace-uuid",
+  "goal": "Improve fraction word problems",
+  "task": "Complete five fraction word problems and explain each mistake",
+  "attempt": "optional attempt notes",
+  "evaluation": "optional evaluation",
+  "feedback": "optional feedback",
+  "adjustment": "optional adjustment",
+  "next_task": "optional next task",
+  "status": "active"
+}
+```
+
+`namespace_id` must belong to the same `space_id`. `status` supports `active`,
+`completed`, and `paused`; omitted status defaults to `active`.
+
+### List Feedback Loops
+
+`GET /api/v1/feedback-loops?space_id=<SPACE_ID>&namespace_id=<OPTIONAL_NAMESPACE_ID>`
+
+Returns visible loops ordered by newest first. `namespace_id` narrows the list to
+one namespace and must belong to the requested space.
+
+### Get Feedback Loop
+
+`GET /api/v1/feedback-loops/:id`
+
+Returns a loop only if the current user can access its Cognitive Space.
+
+### Patch Feedback Loop
+
+`PATCH /api/v1/feedback-loops/:id`
+
+```json
+{
+  "evaluation": "What changed after the attempt",
+  "feedback": "Observed error pattern",
+  "adjustment": "What to change next round",
+  "next_task": "The next concrete task",
+  "status": "paused"
+}
+```
+
+Patch supports `evaluation`, `feedback`, `adjustment`, `next_task`, and
+`status`. Writers are Space `owner` or `editor` members.
+
 ## Memories
 
 ### Create Memory
@@ -329,6 +388,28 @@ If `space_id` is omitted, the default Cognitive Space is used.
 - `DELETE /api/v1/memories/:id`
 
 Memory access is checked against ownership and Cognitive Space membership.
+
+## Voice Capture
+
+### Transcribe Audio And Create Memory
+
+`POST /api/v1/voice-captures?space_id=<SPACE_ID>&filename=thought.webm&language=zh`
+
+The request body is the uploaded audio bytes. The endpoint requires
+authentication and Space write permission, transcribes the audio through the
+configured transcription provider, then creates an `audio` Memory in the same
+Cognitive Space.
+
+Configuration:
+
+- `MEMORYNEXUS_TRANSCRIPTION_PROVIDER=openai`
+- `OPENAI_API_KEY` or `MEMORYNEXUS_TRANSCRIPTION_API_KEY`
+- Optional `MEMORYNEXUS_TRANSCRIPTION_MODEL`, defaulting to `whisper-1`
+
+If no transcription provider is configured, the endpoint returns a visible
+client error instead of creating a Memory. Created memories include
+`source_type = "voice_transcription"` and `source_metadata` with provider,
+model, language, filename, content type, audio size, and provider metadata.
 
 ## Reminders
 

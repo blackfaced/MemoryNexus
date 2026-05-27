@@ -3,7 +3,7 @@ name = "memorynexus"
 version = "0.1.0"
 edition = "2021"
 authors = ["MemoryNexus Team"]
-description = "Family AI Memory Center - 家庭AI记忆中心"
+description = "AI thought organizer and Rust-first cognitive lens memory system"
 license = "MIT"
 repository = "https://github.com/blackfaced/MemoryNexus"
 rust-version = "1.75"
@@ -35,7 +35,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # HTTP client (for AI APIs)
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "multipart"] }
 
 # Auth
 jsonwebtoken = "9"
