@@ -204,7 +204,9 @@ mod tests {
         AudioTranscriptionInput, TranscriptionOptions, TranscriptionProvider,
         TranscriptionProviderError, TranscriptionResult,
     };
-    use crate::db::memory::{CreateMemory, MemoryDb, MemoryRepository, MemoryType, UpdateMemory};
+    use crate::db::memory::{
+        CreateMemory, MemoryDb, MemoryListFilter, MemoryRepository, MemoryType, UpdateMemory,
+    };
     use crate::db::space::{
         CognitiveSpaceDb, CognitiveSpaceMemberDb, CognitiveSpaceRepository, CognitiveSpaceType,
         CreateCognitiveSpace, CreateSpaceInvite, SpaceMemberRole,
@@ -404,6 +406,7 @@ mod tests {
             _space_id: Uuid,
             _limit: i64,
             _offset: i64,
+            _filter: MemoryListFilter,
         ) -> Result<Vec<MemoryDb>, Error> {
             unimplemented!()
         }
@@ -419,7 +422,12 @@ mod tests {
             unimplemented!()
         }
 
-        async fn count_by_space(&self, _user_id: Uuid, _space_id: Uuid) -> Result<i64, Error> {
+        async fn count_by_space(
+            &self,
+            _user_id: Uuid,
+            _space_id: Uuid,
+            _filter: MemoryListFilter,
+        ) -> Result<i64, Error> {
             unimplemented!()
         }
 
