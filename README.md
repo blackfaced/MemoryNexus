@@ -27,6 +27,10 @@ Reflection / Belief / Next Action. Thought Review is the first reflective
 namespace; future skill namespaces can track practice, feedback, weak patterns,
 and next tasks for learning or craft domains.
 
+That lifecycle is mode-aware: fast interactions should use recent context and
+compressed priors, while explicit reviews can run deeper Lens projection and
+consolidation.
+
 ## Try The Thought Review MVP
 
 Start the API, then open `http://localhost:8080/` or `http://localhost:8080/app`.

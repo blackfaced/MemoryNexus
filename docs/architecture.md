@@ -86,6 +86,8 @@ Keyword search uses PostgreSQL full-text/ILIKE matching and the same
 - `Lens` is an interpretation strategy over a space.
 - `CognitiveProjection` is the Lens-specific reconstructed context for a current
   query; it is not just top-k retrieval.
+- `ObserveMode` selects whether a query uses `fast`, `focused`, or `deep`
+  projection behavior.
 - `Reflection`, `Concept`, `Belief`, `Relation`, and `Contradiction` are domain
   primitives used by the functional core.
 - `Namespace` partitions a Space into long-running domains, and `FeedbackLoop`
@@ -101,6 +103,22 @@ Experience / Thought / Practice
 -> Lens-based CognitiveProjection
 -> Reflection / Belief / Next Action
 -> FeedbackLoop
+```
+
+The lifecycle is mode-aware:
+
+```text
+fast:
+recent memories + pinned facts + high-salience scenes + compressed profile
+-> low-latency response
+
+focused:
+one primary Lens + limited scenes / atoms
+-> short CognitiveProjection
+
+deep:
+multi-lens projection + atomization + consolidation + belief / contradiction update
+-> review, next action, or practice adjustment
 ```
 
 See [cognitive-concepts.md](cognitive-concepts.md) for definitions and

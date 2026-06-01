@@ -15,6 +15,8 @@
 - Preserve `CognitiveSpace` as the only ownership and permission boundary.
 - Define how Memory, Lens Run, Review Report, and Profile keep namespace and
   feedback-loop provenance.
+- Define `fast`, `focused`, and `deep` observe modes so lifecycle work does not
+  force every interaction through the slow path.
 - Split the follow-up implementation into small migration, API, and test issues.
 
 ## Non-Goals
@@ -29,6 +31,7 @@
   user-owned cognitive perspective and feedback-loop system.
 - Do not require `MemoryAtom`, `CognitiveScene`, or `CognitiveProjection` to land
   in the same schema migration as Namespace and FeedbackLoop.
+- Do not make deep multi-lens projection the default for every user input.
 - Do not introduce a second backend. All future implementation belongs in the
   Rust + Axum service.
 
@@ -73,6 +76,13 @@ How should a Lens reconstruct enough context for the current query from active
 scenes, atoms, concepts, beliefs, and contradictions?
 ```
 
+`ObserveMode` answers:
+
+```text
+Should this interaction use fast intuitive recall, focused single-lens
+projection, or deep reflective consolidation?
+```
+
 The containment hierarchy is:
 
 ```text
@@ -104,10 +114,82 @@ Experience / Thought / Practice
 -> FeedbackLoop
 ```
 
+This lifecycle has two runtime channels:
+
+```text
+System 1 / fast:
+recent memories + pinned facts + high-salience scenes + compressed profile
+-> low-latency response
+-> optional async processing
+
+System 2 / focused or deep:
+atomization
+-> scene update
+-> cognitive projection
+-> reflection / concept / belief / contradiction / next action
+```
+
 The first Phase 5 implementation should still start with Namespace and
 FeedbackLoop schema foundation. MemoryAtom, CognitiveScene, and
 CognitiveProjection should begin as design/prototype issues so their usefulness
 can be validated before committing to permanent tables.
+
+## Observe Modes
+
+Future observe / projection APIs should support three modes:
+
+### `fast`
+
+Use for immediate conversation, lightweight capture, and practice-in-progress
+feedback.
+
+Allowed work:
+
+- recent-memory retrieval
+- pinned facts
+- high-salience scenes
+- compressed `CognitiveProfile` / `SkillProfile` priors
+- optional async enqueue for later atomization or consolidation
+
+Avoid:
+
+- multi-lens projection
+- synchronous belief update
+- synchronous contradiction detection
+- synchronous scene consolidation
+
+### `focused`
+
+Use for ordinary questions and single-step review.
+
+Allowed work:
+
+- one primary Lens
+- a small number of active scenes / atoms / concepts
+- short `CognitiveProjection` with provenance
+- Reflection generation when useful
+
+Avoid:
+
+- full weekly-style consolidation
+- unrelated Lens fan-out
+
+### `deep`
+
+Use for explicit weekly review, learning plan generation, project decisions, and
+other user-triggered deep work.
+
+Allowed work:
+
+- multi-lens projection
+- atomization
+- scene update
+- concept / belief update
+- contradiction detection
+- FeedbackLoop adjustment or next action generation
+
+Deep mode may be slower, but it must return clear provenance so the user can see
+which memories, atoms, scenes, and lenses shaped the result.
 
 ## Minimal Namespace Model
 

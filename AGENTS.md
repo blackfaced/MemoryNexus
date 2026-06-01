@@ -45,6 +45,9 @@
 - `MemoryAtom`、`CognitiveScene`、`CognitiveProjection` 是 Phase 5 lifecycle
   概念。先用 fixtures / prototype 验证 atomization、consolidation 和 Lens
   projection，不要在没有 issue/ADR 验收的情况下直接铺复杂 schema。
+- Observe / projection 相关实现必须区分 `fast`、`focused`、`deep` 三种模式。
+  不要让每次用户输入都同步运行 atomization、multi-lens projection、belief update
+  和 contradiction detection。
 - 本地没有 Rust 工具链时，可以用 Docker 验证：
 
 ```bash
@@ -87,6 +90,8 @@ cargo clippy --all-targets --all-features -- -D clippy::all
   多个垂直产品。
 - Phase 5 Memory Lifecycle issue 默认围绕 `Memory -> MemoryAtom -> CognitiveScene
   -> CognitiveProjection` 做小实验，不要把它实现成通用 agent retrieval engine。
+- 涉及 ObserveMode 的 issue 必须明确前台低延迟行为、后台异步处理和用户主动 deep
+  review 的触发条件。
 
 ## P0 优先级
 

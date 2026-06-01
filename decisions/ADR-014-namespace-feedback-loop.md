@@ -50,6 +50,28 @@ MemoryNexus: memory for cognitive perspective and feedback loops
 因此 EverMemOS 是 memory lifecycle 参考，不是 MemoryNexus 的目标架构或产品定位。
 MemoryNexus 不应被带偏成“更强 agent retrieval 系统”。
 
+另一个关键约束是延迟和交互体验。Lens projection、atomization、
+semantic consolidation、contradiction detection 和 belief update 都更接近慢速、
+反思型的 System 2 过程。如果每次用户输入都完整运行这条 cognitive pipeline，
+产品会变慢，也会显得过度解读。
+
+因此长期架构必须区分：
+
+```text
+System 1: 快速、直觉、低延迟、轻量记忆
+System 2: 慢速、反思、整合、抽象、形成长期结构
+```
+
+MemoryNexus 的设计原则是：
+
+```text
+System 2 consolidates.
+System 1 retrieves compressed priors.
+```
+
+慢通道在后台或用户主动复盘时沉淀 Concept、Belief、SkillModel 和 high-salience
+Scene 等压缩结构；快通道在即时交互中读取这些结构，而不是重新跑完整深度推理。
+
 如果直接把这些场景都做成产品入口，MemoryNexus 会再次变成“理论上什么都能做，
 但普通用户不知道怎么开始”的系统。因此需要区分：
 
@@ -82,6 +104,96 @@ Experience / Thought / Practice
 
 这个 lifecycle 不是替代现有 Memory / Lens / Reflection 模型，而是解释这些对象如何
 从原始记录逐步演化为可复盘、可投影、可反馈的长期结构。
+
+这条 lifecycle 不应该在每次输入时同步完整执行。默认执行策略是：
+
+```text
+Every input -> fast response + optional async processing
+Important input -> focused projection
+Scheduled review / explicit request -> deep consolidation and projection
+```
+
+### Dual-System Observe Modes
+
+MemoryNexus 的读取和投影接口应支持 mode-aware behavior：
+
+```text
+observe(namespace, query, mode)
+```
+
+#### `fast`
+
+用于即时对话和低延迟交互。
+
+特点：
+
+- 只取 recent memories、pinned facts、high-salience scenes 和已压缩的 profile /
+  skill priors。
+- 不触发多 Lens。
+- 不同步更新 Belief / Contradiction / CognitiveScene。
+- 可以异步 enqueue atomization 或 deeper processing。
+
+目标问题：
+
+```text
+现在怎么接住用户？
+```
+
+#### `focused`
+
+用于普通问题和轻量复盘。
+
+特点：
+
+- 激活一个主 Lens。
+- 选择少量相关 scene / atom / concept。
+- 生成可追溯但较短的 CognitiveProjection。
+- 可以产生 Reflection，但不默认触发完整 consolidation。
+
+目标问题：
+
+```text
+这件事用当前 Lens 怎么理解？
+```
+
+#### `deep`
+
+用于周复盘、学习计划、项目决策和用户明确要求的深度整理。
+
+特点：
+
+- 可运行多 Lens。
+- 可触发 atomization、scene update、concept update、belief revision 和
+  contradiction detection。
+- 可生成 Next Action 或 FeedbackLoop adjustment。
+- 高延迟可接受，但必须有清晰 provenance。
+
+目标问题：
+
+```text
+这件事说明了什么？最近有什么模式？下一步怎么调整？
+```
+
+工程策略：
+
+```text
+Foreground:
+capture raw input
+light classification
+fast retrieval
+response
+
+Background:
+atomization
+scene update
+concept / belief update
+contradiction detection
+
+Explicit deep review:
+multi-lens projection
+deep synthesis
+next action / practice plan
+```
 
 #### MemoryAtom
 
@@ -151,6 +263,10 @@ Lens-based projection 关注：
 
 这使 MemoryNexus 的 Recollection 更接近 perspective-specific meaning composition，
 而不是 agent-specific context stuffing。
+
+`CognitiveProjection` 必须携带 mode。`fast` projection 可以只是轻量上下文包；
+`focused` projection 是单 Lens 的短合成；`deep` projection 才是完整多 Lens /
+consolidation 入口。
 
 ### Namespace
 
@@ -223,6 +339,14 @@ Reflection / Concept / Belief 更新 CognitiveProfile 或 SkillProfile
 Profile 影响下一轮 FeedbackLoop
 ```
 
+Practice Layer 会同时使用快慢两层：
+
+```text
+练习中：fast feedback
+练习后：focused review
+每日/每周：deep consolidation and practice adjustment
+```
+
 因此 MemoryNexus 不是从 Memory 模型迁移到 FeedbackLoop 模型，而是在
 Memory + Lens + CognitiveState 之上增加长期反馈循环语义。
 
@@ -263,6 +387,8 @@ learning.math
 - `MemoryAtom`、`CognitiveScene` 和 `CognitiveProjection` 先作为 Phase 5 设计与
   prototype 对象推进，不要求和 Namespace / FeedbackLoop schema foundation 在同一个
   issue 中落库。
+- `CognitiveProjection` 必须先定义 `fast` / `focused` / `deep` mode，不允许默认把
+  每次 observe 都实现成 deep multi-lens pipeline。
 - `Lens Run`、`Review Report` 和 `CognitiveProfile` 可以追加
   `namespace_id` / `feedback_loop_id` provenance 和过滤能力，但继续以
   `space_id` 做权限校验。
@@ -281,6 +407,7 @@ learning.math
 - FeedbackLoop 给技能习得、错因分析、练习计划和进度反馈提供了统一模型。
 - MemoryAtom / CognitiveScene / CognitiveProjection 给系统补上从原始经验到长期结构、
   再到 Lens 重构上下文的 lifecycle。
+- 双系统模式让 MemoryNexus 同时支持低延迟即时交互和高质量长期反思。
 - EverMemOS 类系统的价值被吸收到 lifecycle 设计中，但 MemoryNexus 保持
   user-owned cognitive perspective / feedback loop 的定位。
 
@@ -293,6 +420,8 @@ learning.math
   的验收场景反推最小字段。
 - `MemoryAtom` 和 `CognitiveScene` 如果过早落库，可能造成 schema 先行、产品验证不足；
   应先用 fixtures / prototype 验证 atomization、consolidation 和 projection 是否真的有用。
+- `fast` 模式如果过度简化，可能显得“不够聪明”；`deep` 模式如果默认启用，则会造成
+  延迟和过度解读。需要在产品入口上明确触发时机。
 - 如果过早同时推进多个垂直产品，会稀释 Thought Review MVP 的验证焦点。
 
 ## 相关决策

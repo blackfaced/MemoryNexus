@@ -10,7 +10,7 @@
 2. **认知生命周期结构**：MemoryAtom、CognitiveScene、CognitiveProjection
 3. **认知加工结果**：Reflection、Concept、Belief、Relation、Contradiction
 4. **长期反馈结构**：Namespace、FeedbackLoop
-5. **系统运行结构**：CognitiveSpace、Lens、CognitiveEvent、CognitiveState
+5. **系统运行结构**：ObserveMode、CognitiveSpace、Lens、CognitiveEvent、CognitiveState
 
 `CognitiveProfile` 是 `CognitiveState` 的对外投影视图，用于 LLM、MCP 和 UI
 消费。它不是新的所有权边界。
@@ -36,6 +36,20 @@ Experience / Thought / Practice
 → CognitiveScene
 → CognitiveProjection
 → Reflection / Belief / Next Action
+```
+
+双系统运行链路是：
+
+```text
+System 1 / fast:
+recent memories + pinned facts + high-salience scenes + compressed profile
+→ low-latency response
+
+System 2 / focused or deep:
+MemoryAtom
+→ CognitiveScene
+→ CognitiveProjection
+→ Reflection / Concept / Belief / Contradiction / Next Action
 ```
 
 长期反馈链路是：
@@ -67,6 +81,7 @@ Contradiction 是张力，
 CognitiveSpace 是容器，
 Namespace 是领域，
 FeedbackLoop 是练习 / 反馈闭环，
+ObserveMode 是读取深度，
 CognitiveEvent 是变化，
 CognitiveState 是变化后的整体状态。
 ```
@@ -161,6 +176,8 @@ CognitiveScene 回答的问题是：
 
 CognitiveProjection 是某个 Lens 面向当前 query 从 CognitiveSpace 中重构出的上下文。
 
+它必须带有 ObserveMode，因为不是每次交流都应该跑完整 cognition。
+
 普通检索回答的是：
 
 ```text
@@ -175,6 +192,7 @@ CognitiveProjection 回答的是：
 ```
 
 同一个 query 在不同 Lens 下可以激活不同上下文。
+同一个 query 在不同 mode 下也应该有不同成本和深度。
 
 例子：
 
@@ -198,6 +216,94 @@ CognitiveProjection 回答的问题是：
 
 ```text
 这个 Lens 现在应该如何重构记忆空间，形成可解释、可行动的上下文？
+```
+
+## ObserveMode
+
+ObserveMode 描述系统本次读取 / 投影应该有多深。
+
+MemoryNexus 不应该每次输入都执行：
+
+```text
+Atomization
+→ Scene activation
+→ Semantic consolidation
+→ Multi-lens projection
+→ Reflection generation
+→ Belief update
+→ Contradiction detection
+```
+
+它应该采用双系统策略：
+
+```text
+System 1: fast, low-latency, intuitive response
+System 2: focused/deep, reflective consolidation and abstraction
+```
+
+### fast
+
+用于即时交互。
+
+读取：
+
+- recent memories
+- pinned facts
+- high-salience scenes
+- compressed profile / skill priors
+
+不做：
+
+- 多 Lens projection
+- 同步 Belief update
+- 同步 Contradiction detection
+- 同步 CognitiveScene consolidation
+
+fast 回答的问题是：
+
+```text
+现在怎么自然接住用户？
+```
+
+### focused
+
+用于普通问题或单次轻量复盘。
+
+读取：
+
+- 一个主 Lens
+- 少量相关 atoms / scenes / concepts
+- 可追溯但较短的 CognitiveProjection
+
+focused 回答的问题是：
+
+```text
+这件事用当前 Lens 怎么理解？
+```
+
+### deep
+
+用于用户主动请求的周复盘、学习计划、项目决策和长期整理。
+
+可以触发：
+
+- multi-lens projection
+- atomization
+- scene update
+- concept / belief update
+- contradiction detection
+- FeedbackLoop adjustment 或 next action
+
+deep 回答的问题是：
+
+```text
+这件事说明了什么？最近有什么模式？下一步怎么调整？
+```
+
+ObserveMode 回答的问题是：
+
+```text
+这次读取应该像直觉一样快，还是像复盘一样深？
 ```
 
 ## Memory Salience / Automatic Forgetting

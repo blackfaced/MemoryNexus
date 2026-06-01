@@ -156,6 +156,8 @@ Direction:
   and contradictions into a long-running theme or practice field.
 - `CognitiveProjection` is the Lens-specific reconstructed context for the
   current query; it is not plain top-k retrieval.
+- Observe modes split projection cost into `fast`, `focused`, and `deep`, so
+  ordinary interaction stays low-latency while explicit review can go deep.
 - Reflective namespaces focus on meaning, belief, contradiction, identity, and
   direction.
 - Skill namespaces focus on practice, error pattern, progress, feedback, and
@@ -176,6 +178,14 @@ Experience / Thought / Practice
 → FeedbackLoop
 ```
 
+Runtime policy:
+
+```text
+Every input -> fast response + optional async processing
+Important input -> focused projection
+Scheduled review / explicit request -> deep consolidation and projection
+```
+
 Recently completed:
 
 - [#52 Define Namespace and FeedbackLoop foundation](https://github.com/blackfaced/MemoryNexus/issues/52):
@@ -193,6 +203,7 @@ Current open work:
 - [#61 Build MemoryNexus self-dataset atomization fixture](https://github.com/blackfaced/MemoryNexus/issues/61)
 - [#62 Define Lens-based CognitiveProjection contract](https://github.com/blackfaced/MemoryNexus/issues/62)
 - [#63 Prototype CognitiveScene consolidation](https://github.com/blackfaced/MemoryNexus/issues/63)
+- [#65 Define dual-system observe modes](https://github.com/blackfaced/MemoryNexus/issues/65)
 
 Candidate follow-up work after #56-#59:
 
@@ -200,6 +211,8 @@ Candidate follow-up work after #56-#59:
   Memory -> Lens Run -> Review Report/Profile.
 - Add prototype tests for Memory -> MemoryAtom -> CognitiveScene ->
   CognitiveProjection over a small MemoryNexus project-note fixture.
+- Add latency and behavior acceptance criteria proving `fast` mode does not run
+  the full deep cognitive pipeline.
 - Keep product entry points narrow; do not expose every possible namespace in
   the first UI.
 
