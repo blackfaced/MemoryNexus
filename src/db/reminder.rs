@@ -142,11 +142,11 @@ impl ReminderRecurrenceRule {
     ) -> Result<DateTime<Utc>, ReminderRecurrenceError> {
         let anchor = current_due_at.max(completed_at);
         match self.frequency {
-            ReminderFrequency::Daily => anchor
-                .checked_add_signed(Duration::days(i64::from(self.interval)))
+            ReminderFrequency::Daily => Duration::try_days(i64::from(self.interval))
+                .and_then(|duration| anchor.checked_add_signed(duration))
                 .ok_or(ReminderRecurrenceError::DateOverflow),
-            ReminderFrequency::Weekly => anchor
-                .checked_add_signed(Duration::weeks(i64::from(self.interval)))
+            ReminderFrequency::Weekly => Duration::try_weeks(i64::from(self.interval))
+                .and_then(|duration| anchor.checked_add_signed(duration))
                 .ok_or(ReminderRecurrenceError::DateOverflow),
             ReminderFrequency::Monthly => anchor
                 .checked_add_months(Months::new(self.interval))
@@ -473,6 +473,17 @@ mod tests {
         let next_due = next_due_at_for_repeat_rule("monthly", original_due, completed_at).unwrap();
 
         assert_eq!(next_due.to_rfc3339(), "2026-02-28T09:05:00+00:00");
+    }
+
+    #[test]
+    fn oversized_recurrence_interval_returns_overflow_error() {
+        let original_due = "2026-05-01T09:00:00Z".parse().unwrap();
+        let completed_at = "2026-05-10T10:30:00Z".parse().unwrap();
+
+        let err = next_due_at_for_repeat_rule("daily:4294967295", original_due, completed_at)
+            .unwrap_err();
+
+        assert_eq!(err, ReminderRecurrenceError::DateOverflow);
     }
 
     #[test]
