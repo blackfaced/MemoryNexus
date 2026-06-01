@@ -4,16 +4,18 @@
 
 ## 总览
 
-这些概念可以分成三层：
+这些概念可以分成五层：
 
 1. **认知原材料**：Memory
-2. **认知加工结果**：Reflection、Concept、Belief、Relation、Contradiction
-3. **系统运行结构**：CognitiveSpace、Lens、CognitiveEvent、CognitiveState
+2. **认知生命周期结构**：MemoryAtom、CognitiveScene、CognitiveProjection
+3. **认知加工结果**：Reflection、Concept、Belief、Relation、Contradiction
+4. **长期反馈结构**：Namespace、FeedbackLoop
+5. **系统运行结构**：ObserveMode、CognitiveSpace、Lens、CognitiveEvent、CognitiveState
 
 `CognitiveProfile` 是 `CognitiveState` 的对外投影视图，用于 LLM、MCP 和 UI
 消费。它不是新的所有权边界。
 
-最简单的链路是：
+最简单的 Lens 链路是：
 
 ```text
 Memory
@@ -25,17 +27,61 @@ Memory
 → CognitiveState
 ```
 
+长期 memory lifecycle 链路是：
+
+```text
+Experience / Thought / Practice
+→ Memory
+→ MemoryAtom
+→ CognitiveScene
+→ CognitiveProjection
+→ Reflection / Belief / Next Action
+```
+
+双系统运行链路是：
+
+```text
+System 1 / fast:
+recent memories + pinned facts + high-salience scenes + compressed profile
+→ low-latency response
+
+System 2 / focused or deep:
+MemoryAtom
+→ CognitiveScene
+→ CognitiveProjection
+→ Reflection / Concept / Belief / Contradiction / Next Action
+```
+
+长期反馈链路是：
+
+```text
+FeedbackLoop
+→ Memory
+→ MemoryAtom
+→ CognitiveScene
+→ CognitiveProjection
+→ Concept / Pattern / Belief
+→ CognitiveProfile / SkillProfile
+→ Next FeedbackLoop
+```
+
 一句话概括：
 
 ```text
 Memory 是材料，
+MemoryAtom 是可追踪的认知原子，
+CognitiveScene 是长期主题场，
 Lens 是看法，
+CognitiveProjection 是某个 Lens 下重构出的当前上下文，
 Reflection 是解释，
 Concept 是模式，
 Belief 是长期倾向，
 Relation 是连接，
 Contradiction 是张力，
 CognitiveSpace 是容器，
+Namespace 是领域，
+FeedbackLoop 是练习 / 反馈闭环，
+ObserveMode 是读取深度，
 CognitiveEvent 是变化，
 CognitiveState 是变化后的整体状态。
 ```
@@ -65,6 +111,199 @@ Memory 回答的问题是：
 
 ```text
 发生了什么？
+```
+
+## MemoryAtom
+
+MemoryAtom 是从一条或多条 Memory 中抽出的最小可追踪认知单元。
+
+它不是神经科学意义上的 engram，也不是直接照搬其他系统的 MemCell。它是
+MemoryNexus 自己的中间层：把原始输入拆成可以被聚类、追踪、引用和重新解释的
+认知原子。
+
+例子：
+
+```text
+Memory:
+我觉得 MemoryNexus 有潜力，但不知道怎么吸引普通用户。
+孩子学习助手可能是一个落地场景。
+
+MemoryAtom:
+- 用户认为 MemoryNexus 有潜力。
+- 用户担心普通用户不知道为什么安装。
+- 用户把孩子学习助手视为可能落地场景。
+- 用户正在从认知系统转向反馈系统思考。
+```
+
+MemoryAtom 回答的问题是：
+
+```text
+这段经历里有哪些可单独追踪的认知信号？
+```
+
+## CognitiveScene
+
+CognitiveScene 是多个 MemoryAtom、Reflection、Concept、Belief 和 Contradiction
+围绕同一个长期问题形成的主题场。
+
+它不是更大的笔记，也不是普通 tag 集合。它表达的是一组反复出现、彼此相关、会随时间
+被整合和重解释的认知结构。
+
+例子：
+
+```text
+Scene: MemoryNexus 产品落地焦虑
+
+包含：
+- 普通用户为什么安装？
+- 安装后第一动作是什么？
+- Thought Review 是否足够窄？
+- learning.math 是否是更强的落地入口？
+- Namespace / FeedbackLoop 是否会让产品再次过宽？
+
+潜在张力：
+- 底层抽象很强
+- 用户入口必须足够具体
+```
+
+CognitiveScene 回答的问题是：
+
+```text
+哪些认知信号正在形成一个长期主题、问题场或练习场？
+```
+
+## CognitiveProjection
+
+CognitiveProjection 是某个 Lens 面向当前 query 从 CognitiveSpace 中重构出的上下文。
+
+它必须带有 ObserveMode，因为不是每次交流都应该跑完整 cognition。
+
+普通检索回答的是：
+
+```text
+哪些片段最相似？
+```
+
+CognitiveProjection 回答的是：
+
+```text
+为了用这个 Lens 回答当前问题，哪些 Scene、Atom、Concept、Belief 和 Contradiction
+应该被组合成足够用的上下文？
+```
+
+同一个 query 在不同 Lens 下可以激活不同上下文。
+同一个 query 在不同 mode 下也应该有不同成本和深度。
+
+例子：
+
+```text
+query: MemoryNexus 下一步该做什么？
+
+Product Lens projection:
+- Thought Review magic moment
+- 普通用户第一动作
+- learning.math 的家长可理解入口
+- 当前 UI 验证缺口
+
+Systems Lens projection:
+- CognitiveSpace ownership boundary
+- Namespace scoped inside Space
+- FeedbackLoop provenance
+- MemoryAtom / CognitiveScene lifecycle
+```
+
+CognitiveProjection 回答的问题是：
+
+```text
+这个 Lens 现在应该如何重构记忆空间，形成可解释、可行动的上下文？
+```
+
+## ObserveMode
+
+ObserveMode 描述系统本次读取 / 投影应该有多深。
+
+MemoryNexus 不应该每次输入都执行：
+
+```text
+Atomization
+→ Scene activation
+→ Semantic consolidation
+→ Multi-lens projection
+→ Reflection generation
+→ Belief update
+→ Contradiction detection
+```
+
+它应该采用双系统策略：
+
+```text
+System 1: fast, low-latency, intuitive response
+System 2: focused/deep, reflective consolidation and abstraction
+```
+
+### fast
+
+用于即时交互。
+
+读取：
+
+- recent memories
+- pinned facts
+- high-salience scenes
+- compressed profile / skill priors
+
+不做：
+
+- 多 Lens projection
+- 同步 Belief update
+- 同步 Contradiction detection
+- 同步 CognitiveScene consolidation
+
+fast 回答的问题是：
+
+```text
+现在怎么自然接住用户？
+```
+
+### focused
+
+用于普通问题或单次轻量复盘。
+
+读取：
+
+- 一个主 Lens
+- 少量相关 atoms / scenes / concepts
+- 可追溯但较短的 CognitiveProjection
+
+focused 回答的问题是：
+
+```text
+这件事用当前 Lens 怎么理解？
+```
+
+### deep
+
+用于用户主动请求的周复盘、学习计划、项目决策和长期整理。
+
+可以触发：
+
+- multi-lens projection
+- atomization
+- scene update
+- concept / belief update
+- contradiction detection
+- FeedbackLoop adjustment 或 next action
+
+deep 回答的问题是：
+
+```text
+这件事说明了什么？最近有什么模式？下一步怎么调整？
+```
+
+ObserveMode 回答的问题是：
+
+```text
+这次读取应该像直觉一样快，还是像复盘一样深？
 ```
 
 ## Memory Salience / Automatic Forgetting
@@ -225,6 +464,88 @@ CognitiveSpace 回答的问题是：
 
 ```text
 这些认知对象共同存在于哪个长期空间？
+```
+
+## Namespace
+
+Namespace 是 CognitiveSpace 内的领域分区。
+
+它不取代 CognitiveSpace，也不引入新的所有权边界。权限仍然由 Space membership
+决定。Namespace 只回答这些认知对象属于哪个具体领域、应该被哪些 Lens / Profile /
+反馈循环优先消费。
+
+例子：
+
+```text
+personal.thoughts
+project.memorynexus
+learning.math
+music.piano
+chess.tactics
+art.drawing
+programming.rust
+```
+
+Namespace 可以分成两类：
+
+- Reflective Namespace: 用于理解自己、项目、决策和长期主题。
+- Skill Namespace: 用于追踪学习、练习、表现、错因和下一轮任务。
+
+当前 Thought Review MVP 可以视为：
+
+```text
+namespace = personal.thoughts
+```
+
+Namespace 回答的问题是：
+
+```text
+这批 memory、reflection、feedback loop 属于哪个长期成长领域？
+```
+
+## FeedbackLoop
+
+FeedbackLoop 是跨领域的长期反馈闭环对象。
+
+它比 Memory 更面向练习、学习和持续改进。最小结构是：
+
+```text
+Goal
+Task
+Attempt
+Evaluation
+Feedback
+Adjustment
+NextTask
+```
+
+例子：
+
+```text
+learning.math:
+知识点 → 练习题 → 作答结果 → 错因分析 → 个性化强化 → 下一天练习计划
+
+music.piano:
+曲目 → 练习片段 → 节奏 / 指法反馈 → 针对性练习 → 每周进展反馈
+
+personal.thoughts:
+想法 → 多视角复盘 → 反复主题 → 内在张力 → 下一步观察问题
+```
+
+FeedbackLoop 与现有认知对象的关系是：
+
+```text
+FeedbackLoop 产生 Memory
+Memory 产生 Reflection
+Reflection 形成 Concept / Pattern
+Concept / Pattern 更新 Profile
+Profile 影响下一轮 FeedbackLoop
+```
+
+FeedbackLoop 回答的问题是：
+
+```text
+这个领域下一轮应该如何练习、复盘或调整？
 ```
 
 ## Lens

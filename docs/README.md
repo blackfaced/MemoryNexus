@@ -8,6 +8,7 @@
 - [MCP Server](mcp.md)
 - [Personal Agent Integration](agent-integration.md)
 - [Agent Self-Install](agent-self-install.md)
+- [Subagent Issue Workflow](subagent-issue-workflow.md)
 - [Development](development.md)
 - [Deployment](deployment.md)
 - [TODO](TODO.md)

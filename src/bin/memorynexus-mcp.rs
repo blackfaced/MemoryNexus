@@ -253,7 +253,8 @@ fn tools_list_result() -> Value {
                         "remind_at": {"type": "string", "description": "RFC3339 timestamp, for example 2026-05-26T09:00:00Z"},
                         "title": {"type": "string"},
                         "memory_id": {"type": "string"},
-                        "repeat_rule": {"type": "string", "enum": ["daily", "weekly", "monthly"]}
+                        "repeat_rule": {"type": "string", "enum": ["daily", "weekly", "monthly"]},
+                        "delivery_channel": {"type": "string", "enum": ["in_app"], "default": "in_app"}
                     },
                     "required": ["space_id", "content", "remind_at"]
                 }),
@@ -281,6 +282,19 @@ fn tools_list_result() -> Value {
                         "reminder_id": {"type": "string"}
                     },
                     "required": ["reminder_id"]
+                }),
+            ),
+            tool_schema(
+                "mark_reminder_delivery",
+                "Record in-app reminder delivery as delivered or failed.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "reminder_id": {"type": "string"},
+                        "status": {"type": "string", "enum": ["delivered", "failed"]},
+                        "error": {"type": "string"}
+                    },
+                    "required": ["reminder_id", "status"]
                 }),
             ),
             tool_schema(
@@ -469,6 +483,7 @@ fn build_api_request_for_tool(
                 "content": required_string(arguments, "content")?,
                 "remind_at": required_string(arguments, "remind_at")?,
                 "repeat_rule": optional_string(arguments, "repeat_rule"),
+                "delivery_channel": optional_string(arguments, "delivery_channel"),
             })),
             token,
         }),
@@ -494,6 +509,18 @@ fn build_api_request_for_tool(
                     ],
                 )?,
                 body: None,
+                token,
+            })
+        }
+        "mark_reminder_delivery" => {
+            let reminder_id = required_string(arguments, "reminder_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Post,
+                url: format!("{base_url}/api/v1/reminders/{reminder_id}/delivery"),
+                body: Some(json!({
+                    "status": required_string(arguments, "status")?,
+                    "error": optional_string(arguments, "error"),
+                })),
                 token,
             })
         }
@@ -919,6 +946,7 @@ mod tests {
                 "add_reminder",
                 "list_reminders",
                 "complete_reminder",
+                "mark_reminder_delivery",
                 "route_agent_context",
                 "get_install_status",
                 "upgrade_install",
@@ -1204,7 +1232,8 @@ mod tests {
                 "title": "Review",
                 "content": "Review Rust practice",
                 "remind_at": "2026-05-26T09:00:00Z",
-                "repeat_rule": "weekly"
+                "repeat_rule": "weekly",
+                "delivery_channel": "in_app"
             }),
         )
         .unwrap();
@@ -1226,6 +1255,16 @@ mod tests {
             }),
         )
         .unwrap();
+        let failed_delivery = build_api_request_for_tool(
+            &config,
+            "mark_reminder_delivery",
+            &json!({
+                "reminder_id": "reminder-123",
+                "status": "failed",
+                "error": "client notification panel unavailable"
+            }),
+        )
+        .unwrap();
 
         assert_eq!(add.method, HttpMethod::Post);
         assert_eq!(add.url, "http://localhost:8080/api/v1/reminders");
@@ -1238,6 +1277,7 @@ mod tests {
                 "content": "Review Rust practice",
                 "remind_at": "2026-05-26T09:00:00Z",
                 "repeat_rule": "weekly",
+                "delivery_channel": "in_app",
             }))
         );
         assert_eq!(list.method, HttpMethod::Get);
@@ -1249,6 +1289,18 @@ mod tests {
         assert_eq!(
             complete.url,
             "http://localhost:8080/api/v1/reminders/reminder-123/complete"
+        );
+        assert_eq!(failed_delivery.method, HttpMethod::Post);
+        assert_eq!(
+            failed_delivery.url,
+            "http://localhost:8080/api/v1/reminders/reminder-123/delivery"
+        );
+        assert_eq!(
+            failed_delivery.body,
+            Some(json!({
+                "status": "failed",
+                "error": "client notification panel unavailable",
+            }))
         );
     }
 }

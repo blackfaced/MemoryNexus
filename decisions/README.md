@@ -18,7 +18,10 @@ decisions/
 ├── ADR-009-rust-first-backend.md ✅ Rust-first 后端主线
 ├── ADR-010-memory-salience.md    ✅ Memory salience 与 automatic forgetting
 ├── ADR-011-contradiction-lifecycle.md ✅ Contradiction 生命周期
-└── ADR-012-family-shared-cognitive-space.md ✅ 家庭与共享 Cognitive Space
+├── ADR-012-family-shared-cognitive-space.md ✅ 家庭与共享 Cognitive Space
+├── ADR-013-thought-review-ui-mvp.md ✅ Thought Review UI MVP
+├── ADR-014-namespace-feedback-loop.md ✅ Namespace 与 Feedback Loop 模型
+└── ADR-015-supabase-integration.md ✅ Supabase 集成边界
 ```
 
 ## 📖 ADR 是什么？

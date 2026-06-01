@@ -294,6 +294,18 @@ fn build_open_questions(input: &LensOutputInput<'_>) -> Vec<String> {
     }
 
     match input.strategy {
+        "engineering_review" => vec![
+            "如果只能推进一个下一步，最小可验证动作是什么？".to_string(),
+            "你会用什么评估标准决定继续或停止？".to_string(),
+        ],
+        "detective_review" => vec![
+            "这里有没有一个你暂时不想正面回答的问题？".to_string(),
+            "哪些担心是事实，哪些只是尚未验证的假设？".to_string(),
+        ],
+        "narrative_review" => vec![
+            "这更像哪个阶段的转变：发散、选择，还是收束？".to_string(),
+            "如果这是一个长期主线的开头，它会指向什么？".to_string(),
+        ],
         "risk_review" => vec![
             "Which risks are still unsupported by concrete memories?".to_string(),
             "Which contradictions need a follow-up Lens Run?".to_string(),
@@ -316,6 +328,18 @@ fn build_suggested_next_actions(strategy: &str, memory_count: usize) -> Vec<Stri
     }
 
     match strategy {
+        "engineering_review" => vec![
+            "写下三个判断标准，再用它们筛选当前选项。".to_string(),
+            "把最小下一步限制在 30 分钟内可以完成的动作。".to_string(),
+        ],
+        "detective_review" => vec![
+            "标出这段想法里最强的一个假设。".to_string(),
+            "补一条记忆：你最不愿意承认的真实顾虑是什么？".to_string(),
+        ],
+        "narrative_review" => vec![
+            "给当前阶段起一个名字，方便之后回看。".to_string(),
+            "观察下一周是否仍然围绕同一个主题打转。".to_string(),
+        ],
         "risk_review" => vec![
             "Review the cited memories and mark unresolved risks.".to_string(),
             "Add mitigation memories for the highest-risk item.".to_string(),
@@ -506,6 +530,30 @@ fn deterministic_summary(
     query: &str,
     memory_count: usize,
 ) -> String {
+    match strategy {
+        "engineering_review" => {
+            return format!(
+                "{lens_name}：你现在的问题可能不是想法太多，而是缺少评估标准。先把这件事拆成可比较的条件，再决定下一步。"
+            );
+        }
+        "detective_review" => {
+            return format!(
+                "{lens_name}：这段想法背后可能藏着一个更核心的问题。先找出你正在回避的假设，再判断它是否真的成立。"
+            );
+        }
+        "narrative_review" => {
+            return format!(
+                "{lens_name}：这像是一个从发散走向选择的阶段。重点不是马上得出答案，而是看清你正在形成哪条主线。"
+            );
+        }
+        "weekly_thought_review" => {
+            return format!(
+                "{lens_name}：最近的记录正在形成一条可观察的线索。继续保存想法后，系统会更稳定地提炼反复主题和内在张力。"
+            );
+        }
+        _ => {}
+    }
+
     if memory_count == 0 {
         return format!(
             "Lens '{lens_name}' found no matching memories for query '{query}' using strategy '{strategy}'."
@@ -685,6 +733,34 @@ mod tests {
         assert_eq!(output["summary_source"], "ai");
         assert!(output["summary_fallback_reason"].is_null());
         assert!(output["summary"].as_str().unwrap().contains("42 words"));
+    }
+
+    #[tokio::test]
+    async fn deterministic_thought_review_lenses_return_user_facing_insights() {
+        let lens_id = Uuid::new_v4();
+        let memories = vec![search_item(Uuid::new_v4())];
+        let output = build_lens_output(LensOutputInput {
+            lens_id,
+            lens_name: "工程视角",
+            strategy: "engineering_review",
+            output_format: "brief",
+            retrieval_mode: "semantic",
+            query: "我最近项目很多，不知道哪个值得继续。",
+            search_mode: "keyword",
+            memories: &memories,
+            summarizer: None,
+            summary_provider: None,
+            summary_model: None,
+            summary_max_words: None,
+        })
+        .await;
+
+        assert!(output["summary"].as_str().unwrap().contains("评估标准"));
+        assert!(output["open_questions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|question| question.as_str().unwrap().contains("下一步")));
     }
 
     struct EmptySummarizer;

@@ -296,6 +296,65 @@ Returns a run only if the current user can access its Cognitive Space.
 Returns visible Lens Runs ordered by newest first. At least one of `lens_id` or
 `space_id` is required.
 
+## Feedback Loops
+
+FeedbackLoop captures one long-running feedback cycle inside a Namespace and
+Cognitive Space. The first API stores the loop state itself; creating Memory
+snapshots and threading `feedback_loop_id` provenance through Memory, Lens Run,
+Review Report, and Profile remains a follow-up boundary.
+
+### Create Feedback Loop
+
+`POST /api/v1/feedback-loops`
+
+```json
+{
+  "space_id": "space-uuid",
+  "namespace_id": "namespace-uuid",
+  "goal": "Improve fraction word problems",
+  "task": "Complete five fraction word problems and explain each mistake",
+  "attempt": "optional attempt notes",
+  "evaluation": "optional evaluation",
+  "feedback": "optional feedback",
+  "adjustment": "optional adjustment",
+  "next_task": "optional next task",
+  "status": "active"
+}
+```
+
+`namespace_id` must belong to the same `space_id`. `status` supports `active`,
+`completed`, and `paused`; omitted status defaults to `active`.
+
+### List Feedback Loops
+
+`GET /api/v1/feedback-loops?space_id=<SPACE_ID>&namespace_id=<OPTIONAL_NAMESPACE_ID>`
+
+Returns visible loops ordered by newest first. `namespace_id` narrows the list to
+one namespace and must belong to the requested space.
+
+### Get Feedback Loop
+
+`GET /api/v1/feedback-loops/:id`
+
+Returns a loop only if the current user can access its Cognitive Space.
+
+### Patch Feedback Loop
+
+`PATCH /api/v1/feedback-loops/:id`
+
+```json
+{
+  "evaluation": "What changed after the attempt",
+  "feedback": "Observed error pattern",
+  "adjustment": "What to change next round",
+  "next_task": "The next concrete task",
+  "status": "paused"
+}
+```
+
+Patch supports `evaluation`, `feedback`, `adjustment`, `next_task`, and
+`status`. Writers are Space `owner` or `editor` members.
+
 ## Memories
 
 ### Create Memory
@@ -330,6 +389,28 @@ If `space_id` is omitted, the default Cognitive Space is used.
 
 Memory access is checked against ownership and Cognitive Space membership.
 
+## Voice Capture
+
+### Transcribe Audio And Create Memory
+
+`POST /api/v1/voice-captures?space_id=<SPACE_ID>&filename=thought.webm&language=zh`
+
+The request body is the uploaded audio bytes. The endpoint requires
+authentication and Space write permission, transcribes the audio through the
+configured transcription provider, then creates an `audio` Memory in the same
+Cognitive Space.
+
+Configuration:
+
+- `MEMORYNEXUS_TRANSCRIPTION_PROVIDER=openai`
+- `OPENAI_API_KEY` or `MEMORYNEXUS_TRANSCRIPTION_API_KEY`
+- Optional `MEMORYNEXUS_TRANSCRIPTION_MODEL`, defaulting to `whisper-1`
+
+If no transcription provider is configured, the endpoint returns a visible
+client error instead of creating a Memory. Created memories include
+`source_type = "voice_transcription"` and `source_metadata` with provider,
+model, language, filename, content type, audio size, and provider metadata.
+
 ## Reminders
 
 Reminders are scheduled recall items scoped to a `CognitiveSpace`. They can
@@ -346,13 +427,23 @@ optionally reference a memory, but they do not make an agent own memory.
   "title": "Review Rust notes",
   "content": "Review this week's Rust practice and extract next actions.",
   "remind_at": "2026-05-26T09:00:00Z",
-  "repeat_rule": "weekly"
+  "repeat_rule": "weekly",
+  "delivery_channel": "in_app"
 }
 ```
 
-`remind_at` must be an RFC3339 timestamp. `repeat_rule` is optional and
-currently supports `daily`, `weekly`, and `monthly`. Reminders are surfaced by
-listing due items.
+`remind_at` must be an RFC3339 timestamp. `repeat_rule` is optional and accepts
+the supported subset `daily`, `weekly`, `monthly`, or an interval form such as
+`daily:3`, `weekly:2`, or `monthly:6`. Invalid frequencies, zero intervals, and
+non-numeric intervals return a `400` API error before the reminder is stored.
+Reminders are surfaced by listing due items.
+
+Delivery is part of the Rust reminder model, not a second service. The first
+supported channel is `in_app`, which means clients or agents poll due reminders
+and then record whether the in-app surface displayed the reminder. Reminder
+responses include `delivery_channel`, `delivery_status`,
+`delivery_attempted_at`, `delivered_at`, `delivery_error`, and
+`delivery_provenance`.
 
 ### List Reminders
 
@@ -361,6 +452,23 @@ listing due items.
 Set `due_only=true` to fetch pending reminders whose `remind_at` is not in the
 future. Completed reminders are hidden unless `include_completed=true`.
 
+### Record Reminder Delivery
+
+`POST /api/v1/reminders/:id/delivery`
+
+```json
+{
+  "status": "delivered",
+  "error": null
+}
+```
+
+`status` must be `delivered` or `failed`; failed delivery requires a non-empty
+`error`. The update is limited to due, pending `in_app` reminders visible
+through the current user's Cognitive Space membership. The API stores delivery
+status and provenance including channel, source, actor user, status, attempted
+time, and error.
+
 ### Complete Reminder
 
 `POST /api/v1/reminders/:id/complete`
@@ -368,7 +476,8 @@ future. Completed reminders are hidden unless `include_completed=true`.
 Marks a pending reminder as completed if the current user is a member of the
 reminder's Cognitive Space. For a reminder with `repeat_rule`, this acknowledges
 the current occurrence and advances `remind_at` to the next interval while
-keeping the reminder pending.
+keeping the reminder pending. Recurrence uses UTC timestamps; if the original
+due time is already past, the next due time is calculated from completion time.
 
 ## Search
 

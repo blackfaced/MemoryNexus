@@ -84,6 +84,7 @@ checkout. Skip the build step only when the MCP config uses `cargo run`. Rebuild
 | `add_reminder` | Create a scheduled recall reminder in a Cognitive Space |
 | `list_reminders` | List pending or due scheduled recall reminders |
 | `complete_reminder` | Mark a pending reminder as completed |
+| `mark_reminder_delivery` | Record in-app reminder delivery as delivered or failed |
 | `route_agent_context` | Recommend write/search/lens/profile/ignore for agent context |
 | `get_install_status` | Inspect local version, checkout state, and API health/version before install or upgrade |
 | `upgrade_install` | Return or apply a local upgrade plan for source, tests, and built binaries |
@@ -139,10 +140,14 @@ Scheduled recall:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_reminder","arguments":{"space_id":"<space-id>","title":"Review project direction","content":"Run a project_context Lens and decide the next task.","remind_at":"2026-05-26T09:00:00Z","repeat_rule":"weekly"}}}' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_reminder","arguments":{"space_id":"<space-id>","title":"Review project direction","content":"Run a project_context Lens and decide the next task.","remind_at":"2026-05-26T09:00:00Z","repeat_rule":"weekly:2","delivery_channel":"in_app"}}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_reminders","arguments":{"space_id":"<space-id>","due_only":true,"limit":20}}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"mark_reminder_delivery","arguments":{"reminder_id":"<reminder-id>","status":"delivered"}}}' \
   | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
 ```
+
+Reminder `repeat_rule` accepts `daily`, `weekly`, `monthly`, or interval forms
+such as `daily:3`, `weekly:2`, and `monthly:6`.
 
 The tool response returns MemoryNexus API JSON as text content so MCP clients can
 read the same traceable payload that the CLI sees.

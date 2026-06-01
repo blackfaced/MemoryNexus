@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
@@ -45,6 +46,8 @@ pub struct MemoryDb {
     pub file_path: Option<String>,
     pub thumbnail_path: Option<String>,
     pub is_shared: bool,
+    pub source_type: String,
+    pub source_metadata: Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -59,6 +62,8 @@ pub struct CreateMemory {
     pub memory_type: MemoryType,
     pub file_path: Option<String>,
     pub is_shared: bool,
+    pub source_type: String,
+    pub source_metadata: Value,
     pub tags: Vec<String>,
 }
 
@@ -69,6 +74,48 @@ pub struct UpdateMemory {
     pub content: Option<String>,
     pub memory_type: Option<MemoryType>,
     pub is_shared: Option<bool>,
+    pub tags: Option<Vec<String>>,
+}
+
+/// 记忆列表排序方式。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryListSort {
+    /// 最新创建的记忆在前。
+    #[default]
+    Newest,
+    /// 最早创建的记忆在前。
+    Oldest,
+}
+
+impl std::fmt::Display for MemoryListSort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Newest => write!(f, "newest"),
+            Self::Oldest => write!(f, "oldest"),
+        }
+    }
+}
+
+/// 记忆列表过滤参数。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MemoryListFilter {
+    pub tag: Option<String>,
+    pub memory_type: Option<MemoryType>,
+    pub sort: MemoryListSort,
+}
+
+impl MemoryListFilter {
+    pub fn normalized(self) -> Self {
+        Self {
+            tag: self
+                .tag
+                .map(|tag| tag.trim().to_string())
+                .filter(|tag| !tag.is_empty()),
+            memory_type: self.memory_type,
+            sort: self.sort,
+        }
+    }
 }
 
 /// 记忆仓储 trait
@@ -89,6 +136,7 @@ pub trait MemoryRepository: Send + Sync {
         space_id: Uuid,
         limit: i64,
         offset: i64,
+        filter: MemoryListFilter,
     ) -> Result<Vec<MemoryDb>, sqlx::Error>;
     async fn list_by_space_window(
         &self,
@@ -98,14 +146,13 @@ pub trait MemoryRepository: Send + Sync {
         window_end: DateTime<Utc>,
         limit: i64,
     ) -> Result<Vec<MemoryDb>, sqlx::Error>;
-    async fn count_by_space(&self, user_id: Uuid, space_id: Uuid) -> Result<i64, sqlx::Error>;
-    async fn update(
+    async fn count_by_space(
         &self,
-        id: Uuid,
-        content: &Option<String>,
-        title: &Option<String>,
-        memory_type: Option<MemoryType>,
-    ) -> Result<MemoryDb, sqlx::Error>;
+        user_id: Uuid,
+        space_id: Uuid,
+        filter: MemoryListFilter,
+    ) -> Result<i64, sqlx::Error>;
+    async fn update(&self, id: Uuid, update: UpdateMemory) -> Result<MemoryDb, sqlx::Error>;
     async fn delete(&self, id: Uuid) -> Result<bool, sqlx::Error>;
 }
 
@@ -135,14 +182,37 @@ fn normalize_tag_names(tags: Vec<String>) -> Vec<String> {
     normalized
 }
 
+fn update_memory_sql() -> &'static str {
+    r#"
+            UPDATE memories
+            SET content = COALESCE($2, content),
+                title = CASE WHEN $3 IS NULL THEN title ELSE NULLIF($3, '') END,
+                memory_type = COALESCE($4, memory_type),
+                is_shared = COALESCE($5, is_shared),
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING *
+            "#
+}
+
 #[async_trait::async_trait]
 impl MemoryRepository for PostgresMemoryRepository {
     async fn create(&self, memory: CreateMemory) -> Result<MemoryDb, sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         let result = sqlx::query_as::<_, MemoryDb>(
             r#"
-            INSERT INTO memories (user_id, space_id, title, content, memory_type, file_path, is_shared)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO memories (
+                user_id,
+                space_id,
+                title,
+                content,
+                memory_type,
+                file_path,
+                is_shared,
+                source_type,
+                source_metadata
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
             "#,
         )
@@ -153,6 +223,8 @@ impl MemoryRepository for PostgresMemoryRepository {
         .bind(memory.memory_type.to_string())
         .bind(&memory.file_path)
         .bind(memory.is_shared)
+        .bind(&memory.source_type)
+        .bind(&memory.source_metadata)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -236,7 +308,15 @@ impl MemoryRepository for PostgresMemoryRepository {
         space_id: Uuid,
         limit: i64,
         offset: i64,
+        filter: MemoryListFilter,
     ) -> Result<Vec<MemoryDb>, sqlx::Error> {
+        let filter = filter.normalized();
+        let memory_type = filter
+            .memory_type
+            .map(|memory_type| memory_type.to_string());
+        let tag = filter.tag;
+        let sort = filter.sort.to_string();
+
         sqlx::query_as::<_, MemoryDb>(
             r#"
             SELECT * FROM memories
@@ -250,7 +330,21 @@ impl MemoryRepository for PostgresMemoryRepository {
                       AND cognitive_space_members.user_id = $1
                 )
               )
-            ORDER BY created_at DESC
+              AND ($5::text IS NULL OR memory_type = $5)
+              AND (
+                $6::text IS NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM memory_tags
+                    JOIN tags ON tags.id = memory_tags.tag_id
+                    WHERE memory_tags.memory_id = memories.id
+                      AND tags.name = $6
+                )
+              )
+            ORDER BY
+              CASE WHEN $7 = 'oldest' THEN created_at END ASC,
+              CASE WHEN $7 = 'newest' THEN created_at END DESC,
+              id ASC
             LIMIT $3 OFFSET $4
             "#,
         )
@@ -258,11 +352,25 @@ impl MemoryRepository for PostgresMemoryRepository {
         .bind(space_id)
         .bind(limit)
         .bind(offset)
+        .bind(memory_type)
+        .bind(tag)
+        .bind(sort)
         .fetch_all(&self.pool)
         .await
     }
 
-    async fn count_by_space(&self, user_id: Uuid, space_id: Uuid) -> Result<i64, sqlx::Error> {
+    async fn count_by_space(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+        filter: MemoryListFilter,
+    ) -> Result<i64, sqlx::Error> {
+        let filter = filter.normalized();
+        let memory_type = filter
+            .memory_type
+            .map(|memory_type| memory_type.to_string());
+        let tag = filter.tag;
+
         let result: (i64,) = sqlx::query_as(
             r#"
             SELECT COUNT(*) FROM memories
@@ -276,10 +384,23 @@ impl MemoryRepository for PostgresMemoryRepository {
                       AND cognitive_space_members.user_id = $1
                 )
               )
+              AND ($3::text IS NULL OR memory_type = $3)
+              AND (
+                $4::text IS NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM memory_tags
+                    JOIN tags ON tags.id = memory_tags.tag_id
+                    WHERE memory_tags.memory_id = memories.id
+                      AND tags.name = $4
+                )
+              )
             "#,
         )
         .bind(user_id)
         .bind(space_id)
+        .bind(memory_type)
+        .bind(tag)
         .fetch_one(&self.pool)
         .await?;
         Ok(result.0)
@@ -321,53 +442,57 @@ impl MemoryRepository for PostgresMemoryRepository {
         .await
     }
 
-    async fn update(
-        &self,
-        id: Uuid,
-        content: &Option<String>,
-        title: &Option<String>,
-        _memory_type: Option<MemoryType>,
-    ) -> Result<MemoryDb, sqlx::Error> {
-        // 构建动态更新查询
-        let memory = if let Some(c) = content {
-            sqlx::query_as::<_, MemoryDb>(
-                r#"
-                UPDATE memories 
-                SET content = $2, title = COALESCE($3, title), updated_at = NOW()
-                WHERE id = $1
-                RETURNING *
-                "#,
-            )
-            .bind(id)
-            .bind(c)
-            .bind(title)
-            .fetch_one(&self.pool)
-            .await?
-        } else if let Some(t) = title {
-            sqlx::query_as::<_, MemoryDb>(
-                r#"
-                UPDATE memories 
-                SET title = $2, updated_at = NOW()
-                WHERE id = $1
-                RETURNING *
-                "#,
-            )
-            .bind(id)
-            .bind(t)
-            .fetch_one(&self.pool)
-            .await?
-        } else {
-            // 只更新 updated_at
-            sqlx::query_as::<_, MemoryDb>(
-                r#"
-                UPDATE memories SET updated_at = NOW() WHERE id = $1 RETURNING *
-                "#,
-            )
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await?
-        };
+    async fn update(&self, id: Uuid, update: UpdateMemory) -> Result<MemoryDb, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        let memory_type = update
+            .memory_type
+            .map(|memory_type| memory_type.to_string());
 
+        let memory = sqlx::query_as::<_, MemoryDb>(update_memory_sql())
+            .bind(id)
+            .bind(&update.content)
+            .bind(&update.title)
+            .bind(&memory_type)
+            .bind(update.is_shared)
+            .fetch_one(&mut *tx)
+            .await?;
+
+        if let Some(tags) = update.tags {
+            sqlx::query("DELETE FROM memory_tags WHERE memory_id = $1")
+                .bind(memory.id)
+                .execute(&mut *tx)
+                .await?;
+
+            for tag_name in normalize_tag_names(tags) {
+                let (tag_id,): (Uuid,) = sqlx::query_as(
+                    r#"
+                    INSERT INTO tags (name, user_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT (user_id, name) WHERE user_id IS NOT NULL
+                    DO UPDATE SET name = EXCLUDED.name
+                    RETURNING id
+                    "#,
+                )
+                .bind(&tag_name)
+                .bind(memory.user_id)
+                .fetch_one(&mut *tx)
+                .await?;
+
+                sqlx::query(
+                    r#"
+                    INSERT INTO memory_tags (memory_id, tag_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                    "#,
+                )
+                .bind(memory.id)
+                .bind(tag_id)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        tx.commit().await?;
         Ok(memory)
     }
 
@@ -407,6 +532,8 @@ mod tests {
             memory_type: MemoryType::Text,
             file_path: None,
             is_shared: false,
+            source_type: "manual".to_string(),
+            source_metadata: serde_json::json!({}),
             tags: vec![],
         };
 
@@ -432,10 +559,18 @@ mod tests {
             content: Some("New Content".to_string()),
             memory_type: Some(MemoryType::Image),
             is_shared: Some(true),
+            tags: Some(vec!["review".to_string()]),
         };
 
         assert!(update.title.is_some());
         assert!(update.content.is_some());
         assert!(update.memory_type.is_some());
+        assert_eq!(update.tags.as_deref(), Some(&["review".to_string()][..]));
+    }
+
+    #[test]
+    fn update_memory_sql_clears_empty_title_but_preserves_absent_title() {
+        assert!(update_memory_sql()
+            .contains("title = CASE WHEN $3 IS NULL THEN title ELSE NULLIF($3, '') END"));
     }
 }

@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
-use crate::db::memory::{CreateMemory, MemoryDb, MemoryType};
+use crate::db::memory::{
+    CreateMemory, MemoryDb, MemoryListFilter, MemoryListSort, MemoryType, UpdateMemory,
+};
 use crate::db::space::SpaceMemberRole;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
@@ -87,10 +89,10 @@ pub struct ListQuery {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
-    #[allow(dead_code)]
     pub tag: Option<String>,
-    #[allow(dead_code)]
     pub memory_type: Option<ApiMemoryType>,
+    #[serde(default)]
+    pub sort: MemoryListSort,
 }
 
 fn default_limit() -> i64 {
@@ -100,10 +102,106 @@ fn default_limit() -> i64 {
 /// 记忆列表响应
 #[derive(Serialize)]
 pub struct MemoryListResponse {
-    pub items: Vec<MemoryDb>,
+    pub items: Vec<MemoryListItem>,
     pub total: i64,
     pub limit: i64,
     pub offset: i64,
+}
+
+/// 记忆列表项响应，保留完整 Memory 字段并补充列表展示字段。
+#[derive(Debug, Clone, Serialize)]
+pub struct MemoryListItem {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub space_id: Uuid,
+    pub title: Option<String>,
+    pub content: String,
+    pub snippet: String,
+    pub memory_type: String,
+    pub file_path: Option<String>,
+    pub thumbnail_path: Option<String>,
+    pub is_shared: bool,
+    pub source_type: String,
+    pub source_metadata: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub tags: Vec<String>,
+}
+
+/// 记忆详情响应，保留完整 Memory 字段并补充 tags。
+#[derive(Debug, Clone, Serialize)]
+pub struct MemoryDetailResponse {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub space_id: Uuid,
+    pub title: Option<String>,
+    pub content: String,
+    pub memory_type: String,
+    pub file_path: Option<String>,
+    pub thumbnail_path: Option<String>,
+    pub is_shared: bool,
+    pub source_type: String,
+    pub source_metadata: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub tags: Vec<String>,
+}
+
+impl MemoryDetailResponse {
+    fn from_memory(memory: MemoryDb, tags: Vec<String>) -> Self {
+        Self {
+            id: memory.id,
+            user_id: memory.user_id,
+            space_id: memory.space_id,
+            title: memory.title,
+            content: memory.content,
+            memory_type: memory.memory_type,
+            file_path: memory.file_path,
+            thumbnail_path: memory.thumbnail_path,
+            is_shared: memory.is_shared,
+            source_type: memory.source_type,
+            source_metadata: memory.source_metadata,
+            created_at: memory.created_at,
+            updated_at: memory.updated_at,
+            tags,
+        }
+    }
+}
+
+impl MemoryListItem {
+    fn from_memory(memory: MemoryDb, tags: Vec<String>) -> Self {
+        let snippet = memory_snippet(&memory.content);
+        Self {
+            id: memory.id,
+            user_id: memory.user_id,
+            space_id: memory.space_id,
+            title: memory.title,
+            content: memory.content,
+            snippet,
+            memory_type: memory.memory_type,
+            file_path: memory.file_path,
+            thumbnail_path: memory.thumbnail_path,
+            is_shared: memory.is_shared,
+            source_type: memory.source_type,
+            source_metadata: memory.source_metadata,
+            created_at: memory.created_at,
+            updated_at: memory.updated_at,
+            tags,
+        }
+    }
+}
+
+fn memory_snippet(content: &str) -> String {
+    const MAX_SNIPPET_CHARS: usize = 180;
+    let compact = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.chars().count() <= MAX_SNIPPET_CHARS {
+        return compact;
+    }
+
+    format!(
+        "{}...",
+        compact.chars().take(MAX_SNIPPET_CHARS).collect::<String>()
+    )
 }
 
 /// GET /api/v1/memories - 列出记忆
@@ -113,26 +211,39 @@ pub async fn list(
     Query(params): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<MemoryListResponse>>, AppError> {
     let space = resolve_space(&state, auth_user.user_id, params.space_id).await?;
+    let limit = params.limit.clamp(1, 100);
+    let offset = params.offset.max(0);
+    let filter = MemoryListFilter {
+        tag: params.tag,
+        memory_type: params.memory_type.map(Into::into),
+        sort: params.sort,
+    };
 
     let memories = state
         .repositories
         .memories
-        .list_by_space(auth_user.user_id, space.id, params.limit, params.offset)
+        .list_by_space(auth_user.user_id, space.id, limit, offset, filter.clone())
         .await
         .map_err(AppError::Database)?;
+
+    let mut items = Vec::with_capacity(memories.len());
+    for memory in memories {
+        let tags = memory_tags(&state, memory.id).await?;
+        items.push(MemoryListItem::from_memory(memory, tags));
+    }
 
     let total = state
         .repositories
         .memories
-        .count_by_space(auth_user.user_id, space.id)
+        .count_by_space(auth_user.user_id, space.id, filter)
         .await
         .map_err(AppError::Database)?;
 
     Ok(Json(ApiResponse::success(MemoryListResponse {
-        items: memories,
+        items,
         total,
-        limit: params.limit,
-        offset: params.offset,
+        limit,
+        offset,
     })))
 }
 
@@ -161,6 +272,8 @@ pub async fn create(
         memory_type,
         file_path: None,
         is_shared: req.is_shared,
+        source_type: "manual".to_string(),
+        source_metadata: serde_json::json!({}),
         tags: req.tags,
     };
 
@@ -174,6 +287,16 @@ pub async fn create(
     index_memory_embedding(&state, &memory).await;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::success(memory))))
+}
+
+async fn memory_tags(state: &AppState, memory_id: Uuid) -> Result<Vec<String>, AppError> {
+    state
+        .repositories
+        .tags
+        .list_memory_tags(memory_id)
+        .await
+        .map_err(AppError::Database)
+        .map(|tags| tags.into_iter().map(|tag| tag.name).collect())
 }
 
 async fn resolve_space(
@@ -200,7 +323,7 @@ async fn resolve_space(
         .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))
 }
 
-async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
+pub(crate) async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) {
     let Some(vector_store) = state.vector_store.as_ref() else {
         return;
     };
@@ -248,7 +371,7 @@ pub async fn get(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<MemoryDb>>, AppError> {
+) -> Result<Json<ApiResponse<MemoryDetailResponse>>, AppError> {
     let memory = state
         .repositories
         .memories
@@ -262,7 +385,11 @@ pub async fn get(
         require_space_member(&state, memory.space_id, auth_user.user_id).await?;
     }
 
-    Ok(Json(ApiResponse::success(memory)))
+    let tags = memory_tags(&state, memory.id).await?;
+
+    Ok(Json(ApiResponse::success(
+        MemoryDetailResponse::from_memory(memory, tags),
+    )))
 }
 
 /// PATCH /api/v1/memories/:id - 更新记忆
@@ -271,7 +398,15 @@ pub async fn update(
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateMemoryRequest>,
-) -> Result<Json<ApiResponse<MemoryDb>>, AppError> {
+) -> Result<Json<ApiResponse<MemoryDetailResponse>>, AppError> {
+    if req
+        .content
+        .as_ref()
+        .is_some_and(|content| content.trim().is_empty())
+    {
+        return Err(AppError::BadRequest("内容不能为空".to_string()));
+    }
+
     // 获取现有记忆
     let existing = state
         .repositories
@@ -289,16 +424,24 @@ pub async fn update(
         .memories
         .update(
             id,
-            &req.content,
-            &req.title,
-            req.memory_type.map(|t| t.into()),
+            UpdateMemory {
+                title: req.title,
+                content: req.content,
+                memory_type: req.memory_type.map(|t| t.into()),
+                is_shared: req.is_shared,
+                tags: req.tags,
+            },
         )
         .await
         .map_err(AppError::Database)?;
 
     index_memory_embedding(&state, &memory).await;
 
-    Ok(Json(ApiResponse::success(memory)))
+    let tags = memory_tags(&state, memory.id).await?;
+
+    Ok(Json(ApiResponse::success(
+        MemoryDetailResponse::from_memory(memory, tags),
+    )))
 }
 
 /// DELETE /api/v1/memories/:id - 删除记忆
@@ -444,5 +587,77 @@ mod tests {
         assert_eq!(query.space_id, None);
         assert_eq!(query.limit, 20);
         assert_eq!(query.offset, 0);
+    }
+
+    #[test]
+    fn list_query_accepts_filters_and_oldest_sort() {
+        let json = r#"{"tag":"thought-review","memory_type":"text","sort":"oldest"}"#;
+        let query: ListQuery = serde_json::from_str(json).unwrap();
+
+        assert_eq!(query.tag.as_deref(), Some("thought-review"));
+        assert_eq!(query.memory_type, Some(ApiMemoryType::Text));
+        assert_eq!(query.sort, MemoryListSort::Oldest);
+    }
+
+    #[test]
+    fn memory_list_item_uses_title_snippet_and_tags() {
+        let memory = MemoryDb {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
+            title: Some("A saved thought".to_string()),
+            content: "This thought has enough content to become a short snippet.".to_string(),
+            memory_type: "text".to_string(),
+            file_path: None,
+            thumbnail_path: None,
+            is_shared: false,
+            source_type: "manual".to_string(),
+            source_metadata: serde_json::json!({}),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let item = MemoryListItem::from_memory(memory, vec!["thought-review".to_string()]);
+
+        assert_eq!(item.title.as_deref(), Some("A saved thought"));
+        assert_eq!(
+            item.snippet,
+            "This thought has enough content to become a short snippet."
+        );
+        assert_eq!(item.memory_type, "text");
+        assert_eq!(item.tags, vec!["thought-review".to_string()]);
+    }
+
+    #[test]
+    fn memory_detail_response_includes_full_fields_and_tags() {
+        let memory = MemoryDb {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            space_id: Uuid::new_v4(),
+            title: Some("Detail".to_string()),
+            content: "Full saved thought".to_string(),
+            memory_type: "text".to_string(),
+            file_path: None,
+            thumbnail_path: None,
+            is_shared: false,
+            source_type: "manual".to_string(),
+            source_metadata: serde_json::json!({}),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let memory_id = memory.id;
+
+        let detail = MemoryDetailResponse::from_memory(
+            memory,
+            vec!["thought-review".to_string(), "project".to_string()],
+        );
+
+        assert_eq!(detail.id, memory_id);
+        assert_eq!(detail.title.as_deref(), Some("Detail"));
+        assert_eq!(detail.content, "Full saved thought");
+        assert_eq!(
+            detail.tags,
+            vec!["thought-review".to_string(), "project".to_string()]
+        );
     }
 }

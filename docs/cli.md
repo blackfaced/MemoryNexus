@@ -1,7 +1,9 @@
 # MemoryNexus CLI
 
-`memorynexus-cli` is a thin stateless client for the Rust API. It outputs JSON
-by default so humans, scripts, and agents can parse the same responses.
+`memorynexus-cli` is a thin stateless client for the Rust API. Existing commands
+output JSON by default so humans, scripts, and agents can parse the same
+responses. Add `--format human` for a readable summary when using the CLI
+interactively.
 
 ## Configuration
 
@@ -73,10 +75,25 @@ Run the CLI in another terminal:
 cargo run --bin memorynexus-cli -- health
 cargo run --bin memorynexus-cli -- config
 cargo run --bin memorynexus-cli -- version
+cargo run --bin memorynexus-cli -- --format human memory list --limit 5
 ```
 
 `config` reads the running API process configuration. Use it to confirm which
 embedding and summary providers the API actually started with.
+
+## Shell Completion
+
+Generate completion scripts for bash, zsh, or fish:
+
+```bash
+memorynexus-cli completion bash
+memorynexus-cli completion zsh
+memorynexus-cli completion fish
+```
+
+`completion` prints the script directly by default so it can be installed or
+evaluated by your shell. Use `--format json` if another tool needs the script
+wrapped in the normal CLI response envelope.
 
 ## Local Version And Upgrade Helpers
 
@@ -359,8 +376,8 @@ assigned through invite or role update.
 ## Reminders
 
 Reminders are scheduled recall items inside a `CognitiveSpace`. The MVP exposes
-create/list/complete commands; clients or agents can poll due reminders with
-`--due`.
+create/list/delivery/complete commands; clients or agents can poll due reminders
+with `--due`.
 
 Create a reminder:
 
@@ -370,7 +387,8 @@ REMINDER_JSON=$(cargo run --quiet --bin memorynexus-cli -- reminder add \
   --title "Review project direction" \
   --content "Run a project_context Lens and decide the next MemoryNexus task." \
   --at "2026-05-26T09:00:00Z" \
-  --repeat weekly)
+  --repeat weekly \
+  --channel in_app)
 
 export MEMORYNEXUS_REMINDER_ID=$(printf '%s' "$REMINDER_JSON" | jq -r '.data.id')
 ```
@@ -392,6 +410,21 @@ cargo run --bin memorynexus-cli -- reminder list \
   --limit 20
 ```
 
+Record in-app delivery:
+
+```bash
+cargo run --bin memorynexus-cli -- reminder delivery "$MEMORYNEXUS_REMINDER_ID" \
+  --status delivered
+```
+
+Record a failed in-app delivery attempt:
+
+```bash
+cargo run --bin memorynexus-cli -- reminder delivery "$MEMORYNEXUS_REMINDER_ID" \
+  --status failed \
+  --error "client notification panel unavailable"
+```
+
 Complete a reminder:
 
 ```bash
@@ -401,9 +434,15 @@ cargo run --bin memorynexus-cli -- reminder complete "$MEMORYNEXUS_REMINDER_ID"
 `remind` is an alias for `reminder`.
 
 `--at` uses an RFC3339 timestamp such as `2026-05-26T09:00:00Z`.
-`--repeat` is optional and currently supports `daily`, `weekly`, or `monthly`.
+`--repeat` is optional and accepts `daily`, `weekly`, `monthly`, or an interval
+form such as `daily:3`, `weekly:2`, or `monthly:6`.
+`--channel` is optional and currently only supports `in_app`; delivery stays in
+the Rust reminder API as poll/in-app state rather than a separate notification
+service.
 Completing a repeated reminder advances it to the next interval instead of
 closing it permanently.
+Recurrence is calculated with UTC timestamps; if the original due time is
+already past, the next due time is based on the completion time.
 
 ## Cognitive Review Reports
 
@@ -643,6 +682,7 @@ The exact IDs and timestamps will differ, but the shape should look like:
 ```bash
 memorynexus-cli health
 memorynexus-cli config
+memorynexus-cli completion <bash|zsh|fish>
 
 memorynexus-cli auth register --email <EMAIL> --name <NAME> --password <PASSWORD>
 memorynexus-cli auth login --email <EMAIL> --password <PASSWORD>
@@ -672,11 +712,21 @@ memorynexus-cli search <QUERY> [--space <SPACE_ID>] [--lens <LENS_ID>] [--semant
 
 ## Output
 
-Successful responses pass through the backend JSON:
+Successful responses pass through the backend JSON by default:
 
 ```json
 {"ok": true, "data": {}}
 ```
+
+Human output is available for interactive use:
+
+```bash
+memorynexus-cli --format human memory list --space <SPACE_ID>
+memorynexus-cli --output human auth login --email <EMAIL> --password <PASSWORD>
+```
+
+`--format human` and `--output human` are leading global flags. `lens create
+--output <FORMAT>` keeps its existing meaning as the Lens output style.
 
 CLI-side errors are also JSON:
 
