@@ -41,6 +41,8 @@ The current baseline is the Rust-first Cognitive Lens MVP foundation:
 - ADR-014 extends the long-term direction toward Namespace, MemoryAtom,
   CognitiveScene, Lens-based CognitiveProjection, and FeedbackLoop as a feedback
   substrate, while keeping CognitiveSpace as the ownership boundary.
+- ADR-015 records Supabase as a deployment compatibility path: first as managed
+  PostgreSQL, with Auth / Storage / Realtime only as later adapters.
 
 ## Phase 2: Cognitive Lens MVP
 
@@ -219,6 +221,16 @@ Candidate follow-up work after #56-#59:
 ## Parking Lot
 
 - [#17 Human-friendly output formats and shell completion](https://github.com/blackfaced/MemoryNexus/issues/17)
+
+## Deployment Compatibility
+
+Supabase is a supported future deployment target, but not a replacement backend
+line. Follow [ADR-015](../decisions/ADR-015-supabase-integration.md):
+
+1. Validate Supabase Postgres compatibility first: [#66](https://github.com/blackfaced/MemoryNexus/issues/66).
+2. Keep Rust + Axum as the only main backend.
+3. Keep `CognitiveSpace` membership and permissions in MemoryNexus.
+4. Treat Supabase Auth, Storage, and Realtime as optional later adapters.
 
 ## Issue Hygiene
 

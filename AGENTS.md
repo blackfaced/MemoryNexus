@@ -16,6 +16,8 @@
   feedback substrate，并引入 MemoryAtom / CognitiveScene / Lens-based
   CognitiveProjection 的 memory lifecycle；但 `CognitiveSpace` 仍然是 ownership /
   permission boundary。
+- Supabase 接入边界见 ADR-015：Supabase 首先是托管 PostgreSQL 兼容目标，不是新的
+  backend 主线。Auth / Storage / Realtime 只能作为后续 adapter 单独推进。
 - EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
   agent memory retrieval 系统。当前边界是：EverMemOS 偏 memory for agent reasoning；
   MemoryNexus 偏 user-owned cognitive perspective and feedback loops。
@@ -32,6 +34,10 @@
 ## 开发规则
 
 - 新增 API、数据库访问、对象存储、向量检索、AI 编排默认落在 Rust 服务。
+- 如果接入 Supabase，默认先验证 `DATABASE_URL` 指向 Supabase Postgres 的兼容性。
+  不要绕过 Rust API 直接用 Supabase REST / PostgREST 操作核心表。
+- 不要用 Supabase RLS 取代 MemoryNexus 的 `CognitiveSpace` membership / Rust 权限检查。
+  Supabase Auth 如需接入，必须映射到本地 users 表并保留 Space 权限边界。
 - 修改 Rust 行为时优先补单元测试或端到端验收；至少运行 `cargo test`。
 - 修改静态 UI 时优先保持现有 `web/thought_review.html` 轻量实现，除非 issue/ADR
   明确要求升级前端栈。
