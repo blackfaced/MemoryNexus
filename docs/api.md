@@ -432,9 +432,11 @@ optionally reference a memory, but they do not make an agent own memory.
 }
 ```
 
-`remind_at` must be an RFC3339 timestamp. `repeat_rule` is optional and
-currently supports `daily`, `weekly`, and `monthly`. Reminders are surfaced by
-listing due items.
+`remind_at` must be an RFC3339 timestamp. `repeat_rule` is optional and accepts
+the supported subset `daily`, `weekly`, `monthly`, or an interval form such as
+`daily:3`, `weekly:2`, or `monthly:6`. Invalid frequencies, zero intervals, and
+non-numeric intervals return a `400` API error before the reminder is stored.
+Reminders are surfaced by listing due items.
 
 Delivery is part of the Rust reminder model, not a second service. The first
 supported channel is `in_app`, which means clients or agents poll due reminders
@@ -474,7 +476,8 @@ time, and error.
 Marks a pending reminder as completed if the current user is a member of the
 reminder's Cognitive Space. For a reminder with `repeat_rule`, this acknowledges
 the current occurrence and advances `remind_at` to the next interval while
-keeping the reminder pending.
+keeping the reminder pending. Recurrence uses UTC timestamps; if the original
+due time is already past, the next due time is calculated from completion time.
 
 ## Search
 

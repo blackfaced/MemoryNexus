@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
-use crate::db::reminder::{CreateReminder, ReminderDb, ReminderListFilter, UpdateReminderDelivery};
+use crate::db::reminder::{
+    validate_repeat_rule as validate_reminder_repeat_rule, CreateReminder, ReminderDb,
+    ReminderListFilter, UpdateReminderDelivery,
+};
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
 
@@ -207,10 +210,12 @@ async fn require_memory_in_space(
 
 fn validate_repeat_rule(rule: Option<&str>) -> Result<(), AppError> {
     match rule {
-        None | Some("daily" | "weekly" | "monthly") => Ok(()),
-        Some(rule) => Err(AppError::BadRequest(format!(
-            "unsupported repeat_rule: {rule}"
-        ))),
+        None => Ok(()),
+        Some(rule) => validate_reminder_repeat_rule(rule).map_err(|err| {
+            AppError::BadRequest(format!(
+                "invalid repeat_rule `{rule}`: {err}. Use daily, weekly, monthly, or <frequency>:<interval>."
+            ))
+        }),
     }
 }
 
@@ -259,7 +264,13 @@ mod tests {
     fn validates_repeat_rules() {
         assert!(validate_repeat_rule(None).is_ok());
         assert!(validate_repeat_rule(Some("daily")).is_ok());
+        assert!(validate_repeat_rule(Some("weekly:2")).is_ok());
+        assert!(validate_repeat_rule(Some("monthly:12")).is_ok());
         assert!(validate_repeat_rule(Some("hourly")).is_err());
+        assert!(validate_repeat_rule(Some("daily:0")).is_err());
+        assert!(validate_repeat_rule(Some("daily:01")).is_err());
+        assert!(validate_repeat_rule(Some(" weekly")).is_err());
+        assert!(validate_repeat_rule(Some("weekly:two")).is_err());
     }
 
     #[test]

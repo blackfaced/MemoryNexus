@@ -434,12 +434,15 @@ cargo run --bin memorynexus-cli -- reminder complete "$MEMORYNEXUS_REMINDER_ID"
 `remind` is an alias for `reminder`.
 
 `--at` uses an RFC3339 timestamp such as `2026-05-26T09:00:00Z`.
-`--repeat` is optional and currently supports `daily`, `weekly`, or `monthly`.
+`--repeat` is optional and accepts `daily`, `weekly`, `monthly`, or an interval
+form such as `daily:3`, `weekly:2`, or `monthly:6`.
 `--channel` is optional and currently only supports `in_app`; delivery stays in
 the Rust reminder API as poll/in-app state rather than a separate notification
 service.
 Completing a repeated reminder advances it to the next interval instead of
 closing it permanently.
+Recurrence is calculated with UTC timestamps; if the original due time is
+already past, the next due time is based on the completion time.
 
 ## Cognitive Review Reports
 
