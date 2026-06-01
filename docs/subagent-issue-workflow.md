@@ -58,15 +58,18 @@ Stop and ask for clarification or add an issue-context comment if:
 - It changes ownership, permission, or persistence boundaries.
 - It mixes multiple product domains, such as learning, piano, chess, drawing,
   and personal review in one task.
-- It is unclear whether the work belongs in Phase 4 Thought Review UI or Phase 5
-  Namespace / FeedbackLoop.
+- It is unclear whether the work belongs in Phase 4 Thought Review demo or the
+  Phase 5 `learning.math` product MVP.
 
 ## Current Project Defaults
 
 - `CognitiveSpace` is the ownership and permission boundary.
 - `Namespace` is a domain partition inside a `CognitiveSpace`, not a permission
   model.
-- Thought Review is the first reflective namespace product entry point.
+- Thought Review is the reflective namespace demo and project presentation entry
+  point.
+- `learning.math` is the first product MVP candidate: a parent-assisted
+  elementary math mistake feedback loop.
 - Phase 4 UI work should continue from `web/thought_review.html`.
 - Phase 5 work should start with design and minimal model/API plans before
   schema or UI expansion.

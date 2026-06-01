@@ -23,9 +23,11 @@ space through Lens-style strategies.
 Longer term, MemoryNexus is evolving toward a namespace-based long-term feedback
 substrate for personal cognition and skill acquisition. Its memory lifecycle is:
 raw Memory -> MemoryAtom -> CognitiveScene -> Lens-based CognitiveProjection ->
-Reflection / Belief / Next Action. Thought Review is the first reflective
-namespace; future skill namespaces can track practice, feedback, weak patterns,
-and next tasks for learning or craft domains.
+Reflection / Belief / Next Action. Thought Review is the first reflective demo;
+`learning.math` is the first product MVP candidate, focused on a
+parent-assisted elementary math mistake feedback loop. Future skill namespaces
+can track practice, feedback, weak patterns, and next tasks for learning or
+craft domains.
 
 That lifecycle is mode-aware: fast interactions should use recent context and
 compressed priors, while explicit reviews can run deeper Lens projection and
