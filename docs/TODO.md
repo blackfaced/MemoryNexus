@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-05-26
+> Last updated: 2026-06-01
 > Source of truth for executable tasks: GitHub Issues.
 
 This file is now a roadmap summary. Do not maintain detailed task status in
@@ -13,7 +13,7 @@ decisions in `decisions/` as ADRs.
 - [Phase 2 Cognitive Lens MVP](https://github.com/blackfaced/MemoryNexus/milestone/3)
 - [Phase 3 Personal Cognitive Features](https://github.com/blackfaced/MemoryNexus/milestone/1)
 - [Phase 4 User Interface](https://github.com/blackfaced/MemoryNexus/milestone/2)
-- [Phase 5 Namespace Feedback Loops](https://github.com/blackfaced/MemoryNexus/milestone/4)
+- [Phase 5 Namespace Memory Lifecycle and Feedback Loops](https://github.com/blackfaced/MemoryNexus/milestone/4)
 
 Recommended labels:
 
@@ -38,8 +38,9 @@ The current baseline is the Rust-first Cognitive Lens MVP foundation:
   `OPENROUTER_API_KEY`.
 - Phase 2 Cognitive Lens MVP is complete and the GitHub milestone is closed.
 - Phase 4 has a Rust-served Thought Review MVP at `/` and `/app`.
-- ADR-014 extends the long-term direction toward Namespace and FeedbackLoop as a
-  feedback substrate, while keeping CognitiveSpace as the ownership boundary.
+- ADR-014 extends the long-term direction toward Namespace, MemoryAtom,
+  CognitiveScene, Lens-based CognitiveProjection, and FeedbackLoop as a feedback
+  substrate, while keeping CognitiveSpace as the ownership boundary.
 
 ## Phase 2: Cognitive Lens MVP
 
@@ -136,11 +137,11 @@ Recently completed:
   broad MVP memory UI scope is covered; remaining filter/sort work continues in
   #55.
 
-## Phase 5: Namespace Feedback Loops
+## Phase 5: Namespace Memory Lifecycle and Feedback Loops
 
 Goal: extend the cognitive memory foundation into a namespace-based long-term
-feedback substrate while keeping Thought Review as the first narrow product
-entry point.
+feedback substrate with an explicit memory lifecycle, while keeping Thought
+Review as the first narrow product entry point.
 
 Direction:
 
@@ -149,10 +150,41 @@ Direction:
   `personal.thoughts`, `learning.math`, `music.piano`, or `chess.tactics`.
 - `FeedbackLoop` captures goal, task, attempt, evaluation, feedback, adjustment,
   and next task.
+- `MemoryAtom` captures the smallest traceable cognitive signal extracted from a
+  Memory.
+- `CognitiveScene` consolidates related atoms, reflections, concepts, beliefs,
+  and contradictions into a long-running theme or practice field.
+- `CognitiveProjection` is the Lens-specific reconstructed context for the
+  current query; it is not plain top-k retrieval.
+- Observe modes split projection cost into `fast`, `focused`, and `deep`, so
+  ordinary interaction stays low-latency while explicit review can go deep.
 - Reflective namespaces focus on meaning, belief, contradiction, identity, and
   direction.
 - Skill namespaces focus on practice, error pattern, progress, feedback, and
   next practice.
+- EverMemOS is a useful reference for memory lifecycle ideas, but MemoryNexus
+  keeps a different product boundary: user-owned cognitive perspective and
+  feedback loops, not agent memory for reasoning.
+
+Lifecycle:
+
+```text
+Experience / Thought / Practice
+→ Memory
+→ MemoryAtom
+→ CognitiveScene
+→ Lens-based CognitiveProjection
+→ Reflection / Belief / Next Action
+→ FeedbackLoop
+```
+
+Runtime policy:
+
+```text
+Every input -> fast response + optional async processing
+Important input -> focused projection
+Scheduled review / explicit request -> deep consolidation and projection
+```
 
 Recently completed:
 
@@ -167,11 +199,20 @@ Current open work:
 - [#57 Minimal FeedbackLoop database model and API](https://github.com/blackfaced/MemoryNexus/issues/57)
 - [#58 Namespace filters and FeedbackLoop provenance threading](https://github.com/blackfaced/MemoryNexus/issues/58)
 - [#59 learning.math Skill Namespace MVP design](https://github.com/blackfaced/MemoryNexus/issues/59)
+- [#60 Define MemoryAtom and CognitiveScene lifecycle](https://github.com/blackfaced/MemoryNexus/issues/60)
+- [#61 Build MemoryNexus self-dataset atomization fixture](https://github.com/blackfaced/MemoryNexus/issues/61)
+- [#62 Define Lens-based CognitiveProjection contract](https://github.com/blackfaced/MemoryNexus/issues/62)
+- [#63 Prototype CognitiveScene consolidation](https://github.com/blackfaced/MemoryNexus/issues/63)
+- [#65 Define dual-system observe modes](https://github.com/blackfaced/MemoryNexus/issues/65)
 
 Candidate follow-up work after #56-#59:
 
 - Add end-to-end acceptance tests for Space -> Namespace -> FeedbackLoop ->
   Memory -> Lens Run -> Review Report/Profile.
+- Add prototype tests for Memory -> MemoryAtom -> CognitiveScene ->
+  CognitiveProjection over a small MemoryNexus project-note fixture.
+- Add latency and behavior acceptance criteria proving `fast` mode does not run
+  the full deep cognitive pipeline.
 - Keep product entry points narrow; do not expose every possible namespace in
   the first UI.
 

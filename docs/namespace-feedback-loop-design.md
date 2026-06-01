@@ -9,9 +9,14 @@
 - Add a minimal `Namespace` model scoped inside a `CognitiveSpace`.
 - Add a minimal `FeedbackLoop` model for long-running reflective and skill
   feedback cycles.
+- Define how the Phase 5 memory lifecycle fits around Namespace and
+  FeedbackLoop: `MemoryAtom`, `CognitiveScene`, and Lens-based
+  `CognitiveProjection`.
 - Preserve `CognitiveSpace` as the only ownership and permission boundary.
 - Define how Memory, Lens Run, Review Report, and Profile keep namespace and
   feedback-loop provenance.
+- Define `fast`, `focused`, and `deep` observe modes so lifecycle work does not
+  force every interaction through the slow path.
 - Split the follow-up implementation into small migration, API, and test issues.
 
 ## Non-Goals
@@ -21,6 +26,12 @@
 - Do not build the `learning.math` product UI in this issue.
 - Do not implement multiple vertical products such as piano, chess, drawing, and
   math at the same time.
+- Do not copy EverMemOS object names or product direction into MemoryNexus.
+  EverMemOS is a lifecycle reference for agent memory; MemoryNexus remains a
+  user-owned cognitive perspective and feedback-loop system.
+- Do not require `MemoryAtom`, `CognitiveScene`, or `CognitiveProjection` to land
+  in the same schema migration as Namespace and FeedbackLoop.
+- Do not make deep multi-lens projection the default for every user input.
 - Do not introduce a second backend. All future implementation belongs in the
   Rust + Axum service.
 
@@ -45,6 +56,33 @@ What goal, task, attempt, feedback, adjustment, and next task are being tracked
 inside that domain?
 ```
 
+`MemoryAtom` answers:
+
+```text
+Which minimal cognitive signals were extracted from a raw Memory?
+```
+
+`CognitiveScene` answers:
+
+```text
+Which atoms, reflections, concepts, beliefs, and contradictions are consolidating
+into a long-running theme or practice field?
+```
+
+`CognitiveProjection` answers:
+
+```text
+How should a Lens reconstruct enough context for the current query from active
+scenes, atoms, concepts, beliefs, and contradictions?
+```
+
+`ObserveMode` answers:
+
+```text
+Should this interaction use fast intuitive recall, focused single-lens
+projection, or deep reflective consolidation?
+```
+
 The containment hierarchy is:
 
 ```text
@@ -52,6 +90,9 @@ CognitiveSpace
   -> Namespace
        -> FeedbackLoop
             -> Memory
+            -> MemoryAtom
+            -> CognitiveScene
+            -> CognitiveProjection
             -> Lens Run
             -> Review Report
             -> Profile Snapshot
@@ -60,6 +101,95 @@ CognitiveSpace
 The permission check always starts from `space_id` and
 `cognitive_space_members`. A user who cannot access the Space cannot access any
 Namespace or FeedbackLoop inside it.
+
+The lifecycle flow is:
+
+```text
+Experience / Thought / Practice
+-> Memory
+-> MemoryAtom
+-> CognitiveScene
+-> Lens-based CognitiveProjection
+-> Reflection / Belief / Next Action
+-> FeedbackLoop
+```
+
+This lifecycle has two runtime channels:
+
+```text
+System 1 / fast:
+recent memories + pinned facts + high-salience scenes + compressed profile
+-> low-latency response
+-> optional async processing
+
+System 2 / focused or deep:
+atomization
+-> scene update
+-> cognitive projection
+-> reflection / concept / belief / contradiction / next action
+```
+
+The first Phase 5 implementation should still start with Namespace and
+FeedbackLoop schema foundation. MemoryAtom, CognitiveScene, and
+CognitiveProjection should begin as design/prototype issues so their usefulness
+can be validated before committing to permanent tables.
+
+## Observe Modes
+
+Future observe / projection APIs should support three modes:
+
+### `fast`
+
+Use for immediate conversation, lightweight capture, and practice-in-progress
+feedback.
+
+Allowed work:
+
+- recent-memory retrieval
+- pinned facts
+- high-salience scenes
+- compressed `CognitiveProfile` / `SkillProfile` priors
+- optional async enqueue for later atomization or consolidation
+
+Avoid:
+
+- multi-lens projection
+- synchronous belief update
+- synchronous contradiction detection
+- synchronous scene consolidation
+
+### `focused`
+
+Use for ordinary questions and single-step review.
+
+Allowed work:
+
+- one primary Lens
+- a small number of active scenes / atoms / concepts
+- short `CognitiveProjection` with provenance
+- Reflection generation when useful
+
+Avoid:
+
+- full weekly-style consolidation
+- unrelated Lens fan-out
+
+### `deep`
+
+Use for explicit weekly review, learning plan generation, project decisions, and
+other user-triggered deep work.
+
+Allowed work:
+
+- multi-lens projection
+- atomization
+- scene update
+- concept / belief update
+- contradiction detection
+- FeedbackLoop adjustment or next action generation
+
+Deep mode may be slower, but it must return clear provenance so the user can see
+which memories, atoms, scenes, and lenses shaped the result.
 
 ## Minimal Namespace Model
 
@@ -164,6 +294,42 @@ Recommended first step:
 - Enforce `memories.namespace_id` belongs to `memories.space_id`.
 - Enforce `memories.feedback_loop_id`, when present, belongs to the same Space
   and Namespace.
+
+## Memory Lifecycle Prototype Boundary
+
+The lifecycle objects should be validated with a small MemoryNexus project-note
+fixture before they become database tables.
+
+Prototype flow:
+
+```text
+10-20 project memories
+-> 20-40 MemoryAtom candidates
+-> 3-5 CognitiveScene candidates
+-> several Lens-based CognitiveProjection examples for the same query
+```
+
+Useful fixture query:
+
+```text
+MemoryNexus 下一步该做什么？
+```
+
+Expected Lens examples:
+
+- Product Lens should emphasize first action, ordinary-user entry, Thought
+  Review magic moment, and `learning.math` as a possible concrete entry.
+- Systems Lens should emphasize CognitiveSpace boundary, Namespace,
+  FeedbackLoop provenance, MemoryAtom, and CognitiveScene.
+- Learning Coach Lens should emphasize skill namespace loops, practice design,
+  error patterns, and next practice.
+
+Acceptance signal:
+
+```text
+Different Lens projections over the same query select meaningfully different
+context while citing the scenes and atoms they used.
+```
 
 ## Provenance for Derived Objects
 
