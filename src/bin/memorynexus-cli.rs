@@ -179,6 +179,7 @@ enum Command {
         title: Option<String>,
         memory_id: Option<String>,
         repeat_rule: Option<String>,
+        delivery_channel: Option<String>,
     },
     ReminderList {
         space_id: String,
@@ -188,6 +189,11 @@ enum Command {
     },
     ReminderComplete {
         id: String,
+    },
+    ReminderDelivery {
+        id: String,
+        status: String,
+        error: Option<String>,
     },
     ReviewCreate {
         space_id: String,
@@ -663,6 +669,7 @@ fn parse_reminder_command(args: &[String]) -> Result<Command, CliError> {
             title: optional_flag(args, "--title"),
             memory_id: optional_flag(args, "--memory"),
             repeat_rule: optional_flag(args, "--repeat"),
+            delivery_channel: optional_flag(args, "--channel"),
         }),
         "list" => Ok(Command::ReminderList {
             space_id: required_flag(args, "--space")?,
@@ -676,6 +683,15 @@ fn parse_reminder_command(args: &[String]) -> Result<Command, CliError> {
                 .filter(|id| !id.starts_with("--"))
                 .cloned()
                 .ok_or_else(|| CliError::new("reminder id is required"))?,
+        }),
+        "delivery" => Ok(Command::ReminderDelivery {
+            id: args
+                .get(1)
+                .filter(|id| !id.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| CliError::new("reminder id is required"))?,
+            status: required_flag(args, "--status")?,
+            error: optional_flag(args, "--error"),
         }),
         _ => Err(CliError::new("unknown reminder subcommand")),
     }
@@ -977,6 +993,7 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             title,
             memory_id,
             repeat_rule,
+            delivery_channel,
         } => Ok(RequestSpec {
             method: HttpMethod::Post,
             url: format!("{base_url}/api/v1/reminders"),
@@ -987,6 +1004,7 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
                 "content": content,
                 "remind_at": remind_at,
                 "repeat_rule": repeat_rule,
+                "delivery_channel": delivery_channel,
             })),
             token: Some(require_token(config)?),
         }),
@@ -1018,6 +1036,15 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             method: HttpMethod::Post,
             url: format!("{base_url}/api/v1/reminders/{id}/complete"),
             body: None,
+            token: Some(require_token(config)?),
+        }),
+        Command::ReminderDelivery { id, status, error } => Ok(RequestSpec {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/reminders/{id}/delivery"),
+            body: Some(json!({
+                "status": status,
+                "error": error,
+            })),
             token: Some(require_token(config)?),
         }),
         Command::ReviewCreate {
@@ -2313,6 +2340,8 @@ mod tests {
             "2026-05-26T09:00:00Z",
             "--repeat",
             "weekly",
+            "--channel",
+            "in_app",
         ])
         .unwrap();
         let list = parse_command([
@@ -2328,6 +2357,17 @@ mod tests {
         .unwrap();
         let complete =
             parse_command(["memorynexus-cli", "reminder", "complete", "reminder-123"]).unwrap();
+        let failed_delivery = parse_command([
+            "memorynexus-cli",
+            "reminder",
+            "delivery",
+            "reminder-123",
+            "--status",
+            "failed",
+            "--error",
+            "client notification panel unavailable",
+        ])
+        .unwrap();
 
         assert_eq!(
             add,
@@ -2338,6 +2378,7 @@ mod tests {
                 title: None,
                 memory_id: None,
                 repeat_rule: Some("weekly".to_string()),
+                delivery_channel: Some("in_app".to_string()),
             }
         );
         assert_eq!(
@@ -2353,6 +2394,14 @@ mod tests {
             complete,
             Command::ReminderComplete {
                 id: "reminder-123".to_string(),
+            }
+        );
+        assert_eq!(
+            failed_delivery,
+            Command::ReminderDelivery {
+                id: "reminder-123".to_string(),
+                status: "failed".to_string(),
+                error: Some("client notification panel unavailable".to_string()),
             }
         );
     }
@@ -2790,6 +2839,7 @@ mod tests {
                 title: Some("Review".to_string()),
                 memory_id: Some("memory-123".to_string()),
                 repeat_rule: Some("weekly".to_string()),
+                delivery_channel: Some("in_app".to_string()),
             },
         )
         .unwrap();
@@ -2810,6 +2860,15 @@ mod tests {
             },
         )
         .unwrap();
+        let failed_delivery = build_request(
+            &config,
+            &Command::ReminderDelivery {
+                id: "reminder-123".to_string(),
+                status: "failed".to_string(),
+                error: Some("client notification panel unavailable".to_string()),
+            },
+        )
+        .unwrap();
 
         assert_eq!(add.method, HttpMethod::Post);
         assert_eq!(add.url, "http://localhost:8080/api/v1/reminders");
@@ -2822,6 +2881,7 @@ mod tests {
                 "content": "Review Rust practice",
                 "remind_at": "2026-05-26T09:00:00Z",
                 "repeat_rule": "weekly",
+                "delivery_channel": "in_app",
             }))
         );
         assert_eq!(list.method, HttpMethod::Get);
@@ -2833,6 +2893,18 @@ mod tests {
         assert_eq!(
             complete.url,
             "http://localhost:8080/api/v1/reminders/reminder-123/complete"
+        );
+        assert_eq!(failed_delivery.method, HttpMethod::Post);
+        assert_eq!(
+            failed_delivery.url,
+            "http://localhost:8080/api/v1/reminders/reminder-123/delivery"
+        );
+        assert_eq!(
+            failed_delivery.body,
+            Some(json!({
+                "status": "failed",
+                "error": "client notification panel unavailable",
+            }))
         );
     }
 

@@ -376,8 +376,8 @@ assigned through invite or role update.
 ## Reminders
 
 Reminders are scheduled recall items inside a `CognitiveSpace`. The MVP exposes
-create/list/complete commands; clients or agents can poll due reminders with
-`--due`.
+create/list/delivery/complete commands; clients or agents can poll due reminders
+with `--due`.
 
 Create a reminder:
 
@@ -387,7 +387,8 @@ REMINDER_JSON=$(cargo run --quiet --bin memorynexus-cli -- reminder add \
   --title "Review project direction" \
   --content "Run a project_context Lens and decide the next MemoryNexus task." \
   --at "2026-05-26T09:00:00Z" \
-  --repeat weekly)
+  --repeat weekly \
+  --channel in_app)
 
 export MEMORYNEXUS_REMINDER_ID=$(printf '%s' "$REMINDER_JSON" | jq -r '.data.id')
 ```
@@ -409,6 +410,21 @@ cargo run --bin memorynexus-cli -- reminder list \
   --limit 20
 ```
 
+Record in-app delivery:
+
+```bash
+cargo run --bin memorynexus-cli -- reminder delivery "$MEMORYNEXUS_REMINDER_ID" \
+  --status delivered
+```
+
+Record a failed in-app delivery attempt:
+
+```bash
+cargo run --bin memorynexus-cli -- reminder delivery "$MEMORYNEXUS_REMINDER_ID" \
+  --status failed \
+  --error "client notification panel unavailable"
+```
+
 Complete a reminder:
 
 ```bash
@@ -419,6 +435,9 @@ cargo run --bin memorynexus-cli -- reminder complete "$MEMORYNEXUS_REMINDER_ID"
 
 `--at` uses an RFC3339 timestamp such as `2026-05-26T09:00:00Z`.
 `--repeat` is optional and currently supports `daily`, `weekly`, or `monthly`.
+`--channel` is optional and currently only supports `in_app`; delivery stays in
+the Rust reminder API as poll/in-app state rather than a separate notification
+service.
 Completing a repeated reminder advances it to the next interval instead of
 closing it permanently.
 

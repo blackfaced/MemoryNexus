@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
-use crate::db::reminder::{CreateReminder, ReminderDb, ReminderListFilter};
+use crate::db::reminder::{CreateReminder, ReminderDb, ReminderListFilter, UpdateReminderDelivery};
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
 
@@ -22,6 +22,13 @@ pub struct CreateReminderRequest {
     pub content: String,
     pub remind_at: DateTime<Utc>,
     pub repeat_rule: Option<String>,
+    pub delivery_channel: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateReminderDeliveryRequest {
+    pub status: String,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,6 +60,7 @@ pub async fn create(
         ));
     }
     validate_repeat_rule(req.repeat_rule.as_deref())?;
+    let delivery_channel = validate_delivery_channel(req.delivery_channel.as_deref())?;
     require_space_member(&state, req.space_id, auth_user.user_id).await?;
     require_memory_in_space(&state, req.memory_id, req.space_id).await?;
 
@@ -67,6 +75,7 @@ pub async fn create(
             content: content.to_string(),
             remind_at: req.remind_at,
             repeat_rule: req.repeat_rule,
+            delivery_channel,
         })
         .await
         .map_err(AppError::Database)?;
@@ -115,6 +124,42 @@ pub async fn complete(
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("pending reminder not found".to_string()))?;
+
+    Ok(Json(ApiResponse::success(reminder)))
+}
+
+/// POST /api/v1/reminders/:id/delivery - Record in-app delivery status.
+pub async fn update_delivery(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateReminderDeliveryRequest>,
+) -> Result<Json<ApiResponse<ReminderDb>>, AppError> {
+    validate_delivery_status(&req.status)?;
+    let error = req
+        .error
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if req.status == "failed" && error.is_none() {
+        return Err(AppError::BadRequest(
+            "delivery error is required when status is failed".to_string(),
+        ));
+    }
+
+    let reminder = state
+        .repositories
+        .reminders
+        .update_delivery_for_user(UpdateReminderDelivery {
+            reminder_id: id,
+            user_id: auth_user.user_id,
+            status: req.status,
+            error,
+            source: "api_in_app_poll".to_string(),
+        })
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("due in-app reminder not found".to_string()))?;
 
     Ok(Json(ApiResponse::success(reminder)))
 }
@@ -169,6 +214,24 @@ fn validate_repeat_rule(rule: Option<&str>) -> Result<(), AppError> {
     }
 }
 
+fn validate_delivery_channel(channel: Option<&str>) -> Result<String, AppError> {
+    match channel {
+        None | Some("in_app") => Ok("in_app".to_string()),
+        Some(channel) => Err(AppError::BadRequest(format!(
+            "unsupported delivery_channel: {channel}"
+        ))),
+    }
+}
+
+fn validate_delivery_status(status: &str) -> Result<(), AppError> {
+    match status {
+        "delivered" | "failed" => Ok(()),
+        status => Err(AppError::BadRequest(format!(
+            "unsupported delivery status: {status}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,13 +244,15 @@ mod tests {
                 "title":"Review",
                 "content":"Review MemoryNexus",
                 "remind_at":"2026-05-26T09:00:00Z",
-                "repeat_rule":"weekly"
+                "repeat_rule":"weekly",
+                "delivery_channel":"in_app"
             }"#,
         )
         .unwrap();
 
         assert_eq!(req.title.as_deref(), Some("Review"));
         assert_eq!(req.repeat_rule.as_deref(), Some("weekly"));
+        assert_eq!(req.delivery_channel.as_deref(), Some("in_app"));
     }
 
     #[test]
@@ -195,5 +260,19 @@ mod tests {
         assert!(validate_repeat_rule(None).is_ok());
         assert!(validate_repeat_rule(Some("daily")).is_ok());
         assert!(validate_repeat_rule(Some("hourly")).is_err());
+    }
+
+    #[test]
+    fn validates_delivery_channels() {
+        assert!(validate_delivery_channel(None).is_ok());
+        assert!(validate_delivery_channel(Some("in_app")).is_ok());
+        assert!(validate_delivery_channel(Some("email")).is_err());
+    }
+
+    #[test]
+    fn validates_delivery_status_updates() {
+        assert!(validate_delivery_status("delivered").is_ok());
+        assert!(validate_delivery_status("failed").is_ok());
+        assert!(validate_delivery_status("pending").is_err());
     }
 }

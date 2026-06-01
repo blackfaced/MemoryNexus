@@ -427,7 +427,8 @@ optionally reference a memory, but they do not make an agent own memory.
   "title": "Review Rust notes",
   "content": "Review this week's Rust practice and extract next actions.",
   "remind_at": "2026-05-26T09:00:00Z",
-  "repeat_rule": "weekly"
+  "repeat_rule": "weekly",
+  "delivery_channel": "in_app"
 }
 ```
 
@@ -435,12 +436,36 @@ optionally reference a memory, but they do not make an agent own memory.
 currently supports `daily`, `weekly`, and `monthly`. Reminders are surfaced by
 listing due items.
 
+Delivery is part of the Rust reminder model, not a second service. The first
+supported channel is `in_app`, which means clients or agents poll due reminders
+and then record whether the in-app surface displayed the reminder. Reminder
+responses include `delivery_channel`, `delivery_status`,
+`delivery_attempted_at`, `delivered_at`, `delivery_error`, and
+`delivery_provenance`.
+
 ### List Reminders
 
 `GET /api/v1/reminders?space_id=<SPACE_ID>&due_only=false&include_completed=false&limit=20`
 
 Set `due_only=true` to fetch pending reminders whose `remind_at` is not in the
 future. Completed reminders are hidden unless `include_completed=true`.
+
+### Record Reminder Delivery
+
+`POST /api/v1/reminders/:id/delivery`
+
+```json
+{
+  "status": "delivered",
+  "error": null
+}
+```
+
+`status` must be `delivered` or `failed`; failed delivery requires a non-empty
+`error`. The update is limited to due, pending `in_app` reminders visible
+through the current user's Cognitive Space membership. The API stores delivery
+status and provenance including channel, source, actor user, status, attempted
+time, and error.
 
 ### Complete Reminder
 

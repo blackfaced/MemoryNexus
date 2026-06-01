@@ -114,6 +114,10 @@ pub fn routes() -> Router<AppState> {
             "/api/v1/reminders/:id/complete",
             axum::routing::post(reminders::complete),
         )
+        .route(
+            "/api/v1/reminders/:id/delivery",
+            axum::routing::post(reminders::update_delivery),
+        )
         // Cognitive Profile projections
         .route("/api/v1/profiles", axum::routing::post(profiles::create))
         .route("/api/v1/profiles/:id", axum::routing::get(profiles::get))

@@ -207,8 +207,11 @@ source memory IDs and Lens Run IDs, so later answers can explain which
 Cognitive Space materials shaped the context.
 
 Use `list_reminders` with `due_only=true` at the start of a personal-agent
-session when the agent should surface scheduled recall. Complete a reminder only
-after the user or agent has handled it.
+session when the agent should surface scheduled recall. If the agent displays a
+due reminder in-app, call `mark_reminder_delivery` with `delivered`; if the
+client surface cannot display it, call `mark_reminder_delivery` with `failed`
+and a short error. Complete a reminder only after the user or agent has handled
+it.
 
 Use CLI/API review reports for periodic synthesis. A review report is a
 persisted Lens-based interpretation over a time window, not a new owned memory.
@@ -271,5 +274,6 @@ from the same `CognitiveSpace`, and any due reminders.
 
 - Router policy is deterministic and conservative; it recommends actions but
   does not execute them automatically.
-- Reminder delivery is poll-based. Background dispatch, external notification
-  channels, and richer recurrence rules are still Phase 3 follow-up work.
+- Reminder delivery is poll/in-app based and recorded inside the Rust reminder
+  API. Background dispatch, external notification channels, and richer
+  recurrence rules are still Phase 3 follow-up work.

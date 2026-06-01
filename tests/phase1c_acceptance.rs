@@ -245,6 +245,14 @@ fn run_acceptance_flow(run_id: &str, api_url: &str) {
         reminder["data"]["space_id"],
         Value::String(space_id.clone())
     );
+    assert_eq!(
+        reminder["data"]["delivery_channel"],
+        Value::String("in_app".to_string())
+    );
+    assert_eq!(
+        reminder["data"]["delivery_status"],
+        Value::String("pending".to_string())
+    );
 
     let due_reminders = cli(
         [
@@ -262,6 +270,47 @@ fn run_acceptance_flow(run_id: &str, api_url: &str) {
             .iter()
             .any(|reminder| reminder["id"] == reminder_id),
         "due reminder list should include created reminder: {due_reminders}"
+    );
+
+    let unauthorized_delivery = cli(
+        [
+            "reminder",
+            "delivery",
+            &reminder_id,
+            "--status",
+            "failed",
+            "--error",
+            "wrong space member",
+        ],
+        Some(&family_member_token),
+        api_url,
+    );
+    assert!(
+        !unauthorized_delivery["success"].as_bool().unwrap_or(true),
+        "non-member must not record reminder delivery across spaces: {unauthorized_delivery}"
+    );
+
+    let failed_delivery = cli(
+        [
+            "reminder",
+            "delivery",
+            &reminder_id,
+            "--status",
+            "failed",
+            "--error",
+            "acceptance client notification panel unavailable",
+        ],
+        Some(&token),
+        api_url,
+    );
+    assert_ok(&failed_delivery);
+    assert_eq!(
+        failed_delivery["data"]["delivery_status"],
+        Value::String("failed".to_string())
+    );
+    assert_eq!(
+        failed_delivery["data"]["delivery_error"],
+        Value::String("acceptance client notification panel unavailable".to_string())
     );
 
     let completed_reminder = cli(
