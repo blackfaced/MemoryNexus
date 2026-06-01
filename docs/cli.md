@@ -1,7 +1,9 @@
 # MemoryNexus CLI
 
-`memorynexus-cli` is a thin stateless client for the Rust API. It outputs JSON
-by default so humans, scripts, and agents can parse the same responses.
+`memorynexus-cli` is a thin stateless client for the Rust API. Existing commands
+output JSON by default so humans, scripts, and agents can parse the same
+responses. Add `--format human` for a readable summary when using the CLI
+interactively.
 
 ## Configuration
 
@@ -73,10 +75,25 @@ Run the CLI in another terminal:
 cargo run --bin memorynexus-cli -- health
 cargo run --bin memorynexus-cli -- config
 cargo run --bin memorynexus-cli -- version
+cargo run --bin memorynexus-cli -- --format human memory list --limit 5
 ```
 
 `config` reads the running API process configuration. Use it to confirm which
 embedding and summary providers the API actually started with.
+
+## Shell Completion
+
+Generate completion scripts for bash, zsh, or fish:
+
+```bash
+memorynexus-cli completion bash
+memorynexus-cli completion zsh
+memorynexus-cli completion fish
+```
+
+`completion` prints the script directly by default so it can be installed or
+evaluated by your shell. Use `--format json` if another tool needs the script
+wrapped in the normal CLI response envelope.
 
 ## Local Version And Upgrade Helpers
 
@@ -643,6 +660,7 @@ The exact IDs and timestamps will differ, but the shape should look like:
 ```bash
 memorynexus-cli health
 memorynexus-cli config
+memorynexus-cli completion <bash|zsh|fish>
 
 memorynexus-cli auth register --email <EMAIL> --name <NAME> --password <PASSWORD>
 memorynexus-cli auth login --email <EMAIL> --password <PASSWORD>
@@ -672,11 +690,21 @@ memorynexus-cli search <QUERY> [--space <SPACE_ID>] [--lens <LENS_ID>] [--semant
 
 ## Output
 
-Successful responses pass through the backend JSON:
+Successful responses pass through the backend JSON by default:
 
 ```json
 {"ok": true, "data": {}}
 ```
+
+Human output is available for interactive use:
+
+```bash
+memorynexus-cli --format human memory list --space <SPACE_ID>
+memorynexus-cli --output human auth login --email <EMAIL> --password <PASSWORD>
+```
+
+`--format human` and `--output human` are leading global flags. `lens create
+--output <FORMAT>` keeps its existing meaning as the Lens output style.
 
 CLI-side errors are also JSON:
 

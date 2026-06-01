@@ -76,6 +76,9 @@ enum Command {
     Health,
     Config,
     Version,
+    Completion {
+        shell: Shell,
+    },
     InstallStatus {
         checkout_dir: Option<String>,
     },
@@ -211,6 +214,46 @@ enum Command {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputFormat {
+    Json,
+    Human,
+}
+
+impl OutputFormat {
+    fn parse(value: &str, flag: &str) -> Result<Self, CliError> {
+        match value {
+            "json" => Ok(Self::Json),
+            "human" => Ok(Self::Human),
+            _ => Err(CliError::new(format!("{flag} must be json or human"))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+}
+
+impl Shell {
+    fn parse(value: &str) -> Result<Self, CliError> {
+        match value {
+            "bash" => Ok(Self::Bash),
+            "zsh" => Ok(Self::Zsh),
+            "fish" => Ok(Self::Fish),
+            _ => Err(CliError::new("shell must be bash, zsh, or fish")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CliInvocation {
+    command: Command,
+    output_format: OutputFormat,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Config {
     api_url: String,
@@ -275,21 +318,63 @@ impl std::error::Error for CliError {}
 
 #[tokio::main]
 async fn main() {
-    let command = parse_command(std::env::args());
-    let result = match command {
-        Ok(command) => execute(&Config::from_env(), &command).await,
+    let invocation = parse_cli(std::env::args());
+    let result = match invocation {
+        Ok(invocation) => execute(&Config::from_env(), &invocation.command)
+            .await
+            .map(|value| render_output(&value, invocation.output_format)),
         Err(error) => Err(error),
     };
 
     match result {
-        Ok(value) => {
-            println!("{}", value);
+        Ok(output) => {
+            println!("{}", output);
         }
         Err(error) => {
             eprintln!("{}", error.to_json());
             std::process::exit(1);
         }
     }
+}
+
+fn parse_cli<I, S>(args: I) -> Result<CliInvocation, CliError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut args: Vec<String> = args
+        .into_iter()
+        .map(|arg| arg.as_ref().to_string())
+        .collect();
+    let mut output_format = OutputFormat::Json;
+    let mut output_format_was_set = false;
+
+    if matches!(
+        args.get(1).map(String::as_str),
+        Some("--output" | "--format")
+    ) {
+        let flag = args[1].clone();
+        let value = args
+            .get(2)
+            .ok_or_else(|| CliError::new(format!("{flag} requires json or human")))?;
+        output_format = OutputFormat::parse(value, &flag)?;
+        output_format_was_set = true;
+        args.drain(1..=2);
+    }
+
+    if args.iter().skip(2).any(|arg| arg == "--format") {
+        return Err(CliError::new("--format must be a leading global flag"));
+    }
+
+    let command = parse_command(args)?;
+    if matches!(command, Command::Completion { .. }) && !output_format_was_set {
+        output_format = OutputFormat::Human;
+    }
+
+    Ok(CliInvocation {
+        command,
+        output_format,
+    })
 }
 
 fn parse_command<I, S>(args: I) -> Result<Command, CliError>
@@ -309,6 +394,7 @@ where
         "health" => Ok(Command::Health),
         "config" => Ok(Command::Config),
         "version" => Ok(Command::Version),
+        "completion" => parse_completion_command(&args[2..]),
         "install" => parse_install_command(&args[2..]),
         "upgrade" => parse_upgrade_command(&args[2..]),
         "auth" => parse_auth_command(&args[2..]),
@@ -321,6 +407,16 @@ where
         "search" => parse_search_command(&args[2..]),
         _ => Err(CliError::new(usage())),
     }
+}
+
+fn parse_completion_command(args: &[String]) -> Result<Command, CliError> {
+    let shell = args
+        .first()
+        .filter(|shell| !shell.starts_with("--"))
+        .ok_or_else(|| CliError::new("completion shell is required"))?;
+    Ok(Command::Completion {
+        shell: Shell::parse(shell)?,
+    })
 }
 
 fn parse_install_command(args: &[String]) -> Result<Command, CliError> {
@@ -648,9 +744,10 @@ fn build_request(config: &Config, command: &Command) -> Result<RequestSpec, CliE
             body: None,
             token: None,
         }),
-        Command::Version | Command::InstallStatus { .. } | Command::Upgrade { .. } => {
-            Err(CliError::new("local command has no HTTP request"))
-        }
+        Command::Version
+        | Command::Completion { .. }
+        | Command::InstallStatus { .. }
+        | Command::Upgrade { .. } => Err(CliError::new("local command has no HTTP request")),
         Command::AuthRegister {
             email,
             username,
@@ -1000,6 +1097,14 @@ async fn execute(config: &Config, command: &Command) -> Result<Value, CliError> 
     match command {
         Command::LensTemplates => return Ok(lens_templates_response()),
         Command::Version => return Ok(local_version_response()),
+        Command::Completion { shell } => {
+            return Ok(json!({
+                "ok": true,
+                "data": {
+                    "script": completion_script(*shell),
+                }
+            }));
+        }
         Command::InstallStatus { checkout_dir } => {
             return install_status_response(config, checkout_dir.as_deref()).await;
         }
@@ -1386,13 +1491,333 @@ fn with_query(base_url: &str, pairs: &[(&str, &str)]) -> Result<String, CliError
     Ok(url.to_string())
 }
 
+fn render_output(value: &Value, output_format: OutputFormat) -> String {
+    match output_format {
+        OutputFormat::Json => value.to_string(),
+        OutputFormat::Human => render_human_output(value),
+    }
+}
+
+fn render_human_output(value: &Value) -> String {
+    if value.get("ok") == Some(&Value::Bool(false)) {
+        return value["error"]["message"]
+            .as_str()
+            .unwrap_or("command failed")
+            .to_string();
+    }
+
+    let data = value.get("data").unwrap_or(value);
+    if let Some(script) = data.get("script").and_then(Value::as_str) {
+        return script.to_string();
+    }
+
+    let mut lines = vec!["MemoryNexus".to_string()];
+    if let Some(user) = data.get("user") {
+        if let Some(email) = user.get("email").and_then(Value::as_str) {
+            lines.push(format!("User: {email}"));
+        }
+    }
+    if let Some(token) = data.get("token").and_then(Value::as_str) {
+        lines.push(format!("Token: {}", redact_secret(token)));
+    }
+    if let Some(items) = data.get("items").and_then(Value::as_array) {
+        if items.is_empty() {
+            lines.push("No items.".to_string());
+        } else {
+            for item in items {
+                lines.push(render_human_item(item));
+            }
+        }
+    } else if let Some(id) = data.get("id").and_then(Value::as_str) {
+        lines.push(render_human_item(data));
+        lines.push(format!("ID: {id}"));
+    } else if lines.len() == 1 {
+        lines.push(serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string()));
+    }
+
+    lines.join("\n")
+}
+
+fn render_human_item(item: &Value) -> String {
+    let title = item
+        .get("title")
+        .or_else(|| item.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("Untitled");
+    let id = item.get("id").and_then(Value::as_str).unwrap_or("-");
+    let mut line = format!("- {title} ({id})");
+
+    if let Some(created_at) = item.get("created_at").and_then(Value::as_str) {
+        line.push_str(&format!(" {created_at}"));
+    }
+    if let Some(tags) = item.get("tags").and_then(Value::as_array) {
+        let tags = tags
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !tags.is_empty() {
+            line.push_str(&format!(" [{tags}]"));
+        }
+    }
+    if let Some(content) = item.get("content").and_then(Value::as_str) {
+        line.push_str(&format!("\n  {}", truncate(content, 96)));
+    }
+
+    line
+}
+
+fn truncate(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let prefix = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{prefix}...")
+    } else {
+        prefix
+    }
+}
+
+fn redact_secret(value: &str) -> String {
+    let chars = value.chars().collect::<Vec<_>>();
+    if chars.len() <= 8 {
+        return "[redacted]".to_string();
+    }
+
+    let prefix = chars.iter().take(4).collect::<String>();
+    let suffix = chars[chars.len() - 4..].iter().collect::<String>();
+    format!("{prefix}...{suffix}")
+}
+
+fn completion_script(shell: Shell) -> String {
+    match shell {
+        Shell::Bash => BASH_COMPLETION.to_string(),
+        Shell::Zsh => ZSH_COMPLETION.to_string(),
+        Shell::Fish => FISH_COMPLETION.to_string(),
+    }
+}
+
+const BASH_COMPLETION: &str = r#"_memorynexus_cli()
+{
+  local cur prev commands
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+  commands="health config version completion install upgrade auth space family lens memory reminder remind review search"
+
+  case "$prev" in
+    memorynexus-cli)
+      COMPREPLY=( $(compgen -W "$commands --output --format" -- "$cur") )
+      return 0
+      ;;
+    completion)
+      COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
+      return 0
+      ;;
+    --output|--format)
+      COMPREPLY=( $(compgen -W "json human" -- "$cur") )
+      return 0
+      ;;
+  esac
+}
+complete -F _memorynexus_cli memorynexus-cli
+"#;
+
+const ZSH_COMPLETION: &str = r#"#compdef memorynexus-cli
+
+_memorynexus_cli() {
+  local -a commands
+  commands=(
+    'health:Check API health'
+    'config:Show runtime AI config'
+    'version:Show local CLI version'
+    'completion:Generate shell completion'
+    'install:Inspect local install status'
+    'upgrade:Plan or apply local upgrade steps'
+    'auth:Register or log in'
+    'space:Manage Cognitive Spaces'
+    'family:Manage shared family spaces'
+    'lens:Manage and run lenses'
+    'memory:Create, list, inspect, or delete memories'
+    'reminder:Manage reminders'
+    'remind:Alias for reminder'
+    'review:Create or inspect review reports'
+    'search:Search memories'
+  )
+
+  _arguments \
+    '--output[Set output format]:format:(json human)' \
+    '--format[Set output format]:format:(json human)' \
+    '1:command:->command' \
+    '*::arg:->args'
+
+  case $state in
+    command)
+      _describe 'command' commands
+      ;;
+    args)
+      case ${words[2]} in
+        completion)
+          _values 'shell' bash zsh fish
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_memorynexus_cli "$@"
+"#;
+
+const FISH_COMPLETION: &str = r#"complete -c memorynexus-cli -f
+complete -c memorynexus-cli -n '__fish_use_subcommand' -a 'health config version completion install upgrade auth space family lens memory reminder remind review search'
+complete -c memorynexus-cli -l output -d 'Set output format' -xa 'json human'
+complete -c memorynexus-cli -l format -d 'Set output format' -xa 'json human'
+complete -c memorynexus-cli -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
+"#;
+
 fn usage() -> &'static str {
-    "usage: memorynexus-cli <health|config|version|install|upgrade|auth|space|family|lens|memory|reminder|remind|review|search> ..."
+    "usage: memorynexus-cli [--output json|human] <health|config|version|completion|install|upgrade|auth|space|family|lens|memory|reminder|remind|review|search> ..."
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_global_output_format_without_changing_default_json() {
+        let invocation = parse_cli(["memorynexus-cli", "--output", "human", "space", "list"])
+            .expect("parse human output");
+        assert_eq!(invocation.output_format, OutputFormat::Human);
+        assert_eq!(invocation.command, Command::SpaceList);
+
+        let default_invocation =
+            parse_cli(["memorynexus-cli", "space", "list"]).expect("parse default output");
+        assert_eq!(default_invocation.output_format, OutputFormat::Json);
+        assert_eq!(default_invocation.command, Command::SpaceList);
+    }
+
+    #[test]
+    fn parses_format_alias_as_leading_global_flag() {
+        let invocation = parse_cli([
+            "memorynexus-cli",
+            "--format",
+            "human",
+            "memory",
+            "list",
+            "--space",
+            "space-123",
+        ])
+        .expect("parse format alias");
+
+        assert_eq!(invocation.output_format, OutputFormat::Human);
+        assert_eq!(
+            invocation.command,
+            Command::MemoryList {
+                space_id: Some("space-123".to_string()),
+                limit: 20,
+                offset: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_format_alias_after_command_arguments() {
+        let error = parse_cli([
+            "memorynexus-cli",
+            "memory",
+            "list",
+            "--space",
+            "space-123",
+            "--format",
+            "human",
+        ])
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "--format must be a leading global flag");
+    }
+
+    #[test]
+    fn rejects_unknown_output_format() {
+        let error = parse_cli(["memorynexus-cli", "--output", "yaml", "health"]).unwrap_err();
+        assert_eq!(error.to_string(), "--output must be json or human");
+    }
+
+    #[test]
+    fn parses_completion_command() {
+        let command = parse_command(["memorynexus-cli", "completion", "zsh"]).unwrap();
+        assert_eq!(command, Command::Completion { shell: Shell::Zsh });
+    }
+
+    #[test]
+    fn completion_defaults_to_human_script_output() {
+        let invocation =
+            parse_cli(["memorynexus-cli", "completion", "bash"]).expect("parse completion");
+        assert_eq!(invocation.output_format, OutputFormat::Human);
+        assert_eq!(
+            invocation.command,
+            Command::Completion { shell: Shell::Bash }
+        );
+
+        let json_invocation =
+            parse_cli(["memorynexus-cli", "--output", "json", "completion", "bash"])
+                .expect("parse json completion");
+        assert_eq!(json_invocation.output_format, OutputFormat::Json);
+    }
+
+    #[test]
+    fn renders_human_memory_list_with_titles_and_ids() {
+        let value = json!({
+            "ok": true,
+            "data": {
+                "items": [
+                    {
+                        "id": "mem-1",
+                        "title": "Rust practice",
+                        "content": "today I practiced Rust ownership and lifetimes",
+                        "tags": ["rust", "learning"],
+                        "created_at": "2026-05-26T08:00:00Z"
+                    }
+                ]
+            }
+        });
+
+        let rendered = render_output(&value, OutputFormat::Human);
+
+        assert!(rendered.contains("MemoryNexus"));
+        assert!(rendered.contains("Rust practice"));
+        assert!(rendered.contains("mem-1"));
+        assert!(rendered.contains("rust, learning"));
+    }
+
+    #[test]
+    fn renders_human_auth_token_export_hint() {
+        let value = json!({
+            "ok": true,
+            "data": {
+                "token": "jwt-token",
+                "user": {
+                    "email": "alice@example.com"
+                }
+            }
+        });
+
+        let rendered = render_output(&value, OutputFormat::Human);
+
+        assert!(rendered.contains("alice@example.com"));
+        assert!(rendered.contains("Token: jwt-...oken"));
+        assert!(!rendered.contains("export MEMORYNEXUS_TOKEN"));
+        assert!(!rendered.contains("jwt-token"));
+    }
+
+    #[test]
+    fn generates_zsh_completion_script_with_common_commands() {
+        let script = completion_script(Shell::Zsh);
+
+        assert!(script.contains("#compdef memorynexus-cli"));
+        assert!(script.contains("completion:Generate shell completion"));
+        assert!(script.contains("--output"));
+        assert!(script.contains("memory"));
+        assert!(script.contains("lens"));
+    }
 
     #[test]
     fn parses_health_command() {
