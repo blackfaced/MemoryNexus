@@ -21,9 +21,11 @@ plugin. Memories belong to a Cognitive Space, and agents or users interpret that
 space through Lens-style strategies.
 
 Longer term, MemoryNexus is evolving toward a namespace-based long-term feedback
-substrate for personal cognition and skill acquisition. Thought Review is the
-first reflective namespace; future skill namespaces can track practice,
-feedback, weak patterns, and next tasks for learning or craft domains.
+substrate for personal cognition and skill acquisition. Its memory lifecycle is:
+raw Memory -> MemoryAtom -> CognitiveScene -> Lens-based CognitiveProjection ->
+Reflection / Belief / Next Action. Thought Review is the first reflective
+namespace; future skill namespaces can track practice, feedback, weak patterns,
+and next tasks for learning or craft domains.
 
 ## Try The Thought Review MVP
 

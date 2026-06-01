@@ -13,7 +13,12 @@
 - 不要在没有 ADR 的情况下引入 React/Vite/Next、Node dev server、BFF 或第二套
   frontend/backend 主线。
 - 长期方向见 ADR-014：MemoryNexus 正在扩展为 namespace-based long-term
-  feedback substrate，但 `CognitiveSpace` 仍然是 ownership / permission boundary。
+  feedback substrate，并引入 MemoryAtom / CognitiveScene / Lens-based
+  CognitiveProjection 的 memory lifecycle；但 `CognitiveSpace` 仍然是 ownership /
+  permission boundary。
+- EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
+  agent memory retrieval 系统。当前边界是：EverMemOS 偏 memory for agent reasoning；
+  MemoryNexus 偏 user-owned cognitive perspective and feedback loops。
 
 ## 架构决策
 
@@ -37,6 +42,9 @@
   Space membership 挪到 Namespace。
 - `FeedbackLoop` 是长期方向，落地时应从具体 namespace 的最小验收场景反推字段，
   不要一次性做 learning / piano / chess / drawing / programming 全部产品。
+- `MemoryAtom`、`CognitiveScene`、`CognitiveProjection` 是 Phase 5 lifecycle
+  概念。先用 fixtures / prototype 验证 atomization、consolidation 和 Lens
+  projection，不要在没有 issue/ADR 验收的情况下直接铺复杂 schema。
 - 本地没有 Rust 工具链时，可以用 Docker 验证：
 
 ```bash
@@ -77,6 +85,8 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - Phase 4 UI issue 默认基于 Rust-served Thought Review UI 继续演进，不另建前端工程。
 - Phase 5 Namespace / FeedbackLoop issue 默认先做设计和最小模型/API 方案，不直接铺开
   多个垂直产品。
+- Phase 5 Memory Lifecycle issue 默认围绕 `Memory -> MemoryAtom -> CognitiveScene
+  -> CognitiveProjection` 做小实验，不要把它实现成通用 agent retrieval engine。
 
 ## P0 优先级
 
