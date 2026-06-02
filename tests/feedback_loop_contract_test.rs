@@ -57,9 +57,58 @@ fn feedback_loop_patch_contract_updates_attempt_independently() {
         fs::read_to_string("src/db/feedback_loop.rs").expect("repository should be readable");
 
     assert!(api.contains("pub attempt: Option<String>"));
-    assert!(api.contains("attempt: normalize_optional(req.attempt)"));
+    assert!(api.contains("let attempt = normalize_optional(req.attempt);"));
     assert!(repository.contains("pub attempt: Option<String>"));
     assert!(repository.contains("attempt = COALESCE($2, attempt)"));
     assert!(repository.contains("evaluation = COALESCE($3, evaluation)"));
     assert!(repository.contains(".bind(&patch.attempt)"));
+}
+
+#[test]
+fn feedback_loop_memory_capture_contract_is_opt_in_and_traceable() {
+    let api = fs::read_to_string("src/api/feedback_loops.rs")
+        .expect("feedback loop API should be readable");
+    let repository =
+        fs::read_to_string("src/db/feedback_loop.rs").expect("repository should be readable");
+
+    assert!(api.contains("pub capture_memory: Option<bool>"));
+    assert!(api.contains("alias = \"create_memory_snapshot\""));
+    assert!(repository.contains("'feedback_loop_event'"));
+    assert!(repository.contains("\"feedback_loop_id\""));
+    assert!(repository.contains("\"namespace_id\""));
+    assert!(repository.contains("\"space_id\""));
+    assert!(repository.contains("\"event_kind\""));
+    assert!(repository.contains("\"included_fields\""));
+    assert!(repository.contains("'text'"));
+    assert!(repository.contains("false"));
+}
+
+#[test]
+fn feedback_loop_memory_capture_contract_preserves_space_validation_before_capture() {
+    let api = fs::read_to_string("src/api/feedback_loops.rs")
+        .expect("feedback loop API should be readable");
+    let writer_check = api
+        .find("require_space_writer(&state, req.space_id, auth_user.user_id)")
+        .expect("create should check writer permission");
+    let namespace_check = api
+        .find(
+            "require_namespace_in_space(&state, req.namespace_id, req.space_id, auth_user.user_id)",
+        )
+        .expect("create should validate namespace space");
+    let create_capture = api
+        .find(".create_with_memory_snapshot(create_feedback_loop, snapshot)")
+        .expect("create should use atomic feedback loop and memory capture");
+
+    assert!(writer_check < create_capture);
+    assert!(namespace_check < create_capture);
+
+    let patch_writer_check = api
+        .find("require_space_writer(&state, existing.space_id, auth_user.user_id)")
+        .expect("patch should check writer permission");
+    let patch_capture = api
+        .find(".patch_with_memory_snapshot(id, patch_feedback_loop, snapshot)")
+        .expect("patch should use atomic feedback loop and memory capture");
+
+    assert!(patch_writer_check < patch_capture);
+    assert!(api.contains("(\"attempt\", \"Answer / reasoning\", attempt.as_deref())"));
 }

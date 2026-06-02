@@ -287,7 +287,30 @@ First implementation options:
   create multiple memories. Otherwise `memories.feedback_loop_id` is enough for
   the first phase.
 
-Recommended first step:
+Issue #68 first step:
+
+- FeedbackLoop create and patch accept explicit opt-in memory capture through
+  `capture_memory` (`create_memory_snapshot` is accepted as an alias).
+- The generated Memory stays in the same `space_id`, uses the authenticated user
+  as `user_id`, stores `memory_type = text`, keeps `is_shared = false`, and uses
+  `source_type = feedback_loop_event`.
+- `source_metadata` carries `feedback_loop_id`, `namespace_id`, `space_id`,
+  `event_kind` (`create` or `patch`), and `included_fields`.
+- Snapshot content uses parent-friendly practice language: practice goal,
+  practice task, answer / reasoning, mistake pattern / evaluation, feedback,
+  practice adjustment, and next exercise.
+- Patch capture only writes a Memory when the patch includes at least one
+  non-empty practice field. Status-only or whitespace-only patches do not create
+  empty snapshots. Patch snapshots are event snapshots, so they include only the
+  practice fields supplied by the current patch and do not repeat older loop
+  fields.
+- Space writer permission and same-Space Namespace validation happen before any
+  Memory is created.
+- FeedbackLoop create/update and generated Memory insert happen in one database
+  transaction. Vector indexing, when configured, runs only after that transaction
+  succeeds.
+
+Longer-term recommended step:
 
 - Add `namespace_id` and `feedback_loop_id` columns to `memories`.
 - Keep the existing `space_id` on Memory as the permission boundary.
@@ -420,13 +443,15 @@ Create request:
   "space_id": "...",
   "namespace_id": "...",
   "goal": "Improve fraction word problems",
-  "task": "Complete five fraction word problems and explain each mistake"
+  "task": "Complete five fraction word problems and explain each mistake",
+  "capture_memory": true
 }
 ```
 
 Patch request can update `attempt`, `evaluation`, `feedback`, `adjustment`,
-`next_task`, and `status`. A later issue can decide whether each patch also
-creates a Memory snapshot by default or behind an explicit flag.
+`next_task`, and `status`. `capture_memory` is an explicit opt-in flag; it
+defaults to false. When enabled on patch, a Memory snapshot is created only if
+the patch includes meaningful practice content.
 
 ## APIs That Need Namespace Filters
 
