@@ -206,12 +206,27 @@ Current open work:
 
 Learning MVP track:
 
-- [#59 learning.math MVP: parent-assisted elementary math mistake feedback loop](https://github.com/blackfaced/MemoryNexus/issues/59)
-- [#67 Add attempt patch support to FeedbackLoop](https://github.com/blackfaced/MemoryNexus/issues/67)
-- [#68 Capture FeedbackLoop event as Memory](https://github.com/blackfaced/MemoryNexus/issues/68)
-- [#69 learning.math practice session API](https://github.com/blackfaced/MemoryNexus/issues/69)
-- [#70 learning.math parent-child static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70)
-- [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71)
+Recommended sequence:
+
+1. [#59 learning.math MVP: parent-assisted elementary math mistake feedback loop](https://github.com/blackfaced/MemoryNexus/issues/59):
+   write the narrow PRD and keep `learning.math` focused on parent-assisted
+   elementary math mistake feedback.
+2. [#67 Add attempt patch support to FeedbackLoop](https://github.com/blackfaced/MemoryNexus/issues/67):
+   unblock incremental child answer / reasoning capture.
+3. [#68 Capture FeedbackLoop event as Memory](https://github.com/blackfaced/MemoryNexus/issues/68):
+   preserve practice events as Space-owned Memory with FeedbackLoop provenance.
+4. [#69 learning.math practice session API](https://github.com/blackfaced/MemoryNexus/issues/69):
+   add the product API on top of Namespace and FeedbackLoop.
+5. [#73 learning.math MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
+   expose the practice flow to Claw and other MCP clients.
+6. Run a Claw end-to-end demo over the MCP tools before locking the final static
+   UI shape.
+7. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
+   summarize practiced topics, recurring mistake patterns, improvement signals,
+   and next practice.
+8. [#70 learning.math parent-child static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
+   build the Rust-served static UI after the API, MCP, demo, and review report
+   contracts are clear.
 
 Foundation / lifecycle support track:
 
