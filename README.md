@@ -29,6 +29,10 @@ parent-assisted elementary math mistake feedback loop. Future skill namespaces
 can track practice, feedback, weak patterns, and next tasks for learning or
 craft domains.
 
+MemoryNexus is also a long-term feedback engine: Thought Review demonstrates
+multi-perspective memory, while `learning.math` turns practice, feedback, and
+next exercise into the first product MVP.
+
 That lifecycle is mode-aware: fast interactions should use recent context and
 compressed priors, while explicit reviews can run deeper Lens projection and
 consolidation.
@@ -135,6 +139,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Cognitive Manifesto](docs/cognitive-manifesto.md)
 - [Cognitive Concepts](docs/cognitive-concepts.md)
 - [Cognitive Lens Roadmap](docs/cognitive-lens-roadmap.md)
+- [learning.math MVP PRD](docs/learning-math-mvp.md)
 - [Thought Review UI MVP ADR](decisions/ADR-013-thought-review-ui-mvp.md)
 - [Namespace and Feedback Loop ADR](decisions/ADR-014-namespace-feedback-loop.md)
 - [Architecture Decisions](decisions/)
