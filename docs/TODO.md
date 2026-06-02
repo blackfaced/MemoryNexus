@@ -40,7 +40,9 @@ The current baseline is the Rust-first Cognitive Lens MVP foundation:
 - Phase 4 has a Rust-served Thought Review MVP at `/` and `/app`.
 - ADR-014 extends the long-term direction toward Namespace, MemoryAtom,
   CognitiveScene, Lens-based CognitiveProjection, and FeedbackLoop as a feedback
-  substrate, while keeping CognitiveSpace as the ownership boundary.
+  substrate, while keeping CognitiveSpace as the ownership boundary. Thought
+  Review is the reflective demo; `learning.math` is the first product MVP
+  candidate.
 - ADR-015 records Supabase as a deployment compatibility path: first as managed
   PostgreSQL, with Auth / Storage / Realtime only as later adapters.
 
@@ -65,7 +67,6 @@ Current open work:
 
 - [#35 Reminder notification delivery channels](https://github.com/blackfaced/MemoryNexus/issues/35)
 - [#36 Advanced reminder recurrence and rule engine](https://github.com/blackfaced/MemoryNexus/issues/36)
-- [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8)
 
 Recently completed:
 
@@ -90,6 +91,8 @@ Recently completed:
 - [#16 CLI commands for family spaces and reminders](https://github.com/blackfaced/MemoryNexus/issues/16):
   `family` CLI for shared Cognitive Space create/list/members/invite/accept/role
   plus `remind` alias for reminder commands.
+- [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8):
+  voice upload and transcription API are implemented.
 
 ## Phase 4: User Interface
 
@@ -99,8 +102,8 @@ provenance, and summarize recurring weekly themes.
 
 Current open work:
 
-- [#54 Auth UI polish and session states](https://github.com/blackfaced/MemoryNexus/issues/54)
-- [#55 Memory list filter and sort controls](https://github.com/blackfaced/MemoryNexus/issues/55)
+No current Phase 4 UI issues are required for the next MVP direction. Thought
+Review remains available as a reflective demo and presentation entry point.
 
 Recently completed:
 
@@ -133,17 +136,15 @@ Recently completed:
 - [#12 Memory detail and delete flow](https://github.com/blackfaced/MemoryNexus/issues/12):
   saved thoughts can be opened, edited with tags, and deleted from the static UI.
 - [#10 Login and registration UI](https://github.com/blackfaced/MemoryNexus/issues/10):
-  original MVP auth form and JWT persistence scope is covered; remaining polish
-  continues in #54.
+  original MVP auth form and JWT persistence scope is covered.
 - [#11 Memory create, list, and detail UI](https://github.com/blackfaced/MemoryNexus/issues/11):
-  broad MVP memory UI scope is covered; remaining filter/sort work continues in
-  #55.
+  broad MVP memory UI scope is covered.
 
 ## Phase 5: Namespace Memory Lifecycle and Feedback Loops
 
 Goal: extend the cognitive memory foundation into a namespace-based long-term
-feedback substrate with an explicit memory lifecycle, while keeping Thought
-Review as the first narrow product entry point.
+feedback substrate with an explicit memory lifecycle. Thought Review remains the
+reflective demo; `learning.math` is the first product MVP candidate.
 
 Direction:
 
@@ -164,6 +165,8 @@ Direction:
   direction.
 - Skill namespaces focus on practice, error pattern, progress, feedback, and
   next practice.
+- The first product MVP candidate is `learning.math`: a parent-assisted
+  elementary math mistake feedback loop.
 - EverMemOS is a useful reference for memory lifecycle ideas, but MemoryNexus
   keeps a different product boundary: user-owned cognitive perspective and
   feedback loops, not agent memory for reasoning.
@@ -194,20 +197,32 @@ Recently completed:
   minimal Namespace and FeedbackLoop design documented in
   [Namespace and Feedback Loop Minimal Design](namespace-feedback-loop-design.md),
   with ADR-014 supplemented and implementation work split below.
+- [#56 Minimal Namespace database model and API](https://github.com/blackfaced/MemoryNexus/issues/56):
+  Namespace schema, repository, and API are now on main.
+- [#57 Minimal FeedbackLoop database model and API](https://github.com/blackfaced/MemoryNexus/issues/57):
+  FeedbackLoop schema, repository, and API are now on main.
 
 Current open work:
 
-- [#56 Minimal Namespace database model and API](https://github.com/blackfaced/MemoryNexus/issues/56)
-- [#57 Minimal FeedbackLoop database model and API](https://github.com/blackfaced/MemoryNexus/issues/57)
+Learning MVP track:
+
+- [#59 learning.math MVP: parent-assisted elementary math mistake feedback loop](https://github.com/blackfaced/MemoryNexus/issues/59)
+- [#67 Add attempt patch support to FeedbackLoop](https://github.com/blackfaced/MemoryNexus/issues/67)
+- [#68 Capture FeedbackLoop event as Memory](https://github.com/blackfaced/MemoryNexus/issues/68)
+- [#69 learning.math practice session API](https://github.com/blackfaced/MemoryNexus/issues/69)
+- [#70 learning.math parent-child static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70)
+- [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71)
+
+Foundation / lifecycle support track:
+
 - [#58 Namespace filters and FeedbackLoop provenance threading](https://github.com/blackfaced/MemoryNexus/issues/58)
-- [#59 learning.math Skill Namespace MVP design](https://github.com/blackfaced/MemoryNexus/issues/59)
+- [#65 Define dual-system observe modes](https://github.com/blackfaced/MemoryNexus/issues/65)
 - [#60 Define MemoryAtom and CognitiveScene lifecycle](https://github.com/blackfaced/MemoryNexus/issues/60)
 - [#61 Build MemoryNexus self-dataset atomization fixture](https://github.com/blackfaced/MemoryNexus/issues/61)
 - [#62 Define Lens-based CognitiveProjection contract](https://github.com/blackfaced/MemoryNexus/issues/62)
 - [#63 Prototype CognitiveScene consolidation](https://github.com/blackfaced/MemoryNexus/issues/63)
-- [#65 Define dual-system observe modes](https://github.com/blackfaced/MemoryNexus/issues/65)
 
-Candidate follow-up work after #56-#59:
+Candidate follow-up work after the learning.math slice:
 
 - Add end-to-end acceptance tests for Space -> Namespace -> FeedbackLoop ->
   Memory -> Lens Run -> Review Report/Profile.
@@ -217,10 +232,6 @@ Candidate follow-up work after #56-#59:
   the full deep cognitive pipeline.
 - Keep product entry points narrow; do not expose every possible namespace in
   the first UI.
-
-## Parking Lot
-
-- [#17 Human-friendly output formats and shell completion](https://github.com/blackfaced/MemoryNexus/issues/17)
 
 ## Deployment Compatibility
 
