@@ -63,3 +63,51 @@ fn feedback_loop_patch_contract_updates_attempt_independently() {
     assert!(repository.contains("evaluation = COALESCE($3, evaluation)"));
     assert!(repository.contains(".bind(&patch.attempt)"));
 }
+
+#[test]
+fn feedback_loop_memory_capture_contract_is_opt_in_and_traceable() {
+    let api = fs::read_to_string("src/api/feedback_loops.rs")
+        .expect("feedback loop API should be readable");
+
+    assert!(api.contains("pub capture_memory: Option<bool>"));
+    assert!(api.contains("alias = \"create_memory_snapshot\""));
+    assert!(api.contains("FEEDBACK_LOOP_MEMORY_SOURCE_TYPE"));
+    assert!(api.contains("\"feedback_loop_event\""));
+    assert!(api.contains("\"feedback_loop_id\""));
+    assert!(api.contains("\"namespace_id\""));
+    assert!(api.contains("\"space_id\""));
+    assert!(api.contains("\"event_kind\""));
+    assert!(api.contains("\"included_fields\""));
+    assert!(api.contains("memory_type: MemoryType::Text"));
+    assert!(api.contains("is_shared: false"));
+}
+
+#[test]
+fn feedback_loop_memory_capture_contract_preserves_space_validation_before_capture() {
+    let api = fs::read_to_string("src/api/feedback_loops.rs")
+        .expect("feedback loop API should be readable");
+    let writer_check = api
+        .find("require_space_writer(&state, req.space_id, auth_user.user_id)")
+        .expect("create should check writer permission");
+    let namespace_check = api
+        .find(
+            "require_namespace_in_space(&state, req.namespace_id, req.space_id, auth_user.user_id)",
+        )
+        .expect("create should validate namespace space");
+    let create_capture = api
+        .find("capture_feedback_loop_memory(&state, &feedback_loop, auth_user.user_id, \"create\")")
+        .expect("create should capture memory after feedback loop create");
+
+    assert!(writer_check < create_capture);
+    assert!(namespace_check < create_capture);
+
+    let patch_writer_check = api
+        .find("require_space_writer(&state, existing.space_id, auth_user.user_id)")
+        .expect("patch should check writer permission");
+    let patch_capture = api
+        .find("capture_feedback_loop_memory(&state, &feedback_loop, auth_user.user_id, \"patch\")")
+        .expect("patch should capture memory after feedback loop patch");
+
+    assert!(patch_writer_check < patch_capture);
+    assert!(api.contains("patch_has_meaningful_practice_content(&req)"));
+}

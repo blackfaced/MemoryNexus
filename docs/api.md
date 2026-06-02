@@ -299,9 +299,10 @@ Returns visible Lens Runs ordered by newest first. At least one of `lens_id` or
 ## Feedback Loops
 
 FeedbackLoop captures one long-running feedback cycle inside a Namespace and
-Cognitive Space. The first API stores the loop state itself; creating Memory
-snapshots and threading `feedback_loop_id` provenance through Memory, Lens Run,
-Review Report, and Profile remains a follow-up boundary.
+Cognitive Space. A create or patch request can explicitly opt in to creating a
+Space-owned Memory snapshot of the practice event. Namespace remains provenance
+and filtering context; writer permission still comes from Cognitive Space
+membership.
 
 ### Create Feedback Loop
 
@@ -318,12 +319,21 @@ Review Report, and Profile remains a follow-up boundary.
   "feedback": "optional feedback",
   "adjustment": "optional adjustment",
   "next_task": "optional next task",
-  "status": "active"
+  "status": "active",
+  "capture_memory": true
 }
 ```
 
 `namespace_id` must belong to the same `space_id`. `status` supports `active`,
 `completed`, and `paused`; omitted status defaults to `active`.
+`capture_memory` is optional and defaults to `false`. For compatibility with
+early design notes, `create_memory_snapshot` is accepted as an alias.
+
+When memory capture is enabled, the generated Memory uses `memory_type = "text"`,
+`is_shared = false`, the same `space_id` as the FeedbackLoop, and
+`source_type = "feedback_loop_event"`. Its `source_metadata` includes
+`feedback_loop_id`, `namespace_id`, `space_id`, `event_kind = "create"`, and
+`included_fields`.
 
 ### List Feedback Loops
 
@@ -349,7 +359,8 @@ Returns a loop only if the current user can access its Cognitive Space.
   "feedback": "Observed error pattern",
   "adjustment": "What to change next round",
   "next_task": "The next concrete task",
-  "status": "paused"
+  "status": "paused",
+  "capture_memory": true
 }
 ```
 
@@ -357,6 +368,13 @@ Patch supports `attempt`, `evaluation`, `feedback`, `adjustment`, `next_task`,
 and `status`. Omitted optional fields keep their current values; empty or
 whitespace-only optional text follows the same normalization behavior as create.
 Writers are Space `owner` or `editor` members.
+
+`capture_memory` is optional and defaults to `false`; `create_memory_snapshot`
+is accepted as an alias. Patch capture creates a `feedback_loop_event` Memory
+with `event_kind = "patch"` only when the patch includes at least one
+non-empty practice field among `attempt`, `evaluation`, `feedback`,
+`adjustment`, or `next_task`. Status-only or whitespace-only patch capture does
+not create a misleading empty snapshot.
 
 ## Memories
 
