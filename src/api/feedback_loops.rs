@@ -11,14 +11,12 @@ use uuid::Uuid;
 use crate::api::memories::index_memory_embedding;
 use crate::auth::AuthenticatedUser;
 use crate::db::feedback_loop::{
-    CreateFeedbackLoop, FeedbackLoopDb, FeedbackLoopListFilter, PatchFeedbackLoop,
+    CreateFeedbackLoop, FeedbackLoopDb, FeedbackLoopListFilter, FeedbackLoopMemorySnapshot,
+    FeedbackLoopWithMemorySnapshot, PatchFeedbackLoop,
 };
-use crate::db::memory::{CreateMemory, MemoryType};
 use crate::db::space::SpaceMemberRole;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
-
-const FEEDBACK_LOOP_MEMORY_SOURCE_TYPE: &str = "feedback_loop_event";
 
 #[derive(Debug, Deserialize)]
 pub struct CreateFeedbackLoopRequest {
@@ -74,34 +72,71 @@ pub async fn create(
 
     let goal = normalize_required(&req.goal, "feedback loop goal is required")?;
     let task = normalize_required(&req.task, "feedback loop task is required")?;
+    let attempt = normalize_optional(req.attempt);
+    let evaluation = normalize_optional(req.evaluation);
+    let feedback = normalize_optional(req.feedback);
+    let adjustment = normalize_optional(req.adjustment);
+    let next_task = normalize_optional(req.next_task);
     let status = normalize_status(req.status.as_deref())?;
+    let snapshot = capture_memory_requested(req.capture_memory).then(|| {
+        feedback_loop_memory_snapshot(
+            auth_user.user_id,
+            "create",
+            [
+                ("goal", "Practice goal", Some(goal.as_str())),
+                ("task", "Practice task", Some(task.as_str())),
+                ("attempt", "Answer / reasoning", attempt.as_deref()),
+                (
+                    "evaluation",
+                    "Mistake pattern / evaluation",
+                    evaluation.as_deref(),
+                ),
+                ("feedback", "Feedback", feedback.as_deref()),
+                ("adjustment", "Practice adjustment", adjustment.as_deref()),
+                ("next_task", "Next exercise", next_task.as_deref()),
+            ],
+        )
+    });
 
-    let feedback_loop = state
-        .repositories
-        .feedback_loops
-        .create(CreateFeedbackLoop {
-            space_id: req.space_id,
-            namespace_id: req.namespace_id,
-            goal,
-            task,
-            attempt: normalize_optional(req.attempt),
-            evaluation: normalize_optional(req.evaluation),
-            feedback: normalize_optional(req.feedback),
-            adjustment: normalize_optional(req.adjustment),
-            next_task: normalize_optional(req.next_task),
-            status,
-            created_by: auth_user.user_id,
-        })
-        .await
-        .map_err(AppError::Database)?;
+    let create_feedback_loop = CreateFeedbackLoop {
+        space_id: req.space_id,
+        namespace_id: req.namespace_id,
+        goal,
+        task,
+        attempt,
+        evaluation,
+        feedback,
+        adjustment,
+        next_task,
+        status,
+        created_by: auth_user.user_id,
+    };
 
-    if capture_memory_requested(req.capture_memory) {
-        capture_feedback_loop_memory(&state, &feedback_loop, auth_user.user_id, "create").await?;
+    let result = match snapshot.flatten() {
+        Some(snapshot) => state
+            .repositories
+            .feedback_loops
+            .create_with_memory_snapshot(create_feedback_loop, snapshot)
+            .await
+            .map_err(AppError::Database)?,
+        None => FeedbackLoopWithMemorySnapshot {
+            feedback_loop: state
+                .repositories
+                .feedback_loops
+                .create(create_feedback_loop)
+                .await
+                .map_err(AppError::Database)?,
+            memory: None,
+        },
+    };
+
+    if let Some(memory) = result.memory.as_ref() {
+        index_memory_embedding(&state, memory).await;
     }
 
     Ok((
         StatusCode::CREATED,
-        Json(ApiResponse::success(feedback_loop)),
+        Json(ApiResponse::success(result.feedback_loop)),
     ))
 }
 
@@ -172,91 +207,74 @@ pub async fn patch(
 
     require_space_writer(&state, existing.space_id, auth_user.user_id).await?;
 
-    let capture_memory =
-        capture_memory_requested(req.capture_memory) && patch_has_meaningful_practice_content(&req);
-
     let status = match req.status.as_deref() {
         Some(_) => Some(normalize_status(req.status.as_deref())?),
         None => None,
     };
-
-    let feedback_loop = state
-        .repositories
-        .feedback_loops
-        .patch(
-            id,
-            PatchFeedbackLoop {
-                attempt: normalize_optional(req.attempt),
-                evaluation: normalize_optional(req.evaluation),
-                feedback: normalize_optional(req.feedback),
-                adjustment: normalize_optional(req.adjustment),
-                next_task: normalize_optional(req.next_task),
-                status,
-            },
+    let attempt = normalize_optional(req.attempt);
+    let evaluation = normalize_optional(req.evaluation);
+    let feedback = normalize_optional(req.feedback);
+    let adjustment = normalize_optional(req.adjustment);
+    let next_task = normalize_optional(req.next_task);
+    let snapshot = capture_memory_requested(req.capture_memory).then(|| {
+        feedback_loop_memory_snapshot(
+            auth_user.user_id,
+            "patch",
+            [
+                ("attempt", "Answer / reasoning", attempt.as_deref()),
+                (
+                    "evaluation",
+                    "Mistake pattern / evaluation",
+                    evaluation.as_deref(),
+                ),
+                ("feedback", "Feedback", feedback.as_deref()),
+                ("adjustment", "Practice adjustment", adjustment.as_deref()),
+                ("next_task", "Next exercise", next_task.as_deref()),
+            ],
         )
-        .await
-        .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound("feedback loop not found".to_string()))?;
+    });
 
-    if capture_memory {
-        capture_feedback_loop_memory(&state, &feedback_loop, auth_user.user_id, "patch").await?;
-    }
-
-    Ok(Json(ApiResponse::success(feedback_loop)))
-}
-
-async fn capture_feedback_loop_memory(
-    state: &AppState,
-    feedback_loop: &FeedbackLoopDb,
-    user_id: Uuid,
-    event_kind: &str,
-) -> Result<Option<crate::db::memory::MemoryDb>, AppError> {
-    let Some(snapshot) = feedback_loop_memory_snapshot(feedback_loop, user_id, event_kind) else {
-        return Ok(None);
+    let patch_feedback_loop = PatchFeedbackLoop {
+        attempt,
+        evaluation,
+        feedback,
+        adjustment,
+        next_task,
+        status,
     };
 
-    let memory = state
-        .repositories
-        .memories
-        .create(snapshot)
-        .await
-        .map_err(AppError::Database)?;
-    index_memory_embedding(state, &memory).await;
+    let result = match snapshot.flatten() {
+        Some(snapshot) => state
+            .repositories
+            .feedback_loops
+            .patch_with_memory_snapshot(id, patch_feedback_loop, snapshot)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound("feedback loop not found".to_string()))?,
+        None => FeedbackLoopWithMemorySnapshot {
+            feedback_loop: state
+                .repositories
+                .feedback_loops
+                .patch(id, patch_feedback_loop)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| AppError::NotFound("feedback loop not found".to_string()))?,
+            memory: None,
+        },
+    };
 
-    Ok(Some(memory))
+    if let Some(memory) = result.memory.as_ref() {
+        index_memory_embedding(&state, memory).await;
+    }
+
+    Ok(Json(ApiResponse::success(result.feedback_loop)))
 }
 
-fn feedback_loop_memory_snapshot(
-    feedback_loop: &FeedbackLoopDb,
+fn feedback_loop_memory_snapshot<const N: usize>(
     user_id: Uuid,
     event_kind: &str,
-) -> Option<CreateMemory> {
-    let practice_fields = [
-        ("goal", "Practice goal", Some(feedback_loop.goal.as_str())),
-        ("task", "Practice task", Some(feedback_loop.task.as_str())),
-        (
-            "attempt",
-            "Answer / reasoning",
-            feedback_loop.attempt.as_deref(),
-        ),
-        (
-            "evaluation",
-            "Mistake pattern / evaluation",
-            feedback_loop.evaluation.as_deref(),
-        ),
-        ("feedback", "Feedback", feedback_loop.feedback.as_deref()),
-        (
-            "adjustment",
-            "Practice adjustment",
-            feedback_loop.adjustment.as_deref(),
-        ),
-        (
-            "next_task",
-            "Next exercise",
-            feedback_loop.next_task.as_deref(),
-        ),
-    ];
-
+    practice_fields: [(&'static str, &'static str, Option<&str>); N],
+) -> Option<FeedbackLoopMemorySnapshot> {
     let mut included_fields = Vec::new();
     let mut lines = Vec::new();
     for (field_name, label, value) in practice_fields {
@@ -271,23 +289,11 @@ fn feedback_loop_memory_snapshot(
         return None;
     }
 
-    Some(CreateMemory {
+    Some(FeedbackLoopMemorySnapshot {
         user_id,
-        space_id: feedback_loop.space_id,
-        title: Some("Practice snapshot".to_string()),
+        event_kind: event_kind.to_string(),
         content: lines.join("\n"),
-        memory_type: MemoryType::Text,
-        file_path: None,
-        is_shared: false,
-        source_type: FEEDBACK_LOOP_MEMORY_SOURCE_TYPE.to_string(),
-        source_metadata: serde_json::json!({
-            "feedback_loop_id": feedback_loop.id,
-            "namespace_id": feedback_loop.namespace_id,
-            "space_id": feedback_loop.space_id,
-            "event_kind": event_kind,
-            "included_fields": included_fields,
-        }),
-        tags: vec!["feedback-loop".to_string()],
+        included_fields: included_fields.into_iter().map(str::to_string).collect(),
     })
 }
 
@@ -359,18 +365,6 @@ fn namespace_belongs_to_space(namespace_space_id: Uuid, requested_space_id: Uuid
 
 fn capture_memory_requested(value: Option<bool>) -> bool {
     value.unwrap_or(false)
-}
-
-fn patch_has_meaningful_practice_content(req: &PatchFeedbackLoopRequest) -> bool {
-    [
-        req.attempt.as_deref(),
-        req.evaluation.as_deref(),
-        req.feedback.as_deref(),
-        req.adjustment.as_deref(),
-        req.next_task.as_deref(),
-    ]
-    .into_iter()
-    .any(|value| normalized_snapshot_value(value).is_some())
 }
 
 fn normalized_snapshot_value(value: Option<&str>) -> Option<String> {
@@ -505,118 +499,111 @@ mod tests {
 
     #[test]
     fn feedback_loop_create_snapshot_uses_parent_friendly_summary_and_traceable_metadata() {
-        let feedback_loop_id = Uuid::new_v4();
-        let space_id = Uuid::new_v4();
-        let namespace_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
-        let feedback_loop = FeedbackLoopDb {
-            id: feedback_loop_id,
-            space_id,
-            namespace_id,
-            goal: "Improve fraction word problems".to_string(),
-            task: "Solve five fraction word problems".to_string(),
-            attempt: None,
-            evaluation: Some("3/5 correct; units were mixed".to_string()),
-            feedback: Some("Label units before calculating".to_string()),
-            adjustment: None,
-            next_task: Some("Try three unit-conversion fraction problems".to_string()),
-            status: "active".to_string(),
-            created_by: user_id,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
+        let snapshot = feedback_loop_memory_snapshot(
+            user_id,
+            "create",
+            [
+                (
+                    "goal",
+                    "Practice goal",
+                    Some("Improve fraction word problems"),
+                ),
+                (
+                    "task",
+                    "Practice task",
+                    Some("Solve five fraction word problems"),
+                ),
+                ("attempt", "Answer / reasoning", None),
+                (
+                    "evaluation",
+                    "Mistake pattern / evaluation",
+                    Some("3/5 correct; units were mixed"),
+                ),
+                (
+                    "feedback",
+                    "Feedback",
+                    Some("Label units before calculating"),
+                ),
+                ("adjustment", "Practice adjustment", None),
+                (
+                    "next_task",
+                    "Next exercise",
+                    Some("Try three unit-conversion fraction problems"),
+                ),
+            ],
+        )
+        .unwrap();
 
-        let memory = feedback_loop_memory_snapshot(&feedback_loop, user_id, "create").unwrap();
-
-        assert_eq!(memory.space_id, space_id);
-        assert_eq!(memory.user_id, user_id);
-        assert_eq!(memory.memory_type, crate::db::memory::MemoryType::Text);
-        assert!(!memory.is_shared);
-        assert_eq!(memory.source_type, "feedback_loop_event");
-        assert!(memory
+        assert_eq!(snapshot.user_id, user_id);
+        assert_eq!(snapshot.event_kind, "create");
+        assert!(snapshot
             .content
             .contains("Practice goal: Improve fraction word problems"));
-        assert!(memory
+        assert!(snapshot
             .content
             .contains("Practice task: Solve five fraction word problems"));
-        assert!(memory
+        assert!(snapshot
             .content
             .contains("Mistake pattern / evaluation: 3/5 correct; units were mixed"));
-        assert!(memory
+        assert!(snapshot
             .content
             .contains("Feedback: Label units before calculating"));
-        assert!(memory
+        assert!(snapshot
             .content
             .contains("Next exercise: Try three unit-conversion fraction problems"));
         assert_eq!(
-            memory.source_metadata["feedback_loop_id"],
-            feedback_loop_id.to_string()
+            snapshot.included_fields,
+            vec!["goal", "task", "evaluation", "feedback", "next_task"]
         );
-        assert_eq!(
-            memory.source_metadata["namespace_id"],
-            namespace_id.to_string()
-        );
-        assert_eq!(memory.source_metadata["space_id"], space_id.to_string());
-        assert_eq!(memory.source_metadata["event_kind"], "create");
-        assert_eq!(memory.source_metadata["included_fields"][0], "goal");
     }
 
     #[test]
-    fn feedback_loop_patch_snapshot_includes_attempt_feedback_and_omits_absent_fields() {
+    fn feedback_loop_patch_snapshot_includes_only_this_patch_event_fields() {
         let user_id = Uuid::new_v4();
-        let feedback_loop = FeedbackLoopDb {
-            id: Uuid::new_v4(),
-            space_id: Uuid::new_v4(),
-            namespace_id: Uuid::new_v4(),
-            goal: "Improve fraction word problems".to_string(),
-            task: "Solve five fraction word problems".to_string(),
-            attempt: Some("Child added denominators directly".to_string()),
-            evaluation: Some("Needs common-denominator step".to_string()),
-            feedback: Some("Find a common denominator first".to_string()),
-            adjustment: None,
-            next_task: None,
-            status: "active".to_string(),
-            created_by: user_id,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
+        let snapshot = feedback_loop_memory_snapshot(
+            user_id,
+            "patch",
+            [
+                (
+                    "attempt",
+                    "Answer / reasoning",
+                    Some("Child added denominators directly"),
+                ),
+                ("evaluation", "Mistake pattern / evaluation", None),
+                ("feedback", "Feedback", None),
+                ("adjustment", "Practice adjustment", None),
+                ("next_task", "Next exercise", None),
+            ],
+        )
+        .unwrap();
 
-        let memory = feedback_loop_memory_snapshot(&feedback_loop, user_id, "patch").unwrap();
-
-        assert!(memory
+        assert!(snapshot
             .content
             .contains("Answer / reasoning: Child added denominators directly"));
-        assert!(memory
-            .content
-            .contains("Mistake pattern / evaluation: Needs common-denominator step"));
-        assert!(memory
-            .content
-            .contains("Feedback: Find a common denominator first"));
-        assert!(!memory.content.contains("Next exercise:"));
-        assert_eq!(memory.source_metadata["event_kind"], "patch");
+        assert!(!snapshot.content.contains("Mistake pattern / evaluation:"));
+        assert!(!snapshot.content.contains("Feedback:"));
+        assert!(!snapshot.content.contains("Practice goal:"));
+        assert_eq!(snapshot.included_fields, vec!["attempt"]);
+        assert_eq!(snapshot.event_kind, "patch");
     }
 
     #[test]
     fn feedback_loop_snapshot_skips_empty_practice_content() {
         let user_id = Uuid::new_v4();
-        let feedback_loop = FeedbackLoopDb {
-            id: Uuid::new_v4(),
-            space_id: Uuid::new_v4(),
-            namespace_id: Uuid::new_v4(),
-            goal: " ".to_string(),
-            task: "\n".to_string(),
-            attempt: None,
-            evaluation: Some(" ".to_string()),
-            feedback: None,
-            adjustment: None,
-            next_task: None,
-            status: "active".to_string(),
-            created_by: user_id,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
 
-        assert!(feedback_loop_memory_snapshot(&feedback_loop, user_id, "patch").is_none());
+        assert!(feedback_loop_memory_snapshot(
+            user_id,
+            "patch",
+            [
+                ("attempt", "Answer / reasoning", Some(" ")),
+                ("evaluation", "Mistake pattern / evaluation", Some("\n")),
+                ("feedback", "Feedback", None),
+                ("adjustment", "Practice adjustment", None),
+                ("next_task", "Next exercise", None),
+            ],
+        )
+        .is_none());
     }
 
     #[test]

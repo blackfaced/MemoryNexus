@@ -301,9 +301,14 @@ Issue #68 first step:
   practice adjustment, and next exercise.
 - Patch capture only writes a Memory when the patch includes at least one
   non-empty practice field. Status-only or whitespace-only patches do not create
-  empty snapshots.
+  empty snapshots. Patch snapshots are event snapshots, so they include only the
+  practice fields supplied by the current patch and do not repeat older loop
+  fields.
 - Space writer permission and same-Space Namespace validation happen before any
   Memory is created.
+- FeedbackLoop create/update and generated Memory insert happen in one database
+  transaction. Vector indexing, when configured, runs only after that transaction
+  succeeds.
 
 Longer-term recommended step:
 

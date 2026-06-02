@@ -333,7 +333,8 @@ When memory capture is enabled, the generated Memory uses `memory_type = "text"`
 `is_shared = false`, the same `space_id` as the FeedbackLoop, and
 `source_type = "feedback_loop_event"`. Its `source_metadata` includes
 `feedback_loop_id`, `namespace_id`, `space_id`, `event_kind = "create"`, and
-`included_fields`.
+`included_fields`. The FeedbackLoop row and Memory row are committed in the same
+database transaction.
 
 ### List Feedback Loops
 
@@ -374,7 +375,10 @@ is accepted as an alias. Patch capture creates a `feedback_loop_event` Memory
 with `event_kind = "patch"` only when the patch includes at least one
 non-empty practice field among `attempt`, `evaluation`, `feedback`,
 `adjustment`, or `next_task`. Status-only or whitespace-only patch capture does
-not create a misleading empty snapshot.
+not create a misleading empty snapshot. Patch snapshots describe the current
+patch event only; previously stored loop fields are not repeated in the Memory
+content or `included_fields`. The FeedbackLoop update and Memory row are
+committed in the same database transaction.
 
 ## Memories
 
