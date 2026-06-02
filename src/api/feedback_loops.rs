@@ -40,6 +40,7 @@ pub struct ListFeedbackLoopsQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct PatchFeedbackLoopRequest {
+    pub attempt: Option<String>,
     pub evaluation: Option<String>,
     pub feedback: Option<String>,
     pub adjustment: Option<String>,
@@ -170,6 +171,7 @@ pub async fn patch(
         .patch(
             id,
             PatchFeedbackLoop {
+                attempt: normalize_optional(req.attempt),
                 evaluation: normalize_optional(req.evaluation),
                 feedback: normalize_optional(req.feedback),
                 adjustment: normalize_optional(req.adjustment),
@@ -320,6 +322,24 @@ mod tests {
         assert_eq!(query.namespace_id, Some(namespace_id));
         assert_eq!(query.limit, None);
         assert_eq!(query.offset, None);
+    }
+
+    #[test]
+    fn patch_feedback_loop_request_deserializes_attempt_without_other_fields() {
+        let json = r#"{
+            "attempt": "  Solved 3/5 problems and mixed up denominators  "
+        }"#;
+        let req: PatchFeedbackLoopRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            req.attempt.as_deref(),
+            Some("  Solved 3/5 problems and mixed up denominators  ")
+        );
+        assert_eq!(req.evaluation, None);
+        assert_eq!(req.feedback, None);
+        assert_eq!(req.adjustment, None);
+        assert_eq!(req.next_task, None);
+        assert_eq!(req.status, None);
     }
 
     #[test]

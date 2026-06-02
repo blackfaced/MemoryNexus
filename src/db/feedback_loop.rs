@@ -48,6 +48,7 @@ pub struct FeedbackLoopListFilter {
 
 #[derive(Debug, Clone, Default)]
 pub struct PatchFeedbackLoop {
+    pub attempt: Option<String>,
     pub evaluation: Option<String>,
     pub feedback: Option<String>,
     pub adjustment: Option<String>,
@@ -175,17 +176,19 @@ impl FeedbackLoopRepository for PostgresFeedbackLoopRepository {
         sqlx::query_as::<_, FeedbackLoopDb>(
             r#"
             UPDATE feedback_loops
-            SET evaluation = COALESCE($2, evaluation),
-                feedback = COALESCE($3, feedback),
-                adjustment = COALESCE($4, adjustment),
-                next_task = COALESCE($5, next_task),
-                status = COALESCE($6, status),
+            SET attempt = COALESCE($2, attempt),
+                evaluation = COALESCE($3, evaluation),
+                feedback = COALESCE($4, feedback),
+                adjustment = COALESCE($5, adjustment),
+                next_task = COALESCE($6, next_task),
+                status = COALESCE($7, status),
                 updated_at = NOW()
             WHERE id = $1
             RETURNING *
             "#,
         )
         .bind(feedback_loop_id)
+        .bind(&patch.attempt)
         .bind(&patch.evaluation)
         .bind(&patch.feedback)
         .bind(&patch.adjustment)
@@ -236,5 +239,27 @@ mod tests {
         };
 
         assert_eq!(filter.namespace_id, Some(namespace_id));
+    }
+
+    #[test]
+    fn patch_feedback_loop_can_update_attempt_without_other_loop_fields() {
+        let patch = PatchFeedbackLoop {
+            attempt: Some("Child tried common denominators".to_string()),
+            evaluation: None,
+            feedback: None,
+            adjustment: None,
+            next_task: None,
+            status: None,
+        };
+
+        assert_eq!(
+            patch.attempt.as_deref(),
+            Some("Child tried common denominators")
+        );
+        assert_eq!(patch.evaluation, None);
+        assert_eq!(patch.feedback, None);
+        assert_eq!(patch.adjustment, None);
+        assert_eq!(patch.next_task, None);
+        assert_eq!(patch.status, None);
     }
 }

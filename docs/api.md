@@ -344,6 +344,7 @@ Returns a loop only if the current user can access its Cognitive Space.
 
 ```json
 {
+  "attempt": "What the learner tried",
   "evaluation": "What changed after the attempt",
   "feedback": "Observed error pattern",
   "adjustment": "What to change next round",
@@ -352,8 +353,10 @@ Returns a loop only if the current user can access its Cognitive Space.
 }
 ```
 
-Patch supports `evaluation`, `feedback`, `adjustment`, `next_task`, and
-`status`. Writers are Space `owner` or `editor` members.
+Patch supports `attempt`, `evaluation`, `feedback`, `adjustment`, `next_task`,
+and `status`. Omitted optional fields keep their current values; empty or
+whitespace-only optional text follows the same normalization behavior as create.
+Writers are Space `owner` or `editor` members.
 
 ## Memories
 

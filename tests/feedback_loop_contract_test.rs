@@ -48,3 +48,18 @@ fn feedback_loop_routes_expose_create_list_get_and_patch_api() {
     assert!(routes.contains("feedback_loops::get"));
     assert!(routes.contains("feedback_loops::patch"));
 }
+
+#[test]
+fn feedback_loop_patch_contract_updates_attempt_independently() {
+    let api = fs::read_to_string("src/api/feedback_loops.rs")
+        .expect("feedback loop API should be readable");
+    let repository =
+        fs::read_to_string("src/db/feedback_loop.rs").expect("repository should be readable");
+
+    assert!(api.contains("pub attempt: Option<String>"));
+    assert!(api.contains("attempt: normalize_optional(req.attempt)"));
+    assert!(repository.contains("pub attempt: Option<String>"));
+    assert!(repository.contains("attempt = COALESCE($2, attempt)"));
+    assert!(repository.contains("evaluation = COALESCE($3, evaluation)"));
+    assert!(repository.contains(".bind(&patch.attempt)"));
+}
