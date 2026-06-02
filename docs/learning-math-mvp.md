@@ -144,21 +144,23 @@ change.
 | #67 FeedbackLoop attempt patch | Allow recording the child's answer and reasoning after session creation | Existing FeedbackLoop API | #69 attempt update |
 | #68 FeedbackLoop event as Memory | Preserve practice events as Space-owned Memory with FeedbackLoop provenance | FeedbackLoop foundation; should use #67 when event capture includes attempts | #71 reports, search, future lifecycle work |
 | #69 learning.math practice session API | Product API over Namespace + FeedbackLoop for create, attempt, feedback, list, and get | #67; should integrate #68 for Memory capture | #70 UI, #73 MCP tools, #71 report inputs |
-| #73 learning.math MCP tools | Let Claw or another agent drive the practice flow without low-level HTTP calls | #69 | Agent-driven end-to-end demo |
-| #71 weekly learning review report | Summarize recurring mistake patterns and next practice focus | #68 and #69 | Parent weekly value loop; can run before or alongside #70 after API shape is stable |
-| #70 parent-child static UI slice | Rust-served parent-assisted practice UI | #69; should display #71 output when available | First user-facing learning product slice |
+| #73 learning.math MCP tools | Let Claw or another agent drive the practice flow without low-level HTTP calls | #69 | Claw end-to-end demo |
+| Claw end-to-end demo | Validate the API and MCP flow before locking user-facing surfaces | #73 | #71 report contract and #70 UI shape |
+| #71 weekly learning review report | Summarize recurring mistake patterns and next practice focus | #68, #69, and demo learnings | Parent weekly value loop |
+| #70 parent-child static UI slice | Rust-served parent-assisted practice UI | #69 and #71; should incorporate demo learnings | First user-facing learning product slice |
 
 Suggested execution order:
 
 ```text
 #67 -> #68 -> #69 -> #73
+                 -> Claw end-to-end demo
                  -> #71
                  -> #70
 ```
 
-The UI can start after #69 stabilizes. #71 and #70 can proceed in parallel once
-the practice session API shape is stable, but the UI should not block the report
-API and the report API should not require a new frontend stack.
+The UI should wait until the practice API, MCP tools, demo learnings, and weekly
+review report contract are clear enough to avoid locking the wrong parent-child
+workflow. The report API should not require a new frontend stack.
 
 ## UI Slice
 
