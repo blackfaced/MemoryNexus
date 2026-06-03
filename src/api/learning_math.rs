@@ -431,7 +431,10 @@ async fn ensure_learning_math_namespace(
         .into_iter()
         .find(|namespace| namespace.name == LEARNING_MATH_NAMESPACE)
     {
-        return Ok(namespace);
+        if is_learning_math_namespace(&namespace.name, &namespace.kind) {
+            return Ok(namespace);
+        }
+        return Err(wrong_learning_math_namespace_kind());
     }
 
     state
@@ -465,14 +468,22 @@ async fn find_learning_math_namespace(
             .map_err(AppError::Database);
     }
 
-    Ok(state
+    let namespace = state
         .repositories
         .namespaces
         .list_for_space(space_id, user_id)
         .await
         .map_err(AppError::Database)?
         .into_iter()
-        .find(|namespace| namespace.name == LEARNING_MATH_NAMESPACE))
+        .find(|namespace| namespace.name == LEARNING_MATH_NAMESPACE);
+
+    match namespace {
+        Some(namespace) if is_learning_math_namespace(&namespace.name, &namespace.kind) => {
+            Ok(Some(namespace))
+        }
+        Some(_) => Err(wrong_learning_math_namespace_kind()),
+        None => Ok(None),
+    }
 }
 
 async fn require_learning_math_namespace(
@@ -490,14 +501,19 @@ async fn require_learning_math_namespace(
         .map_err(AppError::Database)?
         .ok_or(AppError::Unauthorized)?;
 
-    if namespace.name == LEARNING_MATH_NAMESPACE && namespace.kind == NamespaceKind::Skill.as_str()
-    {
+    if is_learning_math_namespace(&namespace.name, &namespace.kind) {
         Ok(())
     } else {
-        Err(AppError::BadRequest(
-            "practice session namespace must be learning.math".to_string(),
-        ))
+        Err(wrong_learning_math_namespace_kind())
     }
+}
+
+fn is_learning_math_namespace(name: &str, kind: &str) -> bool {
+    name == LEARNING_MATH_NAMESPACE && kind == NamespaceKind::Skill.as_str()
+}
+
+fn wrong_learning_math_namespace_kind() -> AppError {
+    AppError::BadRequest("practice session namespace must be learning.math skill".to_string())
 }
 
 impl From<FeedbackLoopDb> for PracticeSessionResponse {
@@ -608,5 +624,12 @@ mod tests {
             Some("Three unit-conversion fraction problems")
         );
         assert_eq!(req.status.as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn learning_math_namespace_requires_skill_kind() {
+        assert!(is_learning_math_namespace("learning.math", "skill"));
+        assert!(!is_learning_math_namespace("learning.math", "reflective"));
+        assert!(!is_learning_math_namespace("personal.thoughts", "skill"));
     }
 }
