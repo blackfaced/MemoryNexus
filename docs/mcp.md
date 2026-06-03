@@ -86,6 +86,11 @@ checkout. Skip the build step only when the MCP config uses `cargo run`. Rebuild
 | `complete_reminder` | Mark a pending reminder as completed |
 | `mark_reminder_delivery` | Record in-app reminder delivery as delivered or failed |
 | `route_agent_context` | Recommend write/search/lens/profile/ignore for agent context |
+| `learning_math_create_practice_session` | Create a parent-assisted `learning.math` practice session |
+| `learning_math_record_attempt` | Record a child's answer or reasoning for a practice session |
+| `learning_math_record_feedback` | Record mistake pattern, feedback, adjustment, and next exercise |
+| `learning_math_list_practice_sessions` | List `learning.math` practice sessions in a Cognitive Space |
+| `learning_math_get_practice_session` | Fetch one `learning.math` practice session |
 | `get_install_status` | Inspect local version, checkout state, and API health/version before install or upgrade |
 | `upgrade_install` | Return or apply a local upgrade plan for source, tests, and built binaries |
 
@@ -148,6 +153,26 @@ printf '%s\n' \
 
 Reminder `repeat_rule` accepts `daily`, `weekly`, `monthly`, or interval forms
 such as `daily:3`, `weekly:2`, and `monthly:6`.
+
+Parent-assisted `learning.math` practice:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"learning_math_create_practice_session","arguments":{"space_id":"<space-id>","practice_goal":"Improve fraction word problems","exercise":"Solve five fraction word problems and explain the reasoning","capture_memory":true}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"learning_math_record_attempt","arguments":{"practice_session_id":"<practice-session-id>","answer":"I solved 3 out of 5","reasoning":"I changed units in the middle of the problem","capture_memory":true}}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"learning_math_record_feedback","arguments":{"practice_session_id":"<practice-session-id>","mistake_pattern":"Changed units between steps","feedback":"Write the unit next to every number before calculating","practice_adjustment":"Add a unit-labeling step","next_exercise":"Try three unit-conversion fraction problems","status":"completed","capture_memory":true}}}' \
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"learning_math_list_practice_sessions","arguments":{"space_id":"<space-id>","limit":10}}}' \
+  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"learning_math_get_practice_session","arguments":{"practice_session_id":"<practice-session-id>"}}}' \
+  | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
+```
+
+`learning_math_create_practice_session` accepts `space_id` and optional
+`namespace_id`. When `namespace_id` is omitted, the Rust API creates or reuses
+the `learning.math` skill Namespace inside the same Cognitive Space. The MCP
+tools keep the product-facing fields `practice_goal`, `exercise`, `answer`,
+`reasoning`, `mistake_pattern`, `feedback`, `practice_adjustment`, and
+`next_exercise`; they do not expose MemoryAtom, CognitiveScene, or
+CognitiveProjection as practice-flow inputs.
 
 The tool response returns MemoryNexus API JSON as text content so MCP clients can
 read the same traceable payload that the CLI sees.

@@ -32,6 +32,7 @@ impl Config {
 enum HttpMethod {
     Get,
     Post,
+    Patch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -312,6 +313,84 @@ fn tools_list_result() -> Value {
                 }),
             ),
             tool_schema(
+                "learning_math_create_practice_session",
+                "Create a parent-assisted learning.math practice session in a Cognitive Space.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "space_id": {"type": "string"},
+                        "namespace_id": {"type": "string", "description": "Optional existing learning.math Namespace ID"},
+                        "practice_goal": {"type": "string"},
+                        "exercise": {"type": "string"},
+                        "answer": {"type": "string"},
+                        "reasoning": {"type": "string"},
+                        "mistake_pattern": {"type": "string"},
+                        "feedback": {"type": "string"},
+                        "practice_adjustment": {"type": "string"},
+                        "next_exercise": {"type": "string"},
+                        "status": {"type": "string", "enum": ["active", "completed", "paused"]},
+                        "capture_memory": {"type": "boolean", "default": false}
+                    },
+                    "required": ["space_id", "practice_goal", "exercise"]
+                }),
+            ),
+            tool_schema(
+                "learning_math_record_attempt",
+                "Record the child's answer or reasoning for a learning.math practice session.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "practice_session_id": {"type": "string"},
+                        "answer": {"type": "string"},
+                        "reasoning": {"type": "string"},
+                        "capture_memory": {"type": "boolean", "default": false}
+                    },
+                    "required": ["practice_session_id"]
+                }),
+            ),
+            tool_schema(
+                "learning_math_record_feedback",
+                "Record parent feedback, mistake pattern, adjustment, and next exercise for a learning.math practice session.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "practice_session_id": {"type": "string"},
+                        "mistake_pattern": {"type": "string"},
+                        "feedback": {"type": "string"},
+                        "practice_adjustment": {"type": "string"},
+                        "next_exercise": {"type": "string"},
+                        "status": {"type": "string", "enum": ["active", "completed", "paused"]},
+                        "capture_memory": {"type": "boolean", "default": false}
+                    },
+                    "required": ["practice_session_id"]
+                }),
+            ),
+            tool_schema(
+                "learning_math_list_practice_sessions",
+                "List learning.math practice sessions in a Cognitive Space.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "space_id": {"type": "string"},
+                        "namespace_id": {"type": "string"},
+                        "limit": {"type": "integer", "default": 20},
+                        "offset": {"type": "integer", "default": 0}
+                    },
+                    "required": ["space_id"]
+                }),
+            ),
+            tool_schema(
+                "learning_math_get_practice_session",
+                "Fetch one learning.math practice session.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "practice_session_id": {"type": "string"}
+                    },
+                    "required": ["practice_session_id"]
+                }),
+            ),
+            tool_schema(
                 "get_install_status",
                 "Inspect the local MemoryNexus checkout, local MCP binary version, and API health before deciding whether to install or upgrade.",
                 json!({
@@ -545,6 +624,88 @@ fn build_api_request_for_tool(
             })),
             token,
         }),
+        "learning_math_create_practice_session" => Ok(ApiRequest {
+            method: HttpMethod::Post,
+            url: format!("{base_url}/api/v1/learning/math/practice-sessions"),
+            body: Some(json!({
+                "space_id": required_string(arguments, "space_id")?,
+                "namespace_id": optional_string(arguments, "namespace_id"),
+                "practice_goal": required_string(arguments, "practice_goal")?,
+                "exercise": required_string(arguments, "exercise")?,
+                "answer": combined_answer(arguments),
+                "mistake_pattern": optional_string(arguments, "mistake_pattern"),
+                "feedback": optional_string(arguments, "feedback"),
+                "practice_adjustment": optional_string(arguments, "practice_adjustment"),
+                "next_exercise": optional_string(arguments, "next_exercise"),
+                "status": optional_string(arguments, "status"),
+                "capture_memory": optional_bool(arguments, "capture_memory").unwrap_or(false),
+            })),
+            token,
+        }),
+        "learning_math_record_attempt" => {
+            let session_id = required_string(arguments, "practice_session_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Patch,
+                url: format!(
+                    "{base_url}/api/v1/learning/math/practice-sessions/{session_id}/attempt"
+                ),
+                body: Some(json!({
+                    "answer": combined_answer(arguments),
+                    "capture_memory": optional_bool(arguments, "capture_memory").unwrap_or(false),
+                })),
+                token,
+            })
+        }
+        "learning_math_record_feedback" => {
+            let session_id = required_string(arguments, "practice_session_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Patch,
+                url: format!(
+                    "{base_url}/api/v1/learning/math/practice-sessions/{session_id}/feedback"
+                ),
+                body: Some(json!({
+                    "mistake_pattern": optional_string(arguments, "mistake_pattern"),
+                    "feedback": optional_string(arguments, "feedback"),
+                    "practice_adjustment": optional_string(arguments, "practice_adjustment"),
+                    "next_exercise": optional_string(arguments, "next_exercise"),
+                    "status": optional_string(arguments, "status"),
+                    "capture_memory": optional_bool(arguments, "capture_memory").unwrap_or(false),
+                })),
+                token,
+            })
+        }
+        "learning_math_list_practice_sessions" => {
+            let space_id = required_string(arguments, "space_id")?;
+            let limit = optional_usize(arguments, "limit").unwrap_or(20).to_string();
+            let offset = optional_usize(arguments, "offset").unwrap_or(0).to_string();
+            let namespace_id = optional_string(arguments, "namespace_id");
+            let mut pairs = vec![
+                ("space_id", space_id.as_str()),
+                ("limit", limit.as_str()),
+                ("offset", offset.as_str()),
+            ];
+            if let Some(namespace_id) = namespace_id.as_deref() {
+                pairs.insert(1, ("namespace_id", namespace_id));
+            }
+            Ok(ApiRequest {
+                method: HttpMethod::Get,
+                url: with_query(
+                    &format!("{base_url}/api/v1/learning/math/practice-sessions"),
+                    &pairs,
+                )?,
+                body: None,
+                token,
+            })
+        }
+        "learning_math_get_practice_session" => {
+            let session_id = required_string(arguments, "practice_session_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Get,
+                url: format!("{base_url}/api/v1/learning/math/practice-sessions/{session_id}"),
+                body: None,
+                token,
+            })
+        }
         _ => Err(McpError::new(format!("unknown tool: {tool_name}"))),
     }
 }
@@ -701,6 +862,7 @@ async fn execute_api_request(request: ApiRequest) -> Result<Value, McpError> {
     let mut builder = match request.method {
         HttpMethod::Get => client.get(&request.url),
         HttpMethod::Post => client.post(&request.url),
+        HttpMethod::Patch => client.patch(&request.url),
     }
     .bearer_auth(request.token);
 
@@ -756,6 +918,18 @@ fn optional_usize(arguments: &Value, key: &str) -> Option<usize> {
         .get(key)
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
+}
+
+fn combined_answer(arguments: &Value) -> Option<String> {
+    match (
+        optional_string(arguments, "answer"),
+        optional_string(arguments, "reasoning"),
+    ) {
+        (Some(answer), Some(reasoning)) => Some(format!("{answer}\n\nReasoning: {reasoning}")),
+        (Some(answer), None) => Some(answer),
+        (None, Some(reasoning)) => Some(format!("Reasoning: {reasoning}")),
+        (None, None) => None,
+    }
 }
 
 fn optional_string_array(arguments: &Value, key: &str) -> Vec<String> {
@@ -948,6 +1122,11 @@ mod tests {
                 "complete_reminder",
                 "mark_reminder_delivery",
                 "route_agent_context",
+                "learning_math_create_practice_session",
+                "learning_math_record_attempt",
+                "learning_math_record_feedback",
+                "learning_math_list_practice_sessions",
+                "learning_math_get_practice_session",
                 "get_install_status",
                 "upgrade_install",
             ]
@@ -1301,6 +1480,210 @@ mod tests {
                 "status": "failed",
                 "error": "client notification panel unavailable",
             }))
+        );
+    }
+
+    #[test]
+    fn tools_list_exposes_learning_math_practice_tools() {
+        let result = tools_list_result();
+        let names: Vec<&str> = result["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect();
+
+        for name in [
+            "learning_math_create_practice_session",
+            "learning_math_record_attempt",
+            "learning_math_record_feedback",
+            "learning_math_list_practice_sessions",
+            "learning_math_get_practice_session",
+        ] {
+            assert!(names.contains(&name), "{name} should be registered");
+        }
+    }
+
+    #[test]
+    fn learning_math_tools_require_memorynexus_token() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: None,
+        };
+
+        let error = build_api_request_for_tool(
+            &config,
+            "learning_math_create_practice_session",
+            &json!({
+                "space_id": "space-123",
+                "practice_goal": "Improve fraction word problems",
+                "exercise": "Solve five fraction word problems"
+            }),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.message, "MEMORYNEXUS_TOKEN is required");
+    }
+
+    #[test]
+    fn learning_math_create_practice_session_maps_to_practice_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let request = build_api_request_for_tool(
+            &config,
+            "learning_math_create_practice_session",
+            &json!({
+                "space_id": "space-123",
+                "namespace_id": "namespace-123",
+                "practice_goal": "Improve fraction word problems",
+                "exercise": "Solve five fraction word problems",
+                "answer": "I solved 3 of 5",
+                "reasoning": "I added the numerators first",
+                "mistake_pattern": "Mixed units",
+                "feedback": "Label units before calculating",
+                "practice_adjustment": "Add a unit-labeling step",
+                "next_exercise": "Try three unit-conversion problems",
+                "capture_memory": true
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(
+            request.url,
+            "http://localhost:8080/api/v1/learning/math/practice-sessions"
+        );
+        assert_eq!(request.token, "jwt-token");
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "space_id": "space-123",
+                "namespace_id": "namespace-123",
+                "practice_goal": "Improve fraction word problems",
+                "exercise": "Solve five fraction word problems",
+                "answer": "I solved 3 of 5\n\nReasoning: I added the numerators first",
+                "mistake_pattern": "Mixed units",
+                "feedback": "Label units before calculating",
+                "practice_adjustment": "Add a unit-labeling step",
+                "next_exercise": "Try three unit-conversion problems",
+                "status": null,
+                "capture_memory": true,
+            }))
+        );
+    }
+
+    #[test]
+    fn learning_math_record_attempt_maps_to_attempt_patch_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let request = build_api_request_for_tool(
+            &config,
+            "learning_math_record_attempt",
+            &json!({
+                "practice_session_id": "session-123",
+                "answer": "3/4",
+                "reasoning": "I converted both fractions to fourths",
+                "capture_memory": true
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Patch);
+        assert_eq!(
+            request.url,
+            "http://localhost:8080/api/v1/learning/math/practice-sessions/session-123/attempt"
+        );
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "answer": "3/4\n\nReasoning: I converted both fractions to fourths",
+                "capture_memory": true,
+            }))
+        );
+    }
+
+    #[test]
+    fn learning_math_record_feedback_maps_to_feedback_patch_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let request = build_api_request_for_tool(
+            &config,
+            "learning_math_record_feedback",
+            &json!({
+                "practice_session_id": "session-123",
+                "mistake_pattern": "Changed units between steps",
+                "feedback": "Write the unit next to every number",
+                "practice_adjustment": "Add a unit check before calculating",
+                "next_exercise": "Three unit-conversion fraction problems",
+                "status": "completed",
+                "capture_memory": true
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Patch);
+        assert_eq!(
+            request.url,
+            "http://localhost:8080/api/v1/learning/math/practice-sessions/session-123/feedback"
+        );
+        assert_eq!(
+            request.body,
+            Some(json!({
+                "mistake_pattern": "Changed units between steps",
+                "feedback": "Write the unit next to every number",
+                "practice_adjustment": "Add a unit check before calculating",
+                "next_exercise": "Three unit-conversion fraction problems",
+                "status": "completed",
+                "capture_memory": true,
+            }))
+        );
+    }
+
+    #[test]
+    fn learning_math_list_and_get_practice_sessions_map_to_practice_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let list = build_api_request_for_tool(
+            &config,
+            "learning_math_list_practice_sessions",
+            &json!({
+                "space_id": "space-123",
+                "namespace_id": "namespace-123",
+                "limit": 10,
+                "offset": 5
+            }),
+        )
+        .unwrap();
+        let get = build_api_request_for_tool(
+            &config,
+            "learning_math_get_practice_session",
+            &json!({
+                "practice_session_id": "session-123"
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(list.method, HttpMethod::Get);
+        assert_eq!(
+            list.url,
+            "http://localhost:8080/api/v1/learning/math/practice-sessions?space_id=space-123&namespace_id=namespace-123&limit=10&offset=5"
+        );
+        assert_eq!(get.method, HttpMethod::Get);
+        assert_eq!(
+            get.url,
+            "http://localhost:8080/api/v1/learning/math/practice-sessions/session-123"
         );
     }
 }
