@@ -500,10 +500,8 @@ After the MCP client is connected, use MCP tools directly:
 {
   "space_id": "<space-id>",
   "capture_memory": true,
-  "student_label": "local learner",
-  "topic": "fractions",
-  "goal": "Practice fraction word problems",
-  "task": "A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"
+  "practice_goal": "Practice fraction word problems",
+  "exercise": "A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"
 }
 ```
 
@@ -513,7 +511,7 @@ After the MCP client is connected, use MCP tools directly:
 ```json
 {
   "practice_session_id": "<practice-session-id>",
-  "attempt": "3/8 cup",
+  "answer": "3/8 cup",
   "reasoning": "Half of 3/4 is 3/8",
   "capture_memory": true
 }
@@ -524,10 +522,11 @@ After the MCP client is connected, use MCP tools directly:
 ```json
 {
   "practice_session_id": "<practice-session-id>",
-  "evaluation": "correct",
+  "mistake_pattern": "None this time",
   "feedback": "Good fraction multiplication: half means multiply by 1/2.",
-  "adjustment": "Try one similar word problem with a different numerator.",
-  "next_task": "A garden uses 2/3 bag of soil. How much is needed for half the garden?",
+  "practice_adjustment": "Try one similar word problem with a different numerator.",
+  "next_exercise": "A garden uses 2/3 bag of soil. How much is needed for half the garden?",
+  "status": "completed",
   "capture_memory": true
 }
 ```
@@ -576,7 +575,7 @@ create the session first:
 
 ```bash
 SESSION_JSON=$(printf '%s\n' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"learning_math_create_practice_session","arguments":{"space_id":"<space-id>","capture_memory":true,"student_label":"local learner","topic":"fractions","goal":"Practice fraction word problems","task":"A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"learning_math_create_practice_session","arguments":{"space_id":"<space-id>","capture_memory":true,"practice_goal":"Practice fraction word problems","exercise":"A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"}}}' \
   | MEMORYNEXUS_API_URL=http://localhost:8080 \
     MEMORYNEXUS_TOKEN="$MEMORYNEXUS_TOKEN" \
     ./target/debug/memorynexus-mcp)

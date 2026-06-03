@@ -140,6 +140,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Cognitive Concepts](docs/cognitive-concepts.md)
 - [Cognitive Lens Roadmap](docs/cognitive-lens-roadmap.md)
 - [STEM Learning Feedback MVP PRD](docs/stem-learning-mvp.md)
+- [STEM Learning MCP Demo](docs/stem-mcp-demo.md)
 - [Thought Review UI MVP ADR](decisions/ADR-013-thought-review-ui-mvp.md)
 - [Namespace and Feedback Loop ADR](decisions/ADR-014-namespace-feedback-loop.md)
 - [Architecture Decisions](decisions/)
