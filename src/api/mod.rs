@@ -10,6 +10,7 @@ mod auth;
 mod embedding;
 mod feedback_loops;
 mod health;
+mod learning_math;
 mod lens_runs;
 mod lenses;
 mod memories;
@@ -93,6 +94,27 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v1/feedback-loops/:id",
             axum::routing::patch(feedback_loops::patch),
+        )
+        // learning.math practice sessions
+        .route(
+            "/api/v1/learning/math/practice-sessions",
+            axum::routing::get(learning_math::list),
+        )
+        .route(
+            "/api/v1/learning/math/practice-sessions",
+            axum::routing::post(learning_math::create),
+        )
+        .route(
+            "/api/v1/learning/math/practice-sessions/:id/attempt",
+            axum::routing::patch(learning_math::patch_attempt),
+        )
+        .route(
+            "/api/v1/learning/math/practice-sessions/:id/feedback",
+            axum::routing::patch(learning_math::patch_feedback),
+        )
+        .route(
+            "/api/v1/learning/math/practice-sessions/:id",
+            axum::routing::get(learning_math::get),
         )
         // 记忆 CRUD
         .route("/api/v1/memories", axum::routing::get(memories::list))

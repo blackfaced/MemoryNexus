@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-01
+> Last updated: 2026-06-03
 > Source of truth for executable tasks: GitHub Issues.
 
 This file is now a roadmap summary. Do not maintain detailed task status in
@@ -201,6 +201,10 @@ Recently completed:
   Namespace schema, repository, and API are now on main.
 - [#57 Minimal FeedbackLoop database model and API](https://github.com/blackfaced/MemoryNexus/issues/57):
   FeedbackLoop schema, repository, and API are now on main.
+- [#69 learning.math practice session API](https://github.com/blackfaced/MemoryNexus/issues/69):
+  thin product API on top of Namespace and FeedbackLoop creates/reuses
+  `learning.math`, records practice answers and feedback, and preserves optional
+  Memory snapshots.
 
 Current open work:
 
@@ -215,16 +219,14 @@ Recommended sequence:
    unblock incremental child answer / reasoning capture.
 3. [#68 Capture FeedbackLoop event as Memory](https://github.com/blackfaced/MemoryNexus/issues/68):
    preserve practice events as Space-owned Memory with FeedbackLoop provenance.
-4. [#69 learning.math practice session API](https://github.com/blackfaced/MemoryNexus/issues/69):
-   add the product API on top of Namespace and FeedbackLoop.
-5. [#73 learning.math MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
+4. [#73 learning.math MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
    expose the practice flow to Claw and other MCP clients.
-6. Run a Claw end-to-end demo over the MCP tools before locking the final static
+5. Run a Claw end-to-end demo over the MCP tools before locking the final static
    UI shape.
-7. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
+6. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
    summarize practiced topics, recurring mistake patterns, improvement signals,
    and next practice.
-8. [#70 learning.math parent-child static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
+7. [#70 learning.math parent-child static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
    build the Rust-served static UI after the API, MCP, demo, and review report
    contracts are clear.
 
