@@ -270,7 +270,7 @@ pub async fn patch(
     Ok(Json(ApiResponse::success(result.feedback_loop)))
 }
 
-fn feedback_loop_memory_snapshot<const N: usize>(
+pub(crate) fn feedback_loop_memory_snapshot<const N: usize>(
     user_id: Uuid,
     event_kind: &str,
     practice_fields: [(&'static str, &'static str, Option<&str>); N],
@@ -297,7 +297,7 @@ fn feedback_loop_memory_snapshot<const N: usize>(
     })
 }
 
-async fn require_space_member(
+pub(crate) async fn require_space_member(
     state: &AppState,
     space_id: Uuid,
     user_id: Uuid,
@@ -312,7 +312,7 @@ async fn require_space_member(
         .ok_or(AppError::Unauthorized)
 }
 
-async fn require_space_writer(
+pub(crate) async fn require_space_writer(
     state: &AppState,
     space_id: Uuid,
     user_id: Uuid,
@@ -332,7 +332,7 @@ async fn require_space_writer(
     }
 }
 
-async fn require_namespace_in_space(
+pub(crate) async fn require_namespace_in_space(
     state: &AppState,
     namespace_id: Uuid,
     space_id: Uuid,
@@ -363,7 +363,7 @@ fn namespace_belongs_to_space(namespace_space_id: Uuid, requested_space_id: Uuid
     namespace_space_id == requested_space_id
 }
 
-fn capture_memory_requested(value: Option<bool>) -> bool {
+pub(crate) fn capture_memory_requested(value: Option<bool>) -> bool {
     value.unwrap_or(false)
 }
 
@@ -374,7 +374,7 @@ fn normalized_snapshot_value(value: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn normalize_required(value: &str, message: &str) -> Result<String, AppError> {
+pub(crate) fn normalize_required(value: &str, message: &str) -> Result<String, AppError> {
     let value = value.trim();
     if value.is_empty() {
         Err(AppError::BadRequest(message.to_string()))
@@ -383,13 +383,13 @@ fn normalize_required(value: &str, message: &str) -> Result<String, AppError> {
     }
 }
 
-fn normalize_optional(value: Option<String>) -> Option<String> {
+pub(crate) fn normalize_optional(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }
 
-fn normalize_status(status: Option<&str>) -> Result<String, AppError> {
+pub(crate) fn normalize_status(status: Option<&str>) -> Result<String, AppError> {
     let status = status
         .map(str::trim)
         .filter(|value| !value.is_empty())

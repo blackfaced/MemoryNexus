@@ -380,6 +380,112 @@ patch event only; previously stored loop fields are not repeated in the Memory
 content or `included_fields`. The FeedbackLoop update and Memory row are
 committed in the same database transaction.
 
+## learning.math Practice Sessions
+
+The learning math API is a thin product-facing layer over Namespace and
+FeedbackLoop. It creates or reuses the `learning.math` skill Namespace inside
+the requested Cognitive Space, then stores each practice session as a
+FeedbackLoop. Responses use parent and child friendly language and do not expose
+memory lifecycle internals.
+
+### Create Practice Session
+
+`POST /api/v1/learning/math/practice-sessions`
+
+```json
+{
+  "space_id": "space-uuid",
+  "namespace_id": "optional-learning-math-namespace-uuid",
+  "practice_goal": "Improve fraction word problems",
+  "exercise": "Solve five fraction word problems and explain the reasoning",
+  "answer": "optional child answer or reasoning",
+  "mistake_pattern": "optional observed mistake pattern",
+  "feedback": "optional parent feedback",
+  "practice_adjustment": "optional change for the next round",
+  "next_exercise": "optional next exercise",
+  "capture_memory": true
+}
+```
+
+`namespace_id` is optional. When omitted, the server creates or reuses
+`learning.math` in the requested Space. When supplied, it must belong to the same
+Space and must be the `learning.math` skill Namespace. `goal`, `task`,
+`attempt`, `evaluation`, `adjustment`, and `next_task` are accepted as aliases
+for clients already using the lower-level FeedbackLoop vocabulary.
+
+### List Practice Sessions
+
+`GET /api/v1/learning/math/practice-sessions?space_id=<SPACE_ID>&namespace_id=<OPTIONAL_NAMESPACE_ID>`
+
+Returns sessions in `learning.math` ordered by newest first. Listing does not
+create the Namespace; if `learning.math` has not been created yet, the response
+is an empty list.
+
+### Get Practice Session
+
+`GET /api/v1/learning/math/practice-sessions/:id`
+
+Returns a session only if the current user can access its Cognitive Space and
+the underlying FeedbackLoop belongs to `learning.math`.
+
+### Update Answer
+
+`PATCH /api/v1/learning/math/practice-sessions/:id/attempt`
+
+```json
+{
+  "answer": "I solved 3 out of 5 and got stuck on unit conversion",
+  "capture_memory": true
+}
+```
+
+This updates the underlying FeedbackLoop `attempt` field. When
+`capture_memory` is true and `answer` is non-empty, the API creates a
+Space-owned Memory snapshot for the practice event.
+
+### Update Feedback
+
+`PATCH /api/v1/learning/math/practice-sessions/:id/feedback`
+
+```json
+{
+  "mistake_pattern": "The child changed units between steps",
+  "feedback": "Write the unit next to every number before calculating",
+  "practice_adjustment": "Add a unit-labeling step",
+  "next_exercise": "Try three unit-conversion fraction problems",
+  "status": "completed",
+  "capture_memory": true
+}
+```
+
+This updates the underlying FeedbackLoop `evaluation`, `feedback`,
+`adjustment`, `next_task`, and optional `status`. When `capture_memory` is true
+and at least one practice field is non-empty, the API creates a Memory snapshot
+using the same transaction as the FeedbackLoop patch.
+
+Example response shape:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "practice-session-uuid",
+    "space_id": "space-uuid",
+    "namespace_id": "namespace-uuid",
+    "practice_goal": "Improve fraction word problems",
+    "exercise": "Solve five fraction word problems and explain the reasoning",
+    "answer": "I solved 3 out of 5",
+    "mistake_pattern": "Unit conversion errors",
+    "feedback": "Write units before calculating",
+    "practice_adjustment": "Add a unit-labeling step",
+    "next_exercise": "Try three unit-conversion fraction problems",
+    "status": "active",
+    "created_at": "2026-06-03T00:00:00Z",
+    "updated_at": "2026-06-03T00:00:00Z"
+  }
+}
+```
+
 ## Memories
 
 ### Create Memory
