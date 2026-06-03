@@ -27,12 +27,14 @@ Expected result:
 - The MCP server `memorynexus-mcp` is discoverable by the agent client.
 - The MCP tool list includes `create_space`, `create_lens`, `add_memory`,
   `get_profile`, `search_memories`, `run_lens`, `route_agent_context`,
-  `get_install_status`, `upgrade_install`, and the current `learning_math_*`
-  practice tools for the STEM Learning Feedback slice.
+  `create_practice_session`, `record_practice_attempt`,
+  `record_practice_feedback`, `list_practice_sessions`,
+  `get_practice_session`, `get_install_status`, `upgrade_install`, and the
+  compatibility `learning_math_*` practice tools.
 - A smoke memory can be written and retrieved through MCP.
 - A STEM learning practice session can be created, patched with an attempt and
-  feedback, then listed and retrieved through MCP using the current
-  `learning_math_*` tool names.
+  feedback, then listed and retrieved through MCP using the canonical
+  namespace-driven practice tool names.
 
 ## Execution Strategy
 
@@ -118,6 +120,11 @@ The output must include:
 - `search_memories`
 - `run_lens`
 - `route_agent_context`
+- `create_practice_session`
+- `record_practice_attempt`
+- `record_practice_feedback`
+- `list_practice_sessions`
+- `get_practice_session`
 - `get_install_status`
 - `upgrade_install`
 - `learning_math_create_practice_session`
@@ -125,6 +132,13 @@ The output must include:
 - `learning_math_record_feedback`
 - `learning_math_list_practice_sessions`
 - `learning_math_get_practice_session`
+
+The `create_practice_session`, `record_practice_attempt`,
+`record_practice_feedback`, `list_practice_sessions`, and
+`get_practice_session` tools are canonical. They operate on a supplied
+`namespace_id`, so `learning.stem` and `learning.math` are Namespace data inside
+one Cognitive Space. The `learning_math_*` tools remain compatibility aliases
+for the first implementation slice.
 
 If this passes, the MCP binary is ready even if Docker is blocked.
 
@@ -490,26 +504,41 @@ After the MCP client is connected, use MCP tools directly:
 }
 ```
 
-7. Call `learning_math_create_practice_session` for the local STEM learning
-   smoke. Use the same `space_id`. `namespace_id` is optional; the current API
-   will create or reuse the `learning.math` namespace inside the Cognitive Space.
-   Roadmap docs call the broader product namespace `learning.stem`; do not
-   rename the tool call unless the code adds that alias.
+7. Create or select the `learning.stem` Skill Namespace through the Rust API.
+   MCP practice tools are namespace-driven, so this is a one-time HTTP setup
+   step unless the namespace already exists:
+
+```bash
+curl -fsS -X POST http://localhost:8080/api/v1/namespaces \
+  -H "Authorization: Bearer $MEMORYNEXUS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "space_id": "<space-id>",
+    "name": "learning.stem",
+    "kind": "skill",
+    "description": "Parent-assisted STEM practice feedback"
+  }'
+```
+
+8. Call `create_practice_session` for the local STEM learning smoke. Use the
+   returned `namespace_id`; optional `space_id` is only a guard and must match
+   the Namespace Space.
 
 ```json
 {
-  "space_id": "<space-id>",
+  "namespace_id": "<learning-stem-namespace-id>",
   "capture_memory": true,
   "practice_goal": "Practice fraction word problems",
   "exercise": "A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"
 }
 ```
 
-8. Read the returned `data.id` as `practice_session_id`, then call
-   `learning_math_record_attempt`:
+9. Read the returned `data.id` as `practice_session_id`, then call
+   `record_practice_attempt`:
 
 ```json
 {
+  "namespace_id": "<learning-stem-namespace-id>",
   "practice_session_id": "<practice-session-id>",
   "answer": "3/8 cup",
   "reasoning": "Half of 3/4 is 3/8",
@@ -517,10 +546,11 @@ After the MCP client is connected, use MCP tools directly:
 }
 ```
 
-9. Call `learning_math_record_feedback`:
+10. Call `record_practice_feedback`:
 
 ```json
 {
+  "namespace_id": "<learning-stem-namespace-id>",
   "practice_session_id": "<practice-session-id>",
   "mistake_pattern": "None this time",
   "feedback": "Good fraction multiplication: half means multiply by 1/2.",
@@ -531,20 +561,21 @@ After the MCP client is connected, use MCP tools directly:
 }
 ```
 
-10. Verify the session is discoverable:
+11. Verify the session is discoverable:
 
 ```json
 {
-  "space_id": "<space-id>",
+  "namespace_id": "<learning-stem-namespace-id>",
   "limit": 10
 }
 ```
 
-Use those arguments with `learning_math_list_practice_sessions`, then call
-`learning_math_get_practice_session`:
+Use those arguments with `list_practice_sessions`, then call
+`get_practice_session`:
 
 ```json
 {
+  "namespace_id": "<learning-stem-namespace-id>",
   "practice_session_id": "<practice-session-id>"
 }
 ```
@@ -570,12 +601,12 @@ printf '%s\n' "$SPACE_JSON"
 Then extract the `space_id` from the returned API JSON text and continue with
 `create_lens`, `add_memory`, `get_profile`, and `search_memories`.
 
-To smoke STEM learning over stdio with the current `learning_math_*` tools,
-create the session first:
+To smoke STEM learning over stdio, create or select `learning.stem` through the
+HTTP Namespace API first, then create the session with the canonical MCP tool:
 
 ```bash
 SESSION_JSON=$(printf '%s\n' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"learning_math_create_practice_session","arguments":{"space_id":"<space-id>","capture_memory":true,"practice_goal":"Practice fraction word problems","exercise":"A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_practice_session","arguments":{"namespace_id":"<learning-stem-namespace-id>","capture_memory":true,"practice_goal":"Practice fraction word problems","exercise":"A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"}}}' \
   | MEMORYNEXUS_API_URL=http://localhost:8080 \
     MEMORYNEXUS_TOKEN="$MEMORYNEXUS_TOKEN" \
     ./target/debug/memorynexus-mcp)
@@ -584,10 +615,11 @@ printf '%s\n' "$SESSION_JSON"
 ```
 
 Then extract `data.id` from the returned API JSON text as
-`practice_session_id` and continue with `learning_math_record_attempt`,
-`learning_math_record_feedback`, `learning_math_list_practice_sessions`, and
-`learning_math_get_practice_session`. Do not reuse the placeholder
-`<practice-session-id>` in real calls.
+`practice_session_id` and continue with `record_practice_attempt`,
+`record_practice_feedback`, `list_practice_sessions`, and
+`get_practice_session`. Do not reuse the placeholder `<practice-session-id>` in
+real calls. The older `learning_math_*` tools remain compatibility aliases when
+an existing client still uses the first-slice `learning.math` surface.
 
 ## Docker Pull Or Proxy Issues
 
@@ -660,8 +692,8 @@ When done, report:
 - Whether the MCP config uses `cargo run` or a built binary.
 - The created `space_id` and lens IDs.
 - The smoke result for `add_memory`, `get_profile`, and `search_memories`.
-- The `learning_math_*` tool availability and, if run, the created
-  `practice_session_id`.
+- The canonical practice tool availability and, if run, the created
+  `namespace_id` and `practice_session_id`.
 - Whether STEM learning create/attempt/feedback calls captured memory snapshots.
 - Any blocker that required user action.
 

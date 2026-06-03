@@ -86,11 +86,16 @@ checkout. Skip the build step only when the MCP config uses `cargo run`. Rebuild
 | `complete_reminder` | Mark a pending reminder as completed |
 | `mark_reminder_delivery` | Record in-app reminder delivery as delivered or failed |
 | `route_agent_context` | Recommend write/search/lens/profile/ignore for agent context |
-| `learning_math_create_practice_session` | Create a parent-assisted STEM learning practice session using the current `learning_math_*` tool surface |
-| `learning_math_record_attempt` | Record a learner's answer or reasoning for a practice session |
-| `learning_math_record_feedback` | Record mistake pattern, feedback, adjustment, and next exercise |
-| `learning_math_list_practice_sessions` | List STEM learning practice sessions in a Cognitive Space |
-| `learning_math_get_practice_session` | Fetch one STEM learning practice session |
+| `create_practice_session` | Canonical: create a practice session in a Skill Namespace such as `learning.stem` |
+| `record_practice_attempt` | Canonical: record a learner's answer or reasoning for a namespace practice session |
+| `record_practice_feedback` | Canonical: record mistake pattern, feedback, adjustment, and next exercise for a namespace practice session |
+| `list_practice_sessions` | Canonical: list practice sessions in a Skill Namespace |
+| `get_practice_session` | Canonical: fetch one practice session from a Skill Namespace |
+| `learning_math_create_practice_session` | Compatibility: create a parent-assisted `learning.math` practice session |
+| `learning_math_record_attempt` | Compatibility: record a learner's answer or reasoning for a `learning.math` practice session |
+| `learning_math_record_feedback` | Compatibility: record mistake pattern, feedback, adjustment, and next exercise for `learning.math` |
+| `learning_math_list_practice_sessions` | Compatibility: list `learning.math` practice sessions in a Cognitive Space |
+| `learning_math_get_practice_session` | Compatibility: fetch one `learning.math` practice session |
 | `get_install_status` | Inspect local version, checkout state, and API health/version before install or upgrade |
 | `upgrade_install` | Return or apply a local upgrade plan for source, tests, and built binaries |
 
@@ -154,8 +159,22 @@ printf '%s\n' \
 Reminder `repeat_rule` accepts `daily`, `weekly`, `monthly`, or interval forms
 such as `daily:3`, `weekly:2`, and `monthly:6`.
 
-Parent-assisted STEM learning practice, using the current `learning_math_*`
-tools from the first implementation slice:
+Parent-assisted STEM learning practice should use the canonical namespace-driven
+tools. Create or select a Skill Namespace such as `learning.stem` through the
+HTTP Namespace API, then pass its `namespace_id` to MCP:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_practice_session","arguments":{"namespace_id":"<learning-stem-namespace-id>","practice_goal":"Improve fraction word problems","exercise":"Solve five fraction word problems and explain the reasoning","capture_memory":true}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"record_practice_attempt","arguments":{"namespace_id":"<learning-stem-namespace-id>","practice_session_id":"<practice-session-id>","answer":"I solved 3 out of 5","reasoning":"I changed units in the middle of the problem","capture_memory":true}}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"record_practice_feedback","arguments":{"namespace_id":"<learning-stem-namespace-id>","practice_session_id":"<practice-session-id>","mistake_pattern":"Changed units between steps","feedback":"Write the unit next to every number before calculating","practice_adjustment":"Add a unit-labeling step","next_exercise":"Try three unit-conversion fraction problems","status":"completed","capture_memory":true}}}' \
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_practice_sessions","arguments":{"namespace_id":"<learning-stem-namespace-id>","limit":10}}}' \
+  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_practice_session","arguments":{"namespace_id":"<learning-stem-namespace-id>","practice_session_id":"<practice-session-id>"}}}' \
+  | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
+```
+
+The older `learning_math_*` tools remain as compatibility aliases for clients
+already using the first implementation slice:
 
 ```bash
 printf '%s\n' \
@@ -167,15 +186,15 @@ printf '%s\n' \
   | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
 ```
 
-`learning_math_create_practice_session` accepts `space_id` and optional
-`namespace_id`. When `namespace_id` is omitted, the Rust API creates or reuses
-the current `learning.math` skill Namespace inside the same Cognitive Space.
-Roadmap and PRD docs call the broader product MVP `learning.stem`; a future
-issue may add aliases or rename the tool surface without changing this flow. The
-MCP tools keep the product-facing fields `practice_goal`, `exercise`, `answer`,
-`reasoning`, `mistake_pattern`, `feedback`, `practice_adjustment`, and
-`next_exercise`; they do not expose MemoryAtom, CognitiveScene, or
-CognitiveProjection as practice-flow inputs.
+`create_practice_session` and the other canonical tools require `namespace_id`;
+optional `space_id` is only a guard and must match the Namespace Space when
+supplied. `learning_math_create_practice_session` accepts `space_id` and
+optional `namespace_id`. When `namespace_id` is omitted, the Rust API creates or
+reuses the current `learning.math` skill Namespace inside the same Cognitive
+Space. All practice tools keep the product-facing fields `practice_goal`,
+`exercise`, `answer`, `reasoning`, `mistake_pattern`, `feedback`,
+`practice_adjustment`, and `next_exercise`; they do not expose MemoryAtom,
+CognitiveScene, or CognitiveProjection as practice-flow inputs.
 
 The tool response returns MemoryNexus API JSON as text content so MCP clients can
 read the same traceable payload that the CLI sees.

@@ -1,4 +1,4 @@
-//! learning.math practice session API
+//! Namespace-driven practice session API with learning.math compatibility routes.
 
 use axum::{
     extract::{Path, Query, State},
@@ -29,7 +29,7 @@ const LEARNING_MATH_DESCRIPTION: &str = "Parent-assisted elementary math practic
 
 #[derive(Debug, Deserialize)]
 pub struct CreatePracticeSessionRequest {
-    pub space_id: Uuid,
+    pub space_id: Option<Uuid>,
     pub namespace_id: Option<Uuid>,
     #[serde(alias = "goal")]
     pub practice_goal: String,
@@ -51,7 +51,7 @@ pub struct CreatePracticeSessionRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct ListPracticeSessionsQuery {
-    pub space_id: Uuid,
+    pub space_id: Option<Uuid>,
     pub namespace_id: Option<Uuid>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -109,11 +109,46 @@ pub async fn create(
     auth_user: AuthenticatedUser,
     Json(req): Json<CreatePracticeSessionRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<PracticeSessionResponse>>), AppError> {
-    require_space_writer(&state, req.space_id, auth_user.user_id).await?;
+    let space_id = req
+        .space_id
+        .ok_or_else(|| AppError::BadRequest("space_id is required".to_string()))?;
+    require_space_writer(&state, space_id, auth_user.user_id).await?;
     let namespace =
-        ensure_learning_math_namespace(&state, req.space_id, req.namespace_id, auth_user.user_id)
+        ensure_learning_math_namespace(&state, space_id, req.namespace_id, auth_user.user_id)
             .await?;
 
+    create_practice_session(&state, auth_user.user_id, space_id, namespace.id, req).await
+}
+
+pub async fn create_in_namespace(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Path(namespace_id): Path<Uuid>,
+    Json(req): Json<CreatePracticeSessionRequest>,
+) -> Result<(StatusCode, Json<ApiResponse<PracticeSessionResponse>>), AppError> {
+    let namespace = require_practice_namespace(&state, namespace_id, auth_user.user_id).await?;
+    require_space_writer(&state, namespace.space_id, auth_user.user_id).await?;
+    if let Some(space_id) = req.space_id {
+        require_matching_space_id(space_id, namespace.space_id)?;
+    }
+
+    create_practice_session(
+        &state,
+        auth_user.user_id,
+        namespace.space_id,
+        namespace.id,
+        req,
+    )
+    .await
+}
+
+async fn create_practice_session(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    req: CreatePracticeSessionRequest,
+) -> Result<(StatusCode, Json<ApiResponse<PracticeSessionResponse>>), AppError> {
     let goal = normalize_required(&req.practice_goal, "practice goal is required")?;
     let task = normalize_required(&req.exercise, "exercise is required")?;
     let attempt = normalize_optional(req.answer);
@@ -125,7 +160,7 @@ pub async fn create(
 
     let snapshot = capture_memory_requested(req.capture_memory).then(|| {
         feedback_loop_memory_snapshot(
-            auth_user.user_id,
+            user_id,
             "create",
             [
                 ("goal", "Practice goal", Some(goal.as_str())),
@@ -144,8 +179,8 @@ pub async fn create(
     });
 
     let create_feedback_loop = CreateFeedbackLoop {
-        space_id: req.space_id,
-        namespace_id: namespace.id,
+        space_id,
+        namespace_id,
         goal,
         task,
         attempt,
@@ -154,7 +189,7 @@ pub async fn create(
         adjustment,
         next_task,
         status,
-        created_by: auth_user.user_id,
+        created_by: user_id,
     };
 
     let result = match snapshot.flatten() {
@@ -176,7 +211,7 @@ pub async fn create(
     };
 
     if let Some(memory) = result.memory.as_ref() {
-        index_memory_embedding(&state, memory).await;
+        index_memory_embedding(state, memory).await;
     }
 
     Ok((
@@ -192,16 +227,15 @@ pub async fn list(
     auth_user: AuthenticatedUser,
     Query(query): Query<ListPracticeSessionsQuery>,
 ) -> Result<Json<ApiResponse<PracticeSessionListResponse>>, AppError> {
-    require_space_member(&state, query.space_id, auth_user.user_id).await?;
+    let space_id = query
+        .space_id
+        .ok_or_else(|| AppError::BadRequest("space_id is required".to_string()))?;
+    require_space_member(&state, space_id, auth_user.user_id).await?;
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
     let offset = query.offset.unwrap_or(0).max(0);
-    let Some(namespace) = find_learning_math_namespace(
-        &state,
-        query.space_id,
-        query.namespace_id,
-        auth_user.user_id,
-    )
-    .await?
+    let Some(namespace) =
+        find_learning_math_namespace(&state, space_id, query.namespace_id, auth_user.user_id)
+            .await?
     else {
         return Ok(Json(ApiResponse::success(PracticeSessionListResponse {
             items: vec![],
@@ -211,32 +245,38 @@ pub async fn list(
         })));
     };
 
-    let feedback_loops = state
-        .repositories
-        .feedback_loops
-        .list_for_user(
-            FeedbackLoopListFilter {
-                space_id: query.space_id,
-                namespace_id: Some(namespace.id),
-                limit,
-                offset,
-            },
-            auth_user.user_id,
-        )
-        .await
-        .map_err(AppError::Database)?;
+    list_practice_sessions(
+        &state,
+        space_id,
+        namespace.id,
+        Some(limit),
+        Some(offset),
+        auth_user.user_id,
+    )
+    .await
+}
 
-    let items = feedback_loops
-        .into_iter()
-        .map(PracticeSessionResponse::from)
-        .collect::<Vec<_>>();
+pub async fn list_in_namespace(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Path(namespace_id): Path<Uuid>,
+    Query(query): Query<ListPracticeSessionsQuery>,
+) -> Result<Json<ApiResponse<PracticeSessionListResponse>>, AppError> {
+    let namespace = require_practice_namespace(&state, namespace_id, auth_user.user_id).await?;
+    require_space_member(&state, namespace.space_id, auth_user.user_id).await?;
+    if let Some(space_id) = query.space_id {
+        require_matching_space_id(space_id, namespace.space_id)?;
+    }
 
-    Ok(Json(ApiResponse::success(PracticeSessionListResponse {
-        total: items.len(),
-        items,
-        limit,
-        offset,
-    })))
+    list_practice_sessions(
+        &state,
+        namespace.space_id,
+        namespace.id,
+        query.limit,
+        query.offset,
+        auth_user.user_id,
+    )
+    .await
 }
 
 pub async fn get(
@@ -245,6 +285,19 @@ pub async fn get(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<PracticeSessionResponse>>, AppError> {
     let feedback_loop = find_learning_math_session(&state, id, auth_user.user_id).await?;
+
+    Ok(Json(ApiResponse::success(PracticeSessionResponse::from(
+        feedback_loop,
+    ))))
+}
+
+pub async fn get_in_namespace(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Path((namespace_id, id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ApiResponse<PracticeSessionResponse>>, AppError> {
+    let feedback_loop =
+        find_practice_session_in_namespace(&state, namespace_id, id, auth_user.user_id).await?;
 
     Ok(Json(ApiResponse::success(PracticeSessionResponse::from(
         feedback_loop,
@@ -267,6 +320,15 @@ pub async fn patch_attempt(
     )
     .await?;
 
+    patch_practice_attempt(&state, auth_user.user_id, id, req).await
+}
+
+async fn patch_practice_attempt(
+    state: &AppState,
+    user_id: Uuid,
+    id: Uuid,
+    req: PatchPracticeAttemptRequest,
+) -> Result<Json<ApiResponse<PracticeSessionResponse>>, AppError> {
     let attempt = normalize_optional(req.answer);
     let patch = PatchFeedbackLoop {
         attempt,
@@ -278,7 +340,7 @@ pub async fn patch_attempt(
     };
     let snapshot = capture_memory_requested(req.capture_memory).then(|| {
         feedback_loop_memory_snapshot(
-            auth_user.user_id,
+            user_id,
             "patch",
             [
                 ("attempt", "Answer / reasoning", patch.attempt.as_deref()),
@@ -290,7 +352,19 @@ pub async fn patch_attempt(
         )
     });
 
-    patch_session(&state, id, patch, snapshot.flatten()).await
+    patch_session(state, id, patch, snapshot.flatten()).await
+}
+
+pub async fn patch_attempt_in_namespace(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Path((namespace_id, id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<PatchPracticeAttemptRequest>,
+) -> Result<Json<ApiResponse<PracticeSessionResponse>>, AppError> {
+    let existing =
+        find_practice_session_in_namespace(&state, namespace_id, id, auth_user.user_id).await?;
+    require_space_writer(&state, existing.space_id, auth_user.user_id).await?;
+    patch_practice_attempt(&state, auth_user.user_id, id, req).await
 }
 
 pub async fn patch_feedback(
@@ -309,6 +383,15 @@ pub async fn patch_feedback(
     )
     .await?;
 
+    patch_practice_feedback(&state, auth_user.user_id, id, req).await
+}
+
+async fn patch_practice_feedback(
+    state: &AppState,
+    user_id: Uuid,
+    id: Uuid,
+    req: PatchPracticeFeedbackRequest,
+) -> Result<Json<ApiResponse<PracticeSessionResponse>>, AppError> {
     let status = match req.status.as_deref() {
         Some(_) => Some(normalize_status(req.status.as_deref())?),
         None => None,
@@ -323,7 +406,7 @@ pub async fn patch_feedback(
     };
     let snapshot = capture_memory_requested(req.capture_memory).then(|| {
         feedback_loop_memory_snapshot(
-            auth_user.user_id,
+            user_id,
             "patch",
             [
                 ("attempt", "Answer / reasoning", None),
@@ -343,7 +426,19 @@ pub async fn patch_feedback(
         )
     });
 
-    patch_session(&state, id, patch, snapshot.flatten()).await
+    patch_session(state, id, patch, snapshot.flatten()).await
+}
+
+pub async fn patch_feedback_in_namespace(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Path((namespace_id, id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<PatchPracticeFeedbackRequest>,
+) -> Result<Json<ApiResponse<PracticeSessionResponse>>, AppError> {
+    let existing =
+        find_practice_session_in_namespace(&state, namespace_id, id, auth_user.user_id).await?;
+    require_space_writer(&state, existing.space_id, auth_user.user_id).await?;
+    patch_practice_feedback(&state, auth_user.user_id, id, req).await
 }
 
 async fn patch_session(
@@ -381,6 +476,67 @@ async fn patch_session(
     ))))
 }
 
+async fn list_practice_sessions(
+    state: &AppState,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    user_id: Uuid,
+) -> Result<Json<ApiResponse<PracticeSessionListResponse>>, AppError> {
+    let limit = limit.unwrap_or(20).clamp(1, 100);
+    let offset = offset.unwrap_or(0).max(0);
+    let feedback_loops = state
+        .repositories
+        .feedback_loops
+        .list_for_user(
+            FeedbackLoopListFilter {
+                space_id,
+                namespace_id: Some(namespace_id),
+                limit,
+                offset,
+            },
+            user_id,
+        )
+        .await
+        .map_err(AppError::Database)?;
+
+    let items = feedback_loops
+        .into_iter()
+        .map(PracticeSessionResponse::from)
+        .collect::<Vec<_>>();
+
+    Ok(Json(ApiResponse::success(PracticeSessionListResponse {
+        total: items.len(),
+        items,
+        limit,
+        offset,
+    })))
+}
+
+async fn find_practice_session_in_namespace(
+    state: &AppState,
+    namespace_id: Uuid,
+    id: Uuid,
+    user_id: Uuid,
+) -> Result<FeedbackLoopDb, AppError> {
+    let feedback_loop = state
+        .repositories
+        .feedback_loops
+        .find_for_user(id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    let namespace = require_practice_namespace(state, namespace_id, user_id).await?;
+    require_namespace_in_space(state, namespace_id, namespace.space_id, user_id).await?;
+
+    if feedback_loop.space_id != namespace.space_id || feedback_loop.namespace_id != namespace.id {
+        return Err(AppError::Unauthorized);
+    }
+
+    Ok(feedback_loop)
+}
+
 async fn find_learning_math_session(
     state: &AppState,
     id: Uuid,
@@ -403,6 +559,42 @@ async fn find_learning_math_session(
     .await?;
 
     Ok(feedback_loop)
+}
+
+async fn require_practice_namespace(
+    state: &AppState,
+    namespace_id: Uuid,
+    user_id: Uuid,
+) -> Result<NamespaceDb, AppError> {
+    let namespace = state
+        .repositories
+        .namespaces
+        .find_for_user(namespace_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    require_namespace_in_space(state, namespace_id, namespace.space_id, user_id).await?;
+
+    if namespace.kind == NamespaceKind::Skill.as_str() {
+        Ok(namespace)
+    } else {
+        Err(AppError::BadRequest(
+            "practice session namespace must be a skill namespace".to_string(),
+        ))
+    }
+}
+
+fn require_matching_space_id(
+    requested_space_id: Uuid,
+    namespace_space_id: Uuid,
+) -> Result<(), AppError> {
+    if requested_space_id == namespace_space_id {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(
+            "space_id must match the namespace Space".to_string(),
+        ))
+    }
 }
 
 async fn ensure_learning_math_namespace(

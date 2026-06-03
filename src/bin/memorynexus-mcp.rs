@@ -313,8 +313,89 @@ fn tools_list_result() -> Value {
                 }),
             ),
             tool_schema(
+                "create_practice_session",
+                "Create a practice session in a Skill Namespace. This is the canonical namespace-driven practice tool.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "namespace_id": {"type": "string"},
+                        "space_id": {"type": "string", "description": "Optional guard; when supplied it must match the Namespace Space"},
+                        "practice_goal": {"type": "string"},
+                        "exercise": {"type": "string"},
+                        "answer": {"type": "string"},
+                        "reasoning": {"type": "string"},
+                        "mistake_pattern": {"type": "string"},
+                        "feedback": {"type": "string"},
+                        "practice_adjustment": {"type": "string"},
+                        "next_exercise": {"type": "string"},
+                        "status": {"type": "string", "enum": ["active", "completed", "paused"]},
+                        "capture_memory": {"type": "boolean", "default": false}
+                    },
+                    "required": ["namespace_id", "practice_goal", "exercise"]
+                }),
+            ),
+            tool_schema(
+                "record_practice_attempt",
+                "Record the learner's answer or reasoning for a namespace-driven practice session.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "namespace_id": {"type": "string"},
+                        "practice_session_id": {"type": "string"},
+                        "answer": {"type": "string"},
+                        "reasoning": {"type": "string"},
+                        "capture_memory": {"type": "boolean", "default": false}
+                    },
+                    "required": ["namespace_id", "practice_session_id"]
+                }),
+            ),
+            tool_schema(
+                "record_practice_feedback",
+                "Record feedback, mistake pattern, adjustment, and next exercise for a namespace-driven practice session.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "namespace_id": {"type": "string"},
+                        "practice_session_id": {"type": "string"},
+                        "mistake_pattern": {"type": "string"},
+                        "feedback": {"type": "string"},
+                        "practice_adjustment": {"type": "string"},
+                        "next_exercise": {"type": "string"},
+                        "status": {"type": "string", "enum": ["active", "completed", "paused"]},
+                        "capture_memory": {"type": "boolean", "default": false}
+                    },
+                    "required": ["namespace_id", "practice_session_id"]
+                }),
+            ),
+            tool_schema(
+                "list_practice_sessions",
+                "List practice sessions in a Skill Namespace.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "namespace_id": {"type": "string"},
+                        "space_id": {"type": "string", "description": "Optional guard; when supplied it must match the Namespace Space"},
+                        "limit": {"type": "integer", "default": 20},
+                        "offset": {"type": "integer", "default": 0}
+                    },
+                    "required": ["namespace_id"]
+                }),
+            ),
+            tool_schema(
+                "get_practice_session",
+                "Fetch one namespace-driven practice session.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "namespace_id": {"type": "string"},
+                        "practice_session_id": {"type": "string"}
+                    },
+                    "required": ["namespace_id", "practice_session_id"]
+                }),
+            ),
+            tool_schema(
                 "learning_math_create_practice_session",
-                "Create a parent-assisted learning.math practice session in a Cognitive Space.",
+                "Compatibility alias: create a parent-assisted learning.math practice session in a Cognitive Space.",
                 json!({
                     "type": "object",
                     "properties": {
@@ -624,6 +705,91 @@ fn build_api_request_for_tool(
             })),
             token,
         }),
+        "create_practice_session" => {
+            let namespace_id = required_string(arguments, "namespace_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Post,
+                url: format!("{base_url}/api/v1/namespaces/{namespace_id}/practice-sessions"),
+                body: Some(json!({
+                    "space_id": optional_string(arguments, "space_id"),
+                    "practice_goal": required_string(arguments, "practice_goal")?,
+                    "exercise": required_string(arguments, "exercise")?,
+                    "answer": combined_answer(arguments),
+                    "mistake_pattern": optional_string(arguments, "mistake_pattern"),
+                    "feedback": optional_string(arguments, "feedback"),
+                    "practice_adjustment": optional_string(arguments, "practice_adjustment"),
+                    "next_exercise": optional_string(arguments, "next_exercise"),
+                    "status": optional_string(arguments, "status"),
+                    "capture_memory": optional_bool(arguments, "capture_memory").unwrap_or(false),
+                })),
+                token,
+            })
+        }
+        "record_practice_attempt" => {
+            let namespace_id = required_string(arguments, "namespace_id")?;
+            let session_id = required_string(arguments, "practice_session_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Patch,
+                url: format!(
+                    "{base_url}/api/v1/namespaces/{namespace_id}/practice-sessions/{session_id}/attempt"
+                ),
+                body: Some(json!({
+                    "answer": combined_answer(arguments),
+                    "capture_memory": optional_bool(arguments, "capture_memory").unwrap_or(false),
+                })),
+                token,
+            })
+        }
+        "record_practice_feedback" => {
+            let namespace_id = required_string(arguments, "namespace_id")?;
+            let session_id = required_string(arguments, "practice_session_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Patch,
+                url: format!(
+                    "{base_url}/api/v1/namespaces/{namespace_id}/practice-sessions/{session_id}/feedback"
+                ),
+                body: Some(json!({
+                    "mistake_pattern": optional_string(arguments, "mistake_pattern"),
+                    "feedback": optional_string(arguments, "feedback"),
+                    "practice_adjustment": optional_string(arguments, "practice_adjustment"),
+                    "next_exercise": optional_string(arguments, "next_exercise"),
+                    "status": optional_string(arguments, "status"),
+                    "capture_memory": optional_bool(arguments, "capture_memory").unwrap_or(false),
+                })),
+                token,
+            })
+        }
+        "list_practice_sessions" => {
+            let namespace_id = required_string(arguments, "namespace_id")?;
+            let limit = optional_usize(arguments, "limit").unwrap_or(20).to_string();
+            let offset = optional_usize(arguments, "offset").unwrap_or(0).to_string();
+            let space_id = optional_string(arguments, "space_id");
+            let mut pairs = vec![("limit", limit.as_str()), ("offset", offset.as_str())];
+            if let Some(space_id) = space_id.as_deref() {
+                pairs.insert(0, ("space_id", space_id));
+            }
+            Ok(ApiRequest {
+                method: HttpMethod::Get,
+                url: with_query(
+                    &format!("{base_url}/api/v1/namespaces/{namespace_id}/practice-sessions"),
+                    &pairs,
+                )?,
+                body: None,
+                token,
+            })
+        }
+        "get_practice_session" => {
+            let namespace_id = required_string(arguments, "namespace_id")?;
+            let session_id = required_string(arguments, "practice_session_id")?;
+            Ok(ApiRequest {
+                method: HttpMethod::Get,
+                url: format!(
+                    "{base_url}/api/v1/namespaces/{namespace_id}/practice-sessions/{session_id}"
+                ),
+                body: None,
+                token,
+            })
+        }
         "learning_math_create_practice_session" => Ok(ApiRequest {
             method: HttpMethod::Post,
             url: format!("{base_url}/api/v1/learning/math/practice-sessions"),
@@ -1122,6 +1288,11 @@ mod tests {
                 "complete_reminder",
                 "mark_reminder_delivery",
                 "route_agent_context",
+                "create_practice_session",
+                "record_practice_attempt",
+                "record_practice_feedback",
+                "list_practice_sessions",
+                "get_practice_session",
                 "learning_math_create_practice_session",
                 "learning_math_record_attempt",
                 "learning_math_record_feedback",
@@ -1505,6 +1676,27 @@ mod tests {
     }
 
     #[test]
+    fn tools_list_exposes_canonical_namespace_practice_tools() {
+        let result = tools_list_result();
+        let names: Vec<&str> = result["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect();
+
+        for name in [
+            "create_practice_session",
+            "record_practice_attempt",
+            "record_practice_feedback",
+            "list_practice_sessions",
+            "get_practice_session",
+        ] {
+            assert!(names.contains(&name), "{name} should be registered");
+        }
+    }
+
+    #[test]
     fn learning_math_tools_require_memorynexus_token() {
         let config = Config {
             api_url: "http://localhost:8080".to_string(),
@@ -1572,6 +1764,91 @@ mod tests {
                 "status": null,
                 "capture_memory": true,
             }))
+        );
+    }
+
+    #[test]
+    fn canonical_practice_tools_map_to_namespace_practice_api() {
+        let config = Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        };
+
+        let create = build_api_request_for_tool(
+            &config,
+            "create_practice_session",
+            &json!({
+                "namespace_id": "namespace-123",
+                "practice_goal": "Improve fraction word problems",
+                "exercise": "Solve five fraction word problems",
+                "capture_memory": true
+            }),
+        )
+        .unwrap();
+        let attempt = build_api_request_for_tool(
+            &config,
+            "record_practice_attempt",
+            &json!({
+                "namespace_id": "namespace-123",
+                "practice_session_id": "session-123",
+                "answer": "3/4"
+            }),
+        )
+        .unwrap();
+        let feedback = build_api_request_for_tool(
+            &config,
+            "record_practice_feedback",
+            &json!({
+                "namespace_id": "namespace-123",
+                "practice_session_id": "session-123",
+                "mistake_pattern": "Changed units between steps"
+            }),
+        )
+        .unwrap();
+        let list = build_api_request_for_tool(
+            &config,
+            "list_practice_sessions",
+            &json!({
+                "namespace_id": "namespace-123",
+                "limit": 10,
+                "offset": 5
+            }),
+        )
+        .unwrap();
+        let get = build_api_request_for_tool(
+            &config,
+            "get_practice_session",
+            &json!({
+                "namespace_id": "namespace-123",
+                "practice_session_id": "session-123"
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(create.method, HttpMethod::Post);
+        assert_eq!(
+            create.url,
+            "http://localhost:8080/api/v1/namespaces/namespace-123/practice-sessions"
+        );
+        assert_eq!(attempt.method, HttpMethod::Patch);
+        assert_eq!(
+            attempt.url,
+            "http://localhost:8080/api/v1/namespaces/namespace-123/practice-sessions/session-123/attempt"
+        );
+        assert_eq!(feedback.method, HttpMethod::Patch);
+        assert_eq!(
+            feedback.url,
+            "http://localhost:8080/api/v1/namespaces/namespace-123/practice-sessions/session-123/feedback"
+        );
+        assert_eq!(list.method, HttpMethod::Get);
+        assert_eq!(
+            list.url,
+            "http://localhost:8080/api/v1/namespaces/namespace-123/practice-sessions?limit=10&offset=5"
+        );
+        assert_eq!(get.method, HttpMethod::Get);
+        assert_eq!(
+            get.url,
+            "http://localhost:8080/api/v1/namespaces/namespace-123/practice-sessions/session-123"
         );
     }
 

@@ -78,6 +78,26 @@ pub fn routes() -> Router<AppState> {
             "/api/v1/namespaces/:id",
             axum::routing::get(namespaces::get),
         )
+        .route(
+            "/api/v1/namespaces/:namespace_id/practice-sessions",
+            axum::routing::get(learning_math::list_in_namespace),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace_id/practice-sessions",
+            axum::routing::post(learning_math::create_in_namespace),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace_id/practice-sessions/:id/attempt",
+            axum::routing::patch(learning_math::patch_attempt_in_namespace),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace_id/practice-sessions/:id/feedback",
+            axum::routing::patch(learning_math::patch_feedback_in_namespace),
+        )
+        .route(
+            "/api/v1/namespaces/:namespace_id/practice-sessions/:id",
+            axum::routing::get(learning_math::get_in_namespace),
+        )
         // FeedbackLoop
         .route(
             "/api/v1/feedback-loops",
