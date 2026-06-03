@@ -23,9 +23,9 @@
 
 - Do not move permissions from `CognitiveSpace` to `Namespace`.
 - Do not turn `Namespace` into a second Space selector or membership model.
-- Do not build the `learning.math` product UI in this issue.
+- Do not build the `learning.stem` product UI in this issue.
 - Do not implement multiple vertical products such as piano, chess, drawing, and
-  math at the same time.
+  broad STEM learning at the same time.
 - Do not copy EverMemOS object names or product direction into MemoryNexus.
   EverMemOS is a lifecycle reference for agent memory; MemoryNexus remains a
   user-owned cognitive perspective and feedback-loop system.
@@ -211,7 +211,7 @@ Constraints:
 - Unique `(space_id, name)`.
 - `kind` should start as one of `reflective` or `skill`.
 - `name` is a stable dotted identifier, for example `personal.thoughts`,
-  `project.memorynexus`, or `learning.math`.
+  `project.memorynexus`, or `learning.stem`.
 
 Recommended validation:
 
@@ -261,7 +261,7 @@ Validation:
 
 The fields are intentionally plain text in the first schema. More structured
 skill-specific scoring, rubric, due date, and attempt artifacts should wait for a
-concrete `learning.math` acceptance flow.
+concrete `learning.stem` acceptance flow.
 
 ## How FeedbackLoop Produces Memory
 
@@ -341,7 +341,7 @@ MemoryNexus 下一步该做什么？
 Expected Lens examples:
 
 - Product Lens should emphasize first action, ordinary-user entry, Thought
-  Review magic moment, and `learning.math` as a possible concrete entry.
+  Review magic moment, and `learning.stem` as a possible concrete entry.
 - Systems Lens should emphasize CognitiveSpace boundary, Namespace,
   FeedbackLoop provenance, MemoryAtom, and CognitiveScene.
 - Learning Coach Lens should emphasize skill namespace loops, practice design,
@@ -419,9 +419,9 @@ Create request:
 ```json
 {
   "space_id": "...",
-  "name": "learning.math",
+  "name": "learning.stem",
   "kind": "skill",
-  "description": "Math practice feedback loop"
+  "description": "STEM practice feedback loop"
 }
 ```
 
@@ -485,10 +485,11 @@ Every filter must be validated against the same Space. A request with
 `space_id=A` and `namespace_id` from Space B should return `400 Bad Request`, not
 silently broaden scope.
 
-## Learning Math Candidate
+## STEM Learning Candidate
 
-`learning.math` is the first recommended Skill Namespace MVP candidate because it
-has a clear loop:
+STEM Learning Feedback is the first recommended Skill Namespace MVP candidate.
+It uses `learning.stem` as the product namespace because STEM practice has a
+clear loop:
 
 ```text
 goal -> task -> attempt -> evaluation -> feedback -> adjustment -> next_task
@@ -507,7 +508,8 @@ NextTask: solve three unit-conversion fraction problems tomorrow
 ```
 
 This design does not implement a learning product UI. The first product surface
-should be a narrow issue with acceptance criteria for one math practice flow.
+should be a narrow issue with acceptance criteria for one STEM practice flow;
+the first validation task is elementary fraction word problems.
 
 ## Follow-Up Issue Split
 
@@ -543,11 +545,11 @@ Recommended implementation sequence:
    generated Memory rows remain Space-owned and namespace-scoped.
 
 8. **Acceptance tests**
-   Add end-to-end tests for creating a Space, creating `learning.math`, creating
+   Add end-to-end tests for creating a Space, creating `learning.stem`, creating
    a FeedbackLoop, capturing Memory from the loop, running a Lens over that
    namespace, and generating a namespace-scoped Review Report/Profile.
 
-9. **Learning Math MVP design**
+9. **STEM Learning Feedback MVP design**
    Create a separate issue for the first Skill Namespace product flow. Do not
    combine it with schema foundation work.
 

@@ -44,7 +44,7 @@
 - UI 文案优先使用用户语言：thought / perspective / review / recurring theme /
   inner tension。不要把 `Memory`、`Lens Run`、`CognitiveState` 等后端术语过早暴露为
   普通用户主入口。
-- `learning.math` UI 文案优先使用家长和孩子能懂的语言：practice / answer /
+- `learning.stem` UI 文案优先使用家长和学习者能懂的语言：practice / answer /
   mistake pattern / feedback / next exercise / weekly learning review。不要把
   `MemoryAtom`、`CognitiveScene`、`CognitiveProjection` 暴露为主标签。
 - `Namespace` 只是 `CognitiveSpace` 内的领域分区，不是新的权限边界；不要把权限从
@@ -97,8 +97,9 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - Phase 4 UI issue 默认基于 Rust-served Thought Review UI 继续演进，不另建前端工程。
 - Phase 5 Namespace / FeedbackLoop issue 默认先做设计和最小模型/API 方案，不直接铺开
   多个垂直产品。
-- `learning.math` 是第一产品 MVP 候选。涉及产品入口的 Phase 5 issue 默认优先服务
-  parent-assisted elementary math mistake feedback loop，不要回到泛化学习平台。
+- STEM Learning Feedback 是第一产品 MVP 候选，产品 namespace 为 `learning.stem`。
+  涉及产品入口的 Phase 5 issue 默认优先服务 parent-assisted STEM practice feedback
+  loop，并以 elementary fraction word problems 作为第一验证任务；不要回到泛化学习平台。
 - Phase 5 Memory Lifecycle issue 默认围绕 `Memory -> MemoryAtom -> CognitiveScene
   -> CognitiveProjection` 做小实验，不要把它实现成通用 agent retrieval engine。
 - 涉及 ObserveMode 的 issue 必须明确前台低延迟行为、后台异步处理和用户主动 deep
@@ -115,10 +116,11 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 
 - Thought Review 是 reflective demo 和项目演讲入口：写下一条混乱想法，用多个
   perspective 展示 MemoryNexus 如何解释同一份 memory space。
-- 第一产品 MVP 候选是 `learning.math`：parent-assisted elementary math mistake
-  feedback loop，用练习、作答、错因、反馈、下一题和周学习报告验证长期反馈价值。
+- 第一产品 MVP 候选是 STEM Learning Feedback，产品 namespace 为 `learning.stem`；
+  第一验证任务是 parent-assisted elementary fraction word problems feedback loop，
+  用练习、作答、错因、反馈、下一题和周学习报告验证长期反馈价值。
 - Thought Review 属于 reflective namespace，可视为 `personal.thoughts` 的 demo。
-  `learning.math` 属于 Skill Namespace，必须通过单独 issue/验收场景推进。
+  `learning.stem` 属于 Skill Namespace，必须通过单独 issue/验收场景推进。
 
 ## 文档位置
 

@@ -158,7 +158,7 @@ Scene: MemoryNexus 产品落地焦虑
 - 普通用户为什么安装？
 - 安装后第一动作是什么？
 - Thought Review 是否足够窄？
-- learning.math 是否是更强的落地入口？
+- STEM Learning Feedback / learning.stem 是否是更强的落地入口？
 - Namespace / FeedbackLoop 是否会让产品再次过宽？
 
 潜在张力：
@@ -202,7 +202,7 @@ query: MemoryNexus 下一步该做什么？
 Product Lens projection:
 - Thought Review magic moment
 - 普通用户第一动作
-- learning.math 的家长可理解入口
+- STEM Learning Feedback 的家长可理解入口
 - 当前 UI 验证缺口
 
 Systems Lens projection:
@@ -479,7 +479,7 @@ Namespace 是 CognitiveSpace 内的领域分区。
 ```text
 personal.thoughts
 project.memorynexus
-learning.math
+learning.stem
 music.piano
 chess.tactics
 art.drawing
@@ -522,7 +522,7 @@ NextTask
 例子：
 
 ```text
-learning.math:
+learning.stem:
 知识点 → 练习题 → 作答结果 → 错因分析 → 个性化强化 → 下一天练习计划
 
 music.piano:

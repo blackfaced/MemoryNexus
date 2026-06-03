@@ -27,8 +27,12 @@ Expected result:
 - The MCP server `memorynexus-mcp` is discoverable by the agent client.
 - The MCP tool list includes `create_space`, `create_lens`, `add_memory`,
   `get_profile`, `search_memories`, `run_lens`, `route_agent_context`,
-  `get_install_status`, and `upgrade_install`.
+  `get_install_status`, `upgrade_install`, and the current `learning_math_*`
+  practice tools for the STEM Learning Feedback slice.
 - A smoke memory can be written and retrieved through MCP.
+- A STEM learning practice session can be created, patched with an attempt and
+  feedback, then listed and retrieved through MCP using the current
+  `learning_math_*` tool names.
 
 ## Execution Strategy
 
@@ -41,6 +45,8 @@ Work in phases and stop cleanly at blockers.
 5. **Token ready**: reuse or create `MEMORYNEXUS_TOKEN`.
 6. **Agent connected**: write the MCP config and reload the client.
 7. **End-to-end smoke**: write, profile, route, and search through MCP.
+8. **STEM learning smoke**: create a practice session, record an attempt,
+   record feedback, list sessions, and retrieve the session.
 
 If a phase fails twice for the same reason, do not loop. Report the blocker,
 what was tried, and which later phases can still be completed.
@@ -110,9 +116,15 @@ The output must include:
 - `add_memory`
 - `get_profile`
 - `search_memories`
+- `run_lens`
 - `route_agent_context`
 - `get_install_status`
 - `upgrade_install`
+- `learning_math_create_practice_session`
+- `learning_math_record_attempt`
+- `learning_math_record_feedback`
+- `learning_math_list_practice_sessions`
+- `learning_math_get_practice_session`
 
 If this passes, the MCP binary is ready even if Docker is blocked.
 
@@ -478,6 +490,70 @@ After the MCP client is connected, use MCP tools directly:
 }
 ```
 
+7. Call `learning_math_create_practice_session` for the local STEM learning
+   smoke. Use the same `space_id`. `namespace_id` is optional; the current API
+   will create or reuse the `learning.math` namespace inside the Cognitive Space.
+   Roadmap docs call the broader product namespace `learning.stem`; do not
+   rename the tool call unless the code adds that alias.
+
+```json
+{
+  "space_id": "<space-id>",
+  "capture_memory": true,
+  "student_label": "local learner",
+  "topic": "fractions",
+  "goal": "Practice fraction word problems",
+  "task": "A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"
+}
+```
+
+8. Read the returned `data.id` as `practice_session_id`, then call
+   `learning_math_record_attempt`:
+
+```json
+{
+  "practice_session_id": "<practice-session-id>",
+  "attempt": "3/8 cup",
+  "reasoning": "Half of 3/4 is 3/8",
+  "capture_memory": true
+}
+```
+
+9. Call `learning_math_record_feedback`:
+
+```json
+{
+  "practice_session_id": "<practice-session-id>",
+  "evaluation": "correct",
+  "feedback": "Good fraction multiplication: half means multiply by 1/2.",
+  "adjustment": "Try one similar word problem with a different numerator.",
+  "next_task": "A garden uses 2/3 bag of soil. How much is needed for half the garden?",
+  "capture_memory": true
+}
+```
+
+10. Verify the session is discoverable:
+
+```json
+{
+  "space_id": "<space-id>",
+  "limit": 10
+}
+```
+
+Use those arguments with `learning_math_list_practice_sessions`, then call
+`learning_math_get_practice_session`:
+
+```json
+{
+  "practice_session_id": "<practice-session-id>"
+}
+```
+
+For STEM learning smoke, do not expose backend terms like `MemoryAtom` or
+`CognitiveProjection` to the learner-facing transcript. Use product language
+such as practice session, attempt, feedback, and next task.
+
 ## Stdio Smoke Without MCP Client
 
 If the MCP client integration is hard to inspect, run this local stdio smoke:
@@ -494,6 +570,25 @@ printf '%s\n' "$SPACE_JSON"
 
 Then extract the `space_id` from the returned API JSON text and continue with
 `create_lens`, `add_memory`, `get_profile`, and `search_memories`.
+
+To smoke STEM learning over stdio with the current `learning_math_*` tools,
+create the session first:
+
+```bash
+SESSION_JSON=$(printf '%s\n' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"learning_math_create_practice_session","arguments":{"space_id":"<space-id>","capture_memory":true,"student_label":"local learner","topic":"fractions","goal":"Practice fraction word problems","task":"A recipe uses 3/4 cup of flour. If we make half the recipe, how much flour is needed?"}}}' \
+  | MEMORYNEXUS_API_URL=http://localhost:8080 \
+    MEMORYNEXUS_TOKEN="$MEMORYNEXUS_TOKEN" \
+    ./target/debug/memorynexus-mcp)
+
+printf '%s\n' "$SESSION_JSON"
+```
+
+Then extract `data.id` from the returned API JSON text as
+`practice_session_id` and continue with `learning_math_record_attempt`,
+`learning_math_record_feedback`, `learning_math_list_practice_sessions`, and
+`learning_math_get_practice_session`. Do not reuse the placeholder
+`<practice-session-id>` in real calls.
 
 ## Docker Pull Or Proxy Issues
 
@@ -547,6 +642,9 @@ If full installation is blocked, report the highest completed level:
   agent client.
 - **Level 6: End-to-End Ready**: MCP can create a space, create a Lens, write a
   memory, project a profile, and search.
+- **Level 7: STEM Learning Ready**: MCP can create a STEM learning practice
+  session, record an attempt, record feedback, list sessions, and retrieve the
+  session.
 
 Do not redo earlier successful levels unless files changed.
 
@@ -563,6 +661,9 @@ When done, report:
 - Whether the MCP config uses `cargo run` or a built binary.
 - The created `space_id` and lens IDs.
 - The smoke result for `add_memory`, `get_profile`, and `search_memories`.
+- The `learning_math_*` tool availability and, if run, the created
+  `practice_session_id`.
+- Whether STEM learning create/attempt/feedback calls captured memory snapshots.
 - Any blocker that required user action.
 
 Do not report JWT tokens or API keys.

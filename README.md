@@ -24,14 +24,14 @@ Longer term, MemoryNexus is evolving toward a namespace-based long-term feedback
 substrate for personal cognition and skill acquisition. Its memory lifecycle is:
 raw Memory -> MemoryAtom -> CognitiveScene -> Lens-based CognitiveProjection ->
 Reflection / Belief / Next Action. Thought Review is the first reflective demo;
-`learning.math` is the first product MVP candidate, focused on a
-parent-assisted elementary math mistake feedback loop. Future skill namespaces
-can track practice, feedback, weak patterns, and next tasks for learning or
-craft domains.
+STEM Learning Feedback is the first product MVP candidate, using
+`learning.stem` as the product namespace and elementary fraction word problems
+as the first validation task. Future skill namespaces can track practice,
+feedback, weak patterns, and next tasks for learning or craft domains.
 
 MemoryNexus is also a long-term feedback engine: Thought Review demonstrates
-multi-perspective memory, while `learning.math` turns practice, feedback, and
-next exercise into the first product MVP.
+multi-perspective memory, while STEM Learning Feedback turns practice,
+feedback, and next exercise into the first product MVP.
 
 That lifecycle is mode-aware: fast interactions should use recent context and
 compressed priors, while explicit reviews can run deeper Lens projection and
@@ -139,7 +139,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Cognitive Manifesto](docs/cognitive-manifesto.md)
 - [Cognitive Concepts](docs/cognitive-concepts.md)
 - [Cognitive Lens Roadmap](docs/cognitive-lens-roadmap.md)
-- [learning.math MVP PRD](docs/learning-math-mvp.md)
+- [STEM Learning Feedback MVP PRD](docs/stem-learning-mvp.md)
 - [Thought Review UI MVP ADR](decisions/ADR-013-thought-review-ui-mvp.md)
 - [Namespace and Feedback Loop ADR](decisions/ADR-014-namespace-feedback-loop.md)
 - [Architecture Decisions](decisions/)
