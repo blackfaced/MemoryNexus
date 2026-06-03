@@ -380,12 +380,15 @@ patch event only; previously stored loop fields are not repeated in the Memory
 content or `included_fields`. The FeedbackLoop update and Memory row are
 committed in the same database transaction.
 
-## learning.math Practice Sessions
+## STEM Learning Practice Sessions
 
-The learning math API is a thin product-facing layer over Namespace and
-FeedbackLoop. It creates or reuses the `learning.math` skill Namespace inside
-the requested Cognitive Space, then stores each practice session as a
-FeedbackLoop. Responses use parent and child friendly language and do not expose
+The STEM learning API is a thin product-facing layer over Namespace and
+FeedbackLoop. The current first-slice route remains
+`/api/v1/learning/math/...` and creates or reuses the `learning.math` skill
+Namespace for compatibility with the implemented endpoint. Product roadmap docs
+refer to the broader STEM Learning Feedback MVP as `learning.stem`; adding a
+`learning.stem` alias or rename should be handled by a separate compatibility
+issue. Responses use parent and learner friendly language and do not expose
 memory lifecycle internals.
 
 ### Create Practice Session
@@ -395,10 +398,10 @@ memory lifecycle internals.
 ```json
 {
   "space_id": "space-uuid",
-  "namespace_id": "optional-learning-math-namespace-uuid",
+  "namespace_id": "optional-learning-namespace-uuid",
   "practice_goal": "Improve fraction word problems",
   "exercise": "Solve five fraction word problems and explain the reasoning",
-  "answer": "optional child answer or reasoning",
+  "answer": "optional learner answer or reasoning",
   "mistake_pattern": "optional observed mistake pattern",
   "feedback": "optional parent feedback",
   "practice_adjustment": "optional change for the next round",
@@ -409,7 +412,7 @@ memory lifecycle internals.
 
 `namespace_id` is optional. When omitted, the server creates or reuses
 `learning.math` in the requested Space. When supplied, it must belong to the same
-Space and must be the `learning.math` skill Namespace. `goal`, `task`,
+Space and must be the current learning practice Namespace. `goal`, `task`,
 `attempt`, `evaluation`, `adjustment`, and `next_task` are accepted as aliases
 for clients already using the lower-level FeedbackLoop vocabulary.
 
@@ -417,16 +420,17 @@ for clients already using the lower-level FeedbackLoop vocabulary.
 
 `GET /api/v1/learning/math/practice-sessions?space_id=<SPACE_ID>&namespace_id=<OPTIONAL_NAMESPACE_ID>`
 
-Returns sessions in `learning.math` ordered by newest first. Listing does not
-create the Namespace; if `learning.math` has not been created yet, the response
-is an empty list.
+Returns sessions in the current learning practice Namespace ordered by newest
+first. Listing does not create the Namespace; if the current first-slice
+`learning.math` Namespace has not been created yet, the response is an empty
+list.
 
 ### Get Practice Session
 
 `GET /api/v1/learning/math/practice-sessions/:id`
 
 Returns a session only if the current user can access its Cognitive Space and
-the underlying FeedbackLoop belongs to `learning.math`.
+the underlying FeedbackLoop belongs to the current learning practice Namespace.
 
 ### Update Answer
 
@@ -449,7 +453,7 @@ Space-owned Memory snapshot for the practice event.
 
 ```json
 {
-  "mistake_pattern": "The child changed units between steps",
+  "mistake_pattern": "The learner changed units between steps",
   "feedback": "Write the unit next to every number before calculating",
   "practice_adjustment": "Add a unit-labeling step",
   "next_exercise": "Try three unit-conversion fraction problems",

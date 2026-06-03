@@ -59,7 +59,7 @@ Stop and ask for clarification or add an issue-context comment if:
 - It mixes multiple product domains, such as learning, piano, chess, drawing,
   and personal review in one task.
 - It is unclear whether the work belongs in Phase 4 Thought Review demo or the
-  Phase 5 `learning.math` product MVP.
+  Phase 5 `learning.stem` product MVP.
 
 ## Current Project Defaults
 
@@ -68,8 +68,9 @@ Stop and ask for clarification or add an issue-context comment if:
   model.
 - Thought Review is the reflective namespace demo and project presentation entry
   point.
-- `learning.math` is the first product MVP candidate: a parent-assisted
-  elementary math mistake feedback loop.
+- STEM Learning Feedback is the first product MVP candidate. Use
+  `learning.stem` as the product namespace, with parent-assisted elementary
+  fraction word problems as the first validation task.
 - Phase 4 UI work should continue from `web/thought_review.html`.
 - Phase 5 work should start with design and minimal model/API plans before
   schema or UI expansion.

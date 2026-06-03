@@ -41,8 +41,8 @@ The current baseline is the Rust-first Cognitive Lens MVP foundation:
 - ADR-014 extends the long-term direction toward Namespace, MemoryAtom,
   CognitiveScene, Lens-based CognitiveProjection, and FeedbackLoop as a feedback
   substrate, while keeping CognitiveSpace as the ownership boundary. Thought
-  Review is the reflective demo; `learning.math` is the first product MVP
-  candidate.
+  Review is the reflective demo; STEM Learning Feedback is the first product MVP
+  candidate, represented by `learning.stem`.
 - ADR-015 records Supabase as a deployment compatibility path: first as managed
   PostgreSQL, with Auth / Storage / Realtime only as later adapters.
 
@@ -144,13 +144,13 @@ Recently completed:
 
 Goal: extend the cognitive memory foundation into a namespace-based long-term
 feedback substrate with an explicit memory lifecycle. Thought Review remains the
-reflective demo; `learning.math` is the first product MVP candidate.
+reflective demo; STEM Learning Feedback is the first product MVP candidate.
 
 Direction:
 
 - `CognitiveSpace` remains the ownership and permission boundary.
 - `Namespace` partitions a Space into long-running domains such as
-  `personal.thoughts`, `learning.math`, `music.piano`, or `chess.tactics`.
+  `personal.thoughts`, `learning.stem`, `music.piano`, or `chess.tactics`.
 - `FeedbackLoop` captures goal, task, attempt, evaluation, feedback, adjustment,
   and next task.
 - `MemoryAtom` captures the smallest traceable cognitive signal extracted from a
@@ -165,8 +165,9 @@ Direction:
   direction.
 - Skill namespaces focus on practice, error pattern, progress, feedback, and
   next practice.
-- The first product MVP candidate is `learning.math`: a parent-assisted
-  elementary math mistake feedback loop.
+- The first product MVP candidate is STEM Learning Feedback in `learning.stem`.
+  The first validation task is parent-assisted elementary fraction word
+  problems, but the product direction is broader STEM practice feedback.
 - EverMemOS is a useful reference for memory lifecycle ideas, but MemoryNexus
   keeps a different product boundary: user-owned cognitive perspective and
   feedback loops, not agent memory for reasoning.
@@ -201,10 +202,10 @@ Recently completed:
   Namespace schema, repository, and API are now on main.
 - [#57 Minimal FeedbackLoop database model and API](https://github.com/blackfaced/MemoryNexus/issues/57):
   FeedbackLoop schema, repository, and API are now on main.
-- [#69 learning.math practice session API](https://github.com/blackfaced/MemoryNexus/issues/69):
-  thin product API on top of Namespace and FeedbackLoop creates/reuses
-  `learning.math`, records practice answers and feedback, and preserves optional
-  Memory snapshots.
+- [#69 STEM learning practice session API](https://github.com/blackfaced/MemoryNexus/issues/69):
+  thin product API on top of Namespace and FeedbackLoop records practice answers
+  and feedback, and preserves optional Memory snapshots. The current first-slice
+  implementation may still expose `/learning/math` compatibility naming.
 
 Current open work:
 
@@ -212,21 +213,22 @@ Learning MVP track:
 
 Recommended sequence:
 
-1. [#59 learning.math MVP: parent-assisted elementary math mistake feedback loop](https://github.com/blackfaced/MemoryNexus/issues/59):
-   write the narrow PRD and keep `learning.math` focused on parent-assisted
-   elementary math mistake feedback.
+1. [#59 STEM Learning Feedback MVP: parent-assisted practice loop](https://github.com/blackfaced/MemoryNexus/issues/59):
+   keep the PRD focused on STEM Learning Feedback in `learning.stem`, with
+   elementary fraction word problems as the first validation task.
 2. [#67 Add attempt patch support to FeedbackLoop](https://github.com/blackfaced/MemoryNexus/issues/67):
-   unblock incremental child answer / reasoning capture.
+   unblock incremental learner answer / reasoning capture.
 3. [#68 Capture FeedbackLoop event as Memory](https://github.com/blackfaced/MemoryNexus/issues/68):
    preserve practice events as Space-owned Memory with FeedbackLoop provenance.
-4. [#73 learning.math MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
-   expose the practice flow to Claw and other MCP clients.
+4. [#73 STEM learning MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
+   expose the practice flow to Claw and other MCP clients. Current tool names may
+   remain `learning_math_*` until a compatibility alias or rename issue lands.
 5. Run a Claw end-to-end demo over the MCP tools before locking the final static
    UI shape.
 6. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
    summarize practiced topics, recurring mistake patterns, improvement signals,
    and next practice.
-7. [#70 learning.math parent-child static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
+7. [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
    build the Rust-served static UI after the API, MCP, demo, and review report
    contracts are clear.
 
@@ -239,7 +241,7 @@ Foundation / lifecycle support track:
 - [#62 Define Lens-based CognitiveProjection contract](https://github.com/blackfaced/MemoryNexus/issues/62)
 - [#63 Prototype CognitiveScene consolidation](https://github.com/blackfaced/MemoryNexus/issues/63)
 
-Candidate follow-up work after the learning.math slice:
+Candidate follow-up work after the STEM learning slice:
 
 - Add end-to-end acceptance tests for Space -> Namespace -> FeedbackLoop ->
   Memory -> Lens Run -> Review Report/Profile.

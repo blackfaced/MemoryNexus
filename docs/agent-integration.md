@@ -213,9 +213,10 @@ client surface cannot display it, call `mark_reminder_delivery` with `failed`
 and a short error. Complete a reminder only after the user or agent has handled
 it.
 
-Use the `learning_math_*` MCP tools when the user or parent is running an
-elementary math practice flow. Create the session with
-`learning_math_create_practice_session`, record the child's work with
+Use the `learning_math_*` MCP tools when the user or parent is running a STEM
+learning practice flow. The tool names are the current first-slice compatibility
+surface; the product namespace direction is `learning.stem`. Create the session
+with `learning_math_create_practice_session`, record the learner's work with
 `learning_math_record_attempt`, then record parent feedback with
 `learning_math_record_feedback`. Use the list/get tools to review recent
 practice sessions. Keep the visible language to practice goal, exercise, answer
@@ -240,7 +241,8 @@ Recommended order for Claw/Hermes:
 5. `run_lens` when the agent needs an interpretation, tradeoff review, or
    contradiction check.
 6. `learning_math_create_practice_session`, `learning_math_record_attempt`,
-   and `learning_math_record_feedback` for parent-assisted math practice.
+   and `learning_math_record_feedback` for parent-assisted STEM learning
+   practice.
 7. Generate a review report when the task is periodic synthesis over a time
    window.
 8. `add_memory` only when the information is durable and safe to persist.
