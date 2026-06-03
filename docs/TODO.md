@@ -229,10 +229,13 @@ Recommended sequence:
 
 1. [#87 Validate STEM learning MCP flow with an agent end-to-end demo](https://github.com/blackfaced/MemoryNexus/issues/87):
    validate the current MCP flow before locking the final static UI shape.
-2. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
+2. [#89 Make learning practice API namespace-driven and add learning.stem aliases](https://github.com/blackfaced/MemoryNexus/issues/89):
+   move practice sessions toward a namespace-driven API while keeping current
+   `/learning/math` and `learning_math_*` surfaces compatible during transition.
+3. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
    summarize practiced topics, recurring mistake patterns, improvement signals,
    and next practice.
-3. [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
+4. [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
    build the Rust-served static UI after the API, MCP, demo, and review report
    contracts are clear.
 
@@ -255,6 +258,33 @@ Candidate follow-up work after the STEM learning slice:
   the full deep cognitive pipeline.
 - Keep product entry points narrow; do not expose every possible namespace in
   the first UI.
+
+## Distribution and Agent Install
+
+Goal: make MemoryNexus installable by agents and non-developer users without
+requiring a local Rust toolchain. PostgreSQL and Qdrant may still run through
+Docker.
+
+Recommended sequence:
+
+1. [#85 Build and publish release binaries for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/85):
+   publish prebuilt `memorynexus`, `memorynexus-cli`, and `memorynexus-mcp`
+   artifacts for common platforms.
+2. [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
+   make agent install prefer release binaries before falling back to source
+   build.
+3. [#86 Document developer vs user agent installation paths](https://github.com/blackfaced/MemoryNexus/issues/86):
+   separate ordinary user/agent install from contributor Rust development setup.
+
+Parallel / follow-up work:
+
+- [#83 Add Docker runtime compose bundle for local services](https://github.com/blackfaced/MemoryNexus/issues/83):
+  provide a runtime compose setup for PostgreSQL and Qdrant.
+- [#84 Create offline install bundle for agents](https://github.com/blackfaced/MemoryNexus/issues/84):
+  package binaries, runtime compose files, env examples, and install docs into a
+  downloadable archive.
+- [#81 Binary-first and offline agent installation](https://github.com/blackfaced/MemoryNexus/issues/81):
+  umbrella issue for the install/distribution track.
 
 ## Deployment Compatibility
 
