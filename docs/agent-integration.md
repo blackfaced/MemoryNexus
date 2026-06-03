@@ -213,6 +213,14 @@ client surface cannot display it, call `mark_reminder_delivery` with `failed`
 and a short error. Complete a reminder only after the user or agent has handled
 it.
 
+Use the `learning_math_*` MCP tools when the user or parent is running an
+elementary math practice flow. Create the session with
+`learning_math_create_practice_session`, record the child's work with
+`learning_math_record_attempt`, then record parent feedback with
+`learning_math_record_feedback`. Use the list/get tools to review recent
+practice sessions. Keep the visible language to practice goal, exercise, answer
+or reasoning, mistake pattern, feedback, adjustment, and next exercise.
+
 Use CLI/API review reports for periodic synthesis. A review report is a
 persisted Lens-based interpretation over a time window, not a new owned memory.
 
@@ -231,9 +239,11 @@ Recommended order for Claw/Hermes:
 4. `search_memories` for raw recall when the task mentions a specific topic.
 5. `run_lens` when the agent needs an interpretation, tradeoff review, or
    contradiction check.
-6. Generate a review report when the task is periodic synthesis over a time
+6. `learning_math_create_practice_session`, `learning_math_record_attempt`,
+   and `learning_math_record_feedback` for parent-assisted math practice.
+7. Generate a review report when the task is periodic synthesis over a time
    window.
-7. `add_memory` only when the information is durable and safe to persist.
+8. `add_memory` only when the information is durable and safe to persist.
 
 ## Memory Shape
 
