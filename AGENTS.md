@@ -16,6 +16,10 @@
   feedback substrate，并引入 MemoryAtom / CognitiveScene / Lens-based
   CognitiveProjection 的 memory lifecycle；但 `CognitiveSpace` 仍然是 ownership /
   permission boundary。
+- Local-first Trace Learning Runtime 见 ADR-016：MemoryNexus 会引入 Trace 记录交互、
+  runtime metrics、生成对象和用户反馈，用于 local-first / trace-driven feedback
+  learning；但不要把项目改成完整 local agent runtime、model catalog 或 inference
+  engine。
 - Supabase 接入边界见 ADR-015：Supabase 首先是托管 PostgreSQL 兼容目标，不是新的
   backend 主线。Auth / Storage / Realtime 只能作为后续 adapter 单独推进。
 - EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
@@ -30,6 +34,8 @@
 - 当前 Rust-first 主线见 `decisions/ADR-009-rust-first-backend.md`。
 - Thought Review UI MVP 见 `decisions/ADR-013-thought-review-ui-mvp.md`。
 - Namespace / FeedbackLoop 长期模型见 `decisions/ADR-014-namespace-feedback-loop.md`。
+- Local-first Trace Learning Runtime 见
+  `decisions/ADR-016-local-first-trace-learning-runtime.md`。
 
 ## 开发规则
 
@@ -104,6 +110,9 @@ cargo clippy --all-targets --all-features -- -D clippy::all
   -> CognitiveProjection` 做小实验，不要把它实现成通用 agent retrieval engine。
 - 涉及 ObserveMode 的 issue 必须明确前台低延迟行为、后台异步处理和用户主动 deep
   review 的触发条件。
+- Trace / runtime metrics issue 默认先做 contract、最小 schema 或 lightweight capture。
+  不要实现 OpenJarvis 式完整本地 agent runtime、模型微调、model catalog 或 inference
+  backend。
 
 ## P0 优先级
 

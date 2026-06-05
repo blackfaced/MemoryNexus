@@ -92,6 +92,8 @@ Keyword search uses PostgreSQL full-text/ILIKE matching and the same
   primitives used by the functional core.
 - `Namespace` partitions a Space into long-running domains, and `FeedbackLoop`
   tracks goal, task, attempt, evaluation, feedback, adjustment, and next task.
+- `Trace` records one interaction or execution with runtime metrics, generated
+  object links, and optional user feedback for local-first learning loops.
 
 The Phase 5 lifecycle direction is:
 
@@ -121,7 +123,8 @@ multi-lens projection + atomization + consolidation + belief / contradiction upd
 -> review, next action, or practice adjustment
 ```
 
-See [cognitive-concepts.md](cognitive-concepts.md) for definitions and
+See [cognitive-concepts.md](cognitive-concepts.md) for definitions,
+[trace-contract.md](trace-contract.md) for the Trace contract, and
 [cognitive-architecture.md](cognitive-architecture.md) for the theoretical
 architecture.
 
