@@ -65,8 +65,7 @@ workflows while keeping Cognitive Space as the ownership boundary.
 
 Current open work:
 
-- [#35 Reminder notification delivery channels](https://github.com/blackfaced/MemoryNexus/issues/35)
-- [#36 Advanced reminder recurrence and rule engine](https://github.com/blackfaced/MemoryNexus/issues/36)
+No current Phase 3 issues remain open. The Phase 3 milestone is closed.
 
 Recently completed:
 
@@ -93,6 +92,10 @@ Recently completed:
   plus `remind` alias for reminder commands.
 - [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8):
   voice upload and transcription API are implemented.
+- [#35 Reminder notification delivery channels](https://github.com/blackfaced/MemoryNexus/issues/35):
+  reminder delivery channel tracking is implemented.
+- [#36 Advanced reminder recurrence and rule engine](https://github.com/blackfaced/MemoryNexus/issues/36):
+  advanced recurrence handling is implemented.
 
 ## Phase 4: User Interface
 
@@ -103,7 +106,8 @@ provenance, and summarize recurring weekly themes.
 Current open work:
 
 No current Phase 4 UI issues are required for the next MVP direction. Thought
-Review remains available as a reflective demo and presentation entry point.
+Review remains available as a reflective demo and presentation entry point. The
+Phase 4 milestone is closed.
 
 Recently completed:
 
@@ -202,10 +206,20 @@ Recently completed:
   Namespace schema, repository, and API are now on main.
 - [#57 Minimal FeedbackLoop database model and API](https://github.com/blackfaced/MemoryNexus/issues/57):
   FeedbackLoop schema, repository, and API are now on main.
+- [#59 STEM Learning Feedback MVP: parent-assisted practice loop](https://github.com/blackfaced/MemoryNexus/issues/59):
+  first product MVP PRD is scoped to `learning.stem`, with elementary fraction
+  word problems as the first validation task.
+- [#67 Add attempt patch support to FeedbackLoop](https://github.com/blackfaced/MemoryNexus/issues/67):
+  FeedbackLoop attempts can be patched after session creation.
+- [#68 Capture FeedbackLoop event as Memory](https://github.com/blackfaced/MemoryNexus/issues/68):
+  practice events can be preserved as Space-owned Memory with FeedbackLoop
+  provenance.
 - [#69 STEM learning practice session API](https://github.com/blackfaced/MemoryNexus/issues/69):
   thin product API on top of Namespace and FeedbackLoop records practice answers
   and feedback, and preserves optional Memory snapshots. The current first-slice
   implementation may still expose `/learning/math` compatibility naming.
+- [#73 STEM learning MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
+  current `learning_math_*` MCP tools expose the practice flow to agents.
 
 Current open work:
 
@@ -213,22 +227,15 @@ Learning MVP track:
 
 Recommended sequence:
 
-1. [#59 STEM Learning Feedback MVP: parent-assisted practice loop](https://github.com/blackfaced/MemoryNexus/issues/59):
-   keep the PRD focused on STEM Learning Feedback in `learning.stem`, with
-   elementary fraction word problems as the first validation task.
-2. [#67 Add attempt patch support to FeedbackLoop](https://github.com/blackfaced/MemoryNexus/issues/67):
-   unblock incremental learner answer / reasoning capture.
-3. [#68 Capture FeedbackLoop event as Memory](https://github.com/blackfaced/MemoryNexus/issues/68):
-   preserve practice events as Space-owned Memory with FeedbackLoop provenance.
-4. [#73 STEM learning MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
-   expose the practice flow to Claw and other MCP clients. Current tool names may
-   remain `learning_math_*` until a compatibility alias or rename issue lands.
-5. Run a Claw end-to-end demo over the MCP tools before locking the final static
-   UI shape.
-6. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
+1. [#87 Validate STEM learning MCP flow with an agent end-to-end demo](https://github.com/blackfaced/MemoryNexus/issues/87):
+   validate the current MCP flow before locking the final static UI shape.
+2. [#89 Make learning practice API namespace-driven and add learning.stem aliases](https://github.com/blackfaced/MemoryNexus/issues/89):
+   move practice sessions toward a namespace-driven API while keeping current
+   `/learning/math` and `learning_math_*` surfaces compatible during transition.
+3. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
    summarize practiced topics, recurring mistake patterns, improvement signals,
    and next practice.
-7. [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
+4. [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
    build the Rust-served static UI after the API, MCP, demo, and review report
    contracts are clear.
 
@@ -251,6 +258,33 @@ Candidate follow-up work after the STEM learning slice:
   the full deep cognitive pipeline.
 - Keep product entry points narrow; do not expose every possible namespace in
   the first UI.
+
+## Distribution and Agent Install
+
+Goal: make MemoryNexus installable by agents and non-developer users without
+requiring a local Rust toolchain. PostgreSQL and Qdrant may still run through
+Docker.
+
+Recommended sequence:
+
+1. [#85 Build and publish release binaries for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/85):
+   publish prebuilt `memorynexus`, `memorynexus-cli`, and `memorynexus-mcp`
+   artifacts for common platforms.
+2. [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
+   make agent install prefer release binaries before falling back to source
+   build.
+3. [#86 Document developer vs user agent installation paths](https://github.com/blackfaced/MemoryNexus/issues/86):
+   separate ordinary user/agent install from contributor Rust development setup.
+
+Parallel / follow-up work:
+
+- [#83 Add Docker runtime compose bundle for local services](https://github.com/blackfaced/MemoryNexus/issues/83):
+  provide a runtime compose setup for PostgreSQL and Qdrant.
+- [#84 Create offline install bundle for agents](https://github.com/blackfaced/MemoryNexus/issues/84):
+  package binaries, runtime compose files, env examples, and install docs into a
+  downloadable archive.
+- [#81 Binary-first and offline agent installation](https://github.com/blackfaced/MemoryNexus/issues/81):
+  umbrella issue for the install/distribution track.
 
 ## Deployment Compatibility
 
