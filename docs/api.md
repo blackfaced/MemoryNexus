@@ -383,22 +383,30 @@ committed in the same database transaction.
 ## STEM Learning Practice Sessions
 
 The STEM learning API is a thin product-facing layer over Namespace and
-FeedbackLoop. The current first-slice route remains
-`/api/v1/learning/math/...` and creates or reuses the `learning.math` skill
-Namespace for compatibility with the implemented endpoint. Product roadmap docs
-refer to the broader STEM Learning Feedback MVP as `learning.stem`; adding a
-`learning.stem` alias or rename should be handled by a separate compatibility
-issue. Responses use parent and learner friendly language and do not expose
-memory lifecycle internals.
+FeedbackLoop. The canonical route is namespace-driven:
+`/api/v1/namespaces/:namespace_id/practice-sessions`. Product domains such as
+`learning.stem` and `learning.math` are Namespace records inside a
+`CognitiveSpace`, not permanent API route segments. The Namespace must be a
+`skill` Namespace, and the API always validates that the Namespace,
+FeedbackLoop, optional Memory snapshot, and authenticated writer all stay inside
+the same Space.
+
+The first-slice `/api/v1/learning/math/...` route remains as a compatibility
+surface. It creates or reuses the `learning.math` skill Namespace when
+`namespace_id` is omitted and only accepts the `learning.math` Namespace when
+one is supplied. New clients should prefer the namespace route, especially for
+`learning.stem`. Responses use parent and learner friendly language and do not
+expose memory lifecycle internals.
 
 ### Create Practice Session
 
-`POST /api/v1/learning/math/practice-sessions`
+Canonical:
+
+`POST /api/v1/namespaces/:namespace_id/practice-sessions`
 
 ```json
 {
-  "space_id": "space-uuid",
-  "namespace_id": "optional-learning-namespace-uuid",
+  "space_id": "optional-space-uuid-guard",
   "practice_goal": "Improve fraction word problems",
   "exercise": "Solve five fraction word problems and explain the reasoning",
   "answer": "optional learner answer or reasoning",
@@ -410,29 +418,60 @@ memory lifecycle internals.
 }
 ```
 
-`namespace_id` is optional. When omitted, the server creates or reuses
-`learning.math` in the requested Space. When supplied, it must belong to the same
-Space and must be the current learning practice Namespace. `goal`, `task`,
-`attempt`, `evaluation`, `adjustment`, and `next_task` are accepted as aliases
-for clients already using the lower-level FeedbackLoop vocabulary.
+`namespace_id` comes from the path. `space_id` is optional on the canonical
+route; when supplied, it is treated as a guard and must match the Namespace's
+Space. `goal`, `task`, `attempt`, `evaluation`, `adjustment`, and `next_task`
+are accepted as aliases for clients already using the lower-level FeedbackLoop
+vocabulary.
+
+Compatibility:
+
+`POST /api/v1/learning/math/practice-sessions`
+
+The compatibility body requires `space_id` and accepts optional `namespace_id`.
+When `namespace_id` is omitted, the server creates or reuses `learning.math` in
+the requested Space.
 
 ### List Practice Sessions
+
+Canonical:
+
+`GET /api/v1/namespaces/:namespace_id/practice-sessions?limit=20&offset=0`
+
+Optional `space_id` may be supplied as a guard:
+
+`GET /api/v1/namespaces/:namespace_id/practice-sessions?space_id=<SPACE_ID>`
+
+Compatibility:
 
 `GET /api/v1/learning/math/practice-sessions?space_id=<SPACE_ID>&namespace_id=<OPTIONAL_NAMESPACE_ID>`
 
 Returns sessions in the current learning practice Namespace ordered by newest
-first. Listing does not create the Namespace; if the current first-slice
-`learning.math` Namespace has not been created yet, the response is an empty
-list.
+first. Canonical listing uses the path Namespace and does not create any
+Namespace. Compatibility listing also does not create `learning.math`; if it has
+not been created yet, the response is an empty list.
 
 ### Get Practice Session
+
+Canonical:
+
+`GET /api/v1/namespaces/:namespace_id/practice-sessions/:id`
+
+Compatibility:
 
 `GET /api/v1/learning/math/practice-sessions/:id`
 
 Returns a session only if the current user can access its Cognitive Space and
-the underlying FeedbackLoop belongs to the current learning practice Namespace.
+the underlying FeedbackLoop belongs to the same Namespace as the canonical path
+or to `learning.math` for the compatibility path.
 
 ### Update Answer
+
+Canonical:
+
+`PATCH /api/v1/namespaces/:namespace_id/practice-sessions/:id/attempt`
+
+Compatibility:
 
 `PATCH /api/v1/learning/math/practice-sessions/:id/attempt`
 
@@ -448,6 +487,12 @@ This updates the underlying FeedbackLoop `attempt` field. When
 Space-owned Memory snapshot for the practice event.
 
 ### Update Feedback
+
+Canonical:
+
+`PATCH /api/v1/namespaces/:namespace_id/practice-sessions/:id/feedback`
+
+Compatibility:
 
 `PATCH /api/v1/learning/math/practice-sessions/:id/feedback`
 

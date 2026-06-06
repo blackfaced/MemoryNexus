@@ -223,6 +223,105 @@ async fn learning_math_practice_routes_cover_session_lifecycle_and_access_contro
     .expect("patch snapshot count should query");
     assert_eq!(patch_snapshot_count, 2);
 
+    let stem_create_response = client
+        .post(format!(
+            "{base_url}/api/v1/namespaces/{}/practice-sessions",
+            fixture.stem_namespace_id
+        ))
+        .bearer_auth(&owner_token)
+        .json(&json!({
+            "practice_goal": "Improve STEM fraction reasoning",
+            "exercise": "Solve three fraction word problems and explain units",
+            "capture_memory": true
+        }))
+        .send()
+        .await
+        .expect("canonical namespace create request should send");
+    assert_eq!(stem_create_response.status(), StatusCode::CREATED);
+    let stem_created: Value = stem_create_response
+        .json()
+        .await
+        .expect("canonical create response should be json");
+    let stem_session_id = uuid_field(&stem_created, "/data/id");
+    assert_eq!(
+        stem_created
+            .pointer("/data/namespace_id")
+            .and_then(Value::as_str),
+        Some(fixture.stem_namespace_id.to_string().as_str())
+    );
+    assert_eq!(
+        stem_created
+            .pointer("/data/space_id")
+            .and_then(Value::as_str),
+        Some(fixture.practice_space_id.to_string().as_str())
+    );
+
+    let stem_list_response = client
+        .get(format!(
+            "{base_url}/api/v1/namespaces/{}/practice-sessions",
+            fixture.stem_namespace_id
+        ))
+        .bearer_auth(&owner_token)
+        .send()
+        .await
+        .expect("canonical namespace list request should send");
+    assert_eq!(stem_list_response.status(), StatusCode::OK);
+    let stem_listed: Value = stem_list_response
+        .json()
+        .await
+        .expect("canonical list response should be json");
+    assert_eq!(
+        stem_listed.pointer("/data/total").and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        stem_listed
+            .pointer("/data/items/0/id")
+            .and_then(Value::as_str),
+        Some(stem_session_id.to_string().as_str())
+    );
+
+    let stem_attempt_response = client
+        .patch(format!(
+            "{base_url}/api/v1/namespaces/{}/practice-sessions/{stem_session_id}/attempt",
+            fixture.stem_namespace_id
+        ))
+        .bearer_auth(&owner_token)
+        .json(&json!({
+            "answer": "I explained each unit before calculating"
+        }))
+        .send()
+        .await
+        .expect("canonical namespace attempt patch should send");
+    assert_eq!(stem_attempt_response.status(), StatusCode::OK);
+
+    let wrong_namespace_get = client
+        .get(format!(
+            "{base_url}/api/v1/namespaces/{}/practice-sessions/{stem_session_id}",
+            fixture.other_skill_namespace_id
+        ))
+        .bearer_auth(&owner_token)
+        .send()
+        .await
+        .expect("wrong namespace get request should send");
+    assert_eq!(wrong_namespace_get.status(), StatusCode::UNAUTHORIZED);
+
+    let mismatched_space_create = client
+        .post(format!(
+            "{base_url}/api/v1/namespaces/{}/practice-sessions",
+            fixture.stem_namespace_id
+        ))
+        .bearer_auth(&owner_token)
+        .json(&json!({
+            "space_id": fixture.wrong_kind_space_id,
+            "practice_goal": "Mismatched Space",
+            "exercise": "Should be rejected"
+        }))
+        .send()
+        .await
+        .expect("mismatched space create request should send");
+    assert_eq!(mismatched_space_create.status(), StatusCode::BAD_REQUEST);
+
     let unauthorized_create = client
         .post(format!("{base_url}/api/v1/learning/math/practice-sessions"))
         .bearer_auth(&outsider_token)
@@ -333,6 +432,8 @@ struct PracticeFixture {
     outsider_email: String,
     practice_space_id: Uuid,
     wrong_kind_space_id: Uuid,
+    stem_namespace_id: Uuid,
+    other_skill_namespace_id: Uuid,
 }
 
 async fn postgres_pool() -> PgPool {
@@ -380,6 +481,23 @@ async fn seed_users_and_spaces(pool: &PgPool) -> PracticeFixture {
     .await
     .expect("wrong-kind namespace should insert");
 
+    let stem_namespace_id = seed_namespace(
+        pool,
+        practice_space_id,
+        owner_user_id,
+        "learning.stem",
+        "skill",
+    )
+    .await;
+    let other_skill_namespace_id = seed_namespace(
+        pool,
+        practice_space_id,
+        owner_user_id,
+        "learning.science",
+        "skill",
+    )
+    .await;
+
     PracticeFixture {
         owner_user_id,
         owner_email,
@@ -387,7 +505,32 @@ async fn seed_users_and_spaces(pool: &PgPool) -> PracticeFixture {
         outsider_email,
         practice_space_id,
         wrong_kind_space_id,
+        stem_namespace_id,
+        other_skill_namespace_id,
     }
+}
+
+async fn seed_namespace(
+    pool: &PgPool,
+    space_id: Uuid,
+    owner_user_id: Uuid,
+    name: &str,
+    kind: &str,
+) -> Uuid {
+    sqlx::query_scalar(
+        r#"
+        INSERT INTO namespaces (space_id, name, kind, created_by)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+        "#,
+    )
+    .bind(space_id)
+    .bind(name)
+    .bind(kind)
+    .bind(owner_user_id)
+    .fetch_one(pool)
+    .await
+    .expect("namespace seed should insert")
 }
 
 async fn seed_user(pool: &PgPool, email: &str, username: &str) -> Uuid {
