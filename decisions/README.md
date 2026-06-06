@@ -21,7 +21,8 @@ decisions/
 ├── ADR-012-family-shared-cognitive-space.md ✅ 家庭与共享 Cognitive Space
 ├── ADR-013-thought-review-ui-mvp.md ✅ Thought Review UI MVP
 ├── ADR-014-namespace-feedback-loop.md ✅ Namespace 与 Feedback Loop 模型
-└── ADR-015-supabase-integration.md ✅ Supabase 集成边界
+├── ADR-015-supabase-integration.md ✅ Supabase 集成边界
+└── ADR-016-local-first-trace-learning-runtime.md ✅ Local-first Trace Learning Runtime
 ```
 
 ## 📖 ADR 是什么？

@@ -10,7 +10,7 @@
 2. **认知生命周期结构**：MemoryAtom、CognitiveScene、CognitiveProjection
 3. **认知加工结果**：Reflection、Concept、Belief、Relation、Contradiction
 4. **长期反馈结构**：Namespace、FeedbackLoop
-5. **系统运行结构**：ObserveMode、CognitiveSpace、Lens、CognitiveEvent、CognitiveState
+5. **系统运行结构**：ObserveMode、Trace、CognitiveSpace、Lens、CognitiveEvent、CognitiveState
 
 `CognitiveProfile` 是 `CognitiveState` 的对外投影视图，用于 LLM、MCP 和 UI
 消费。它不是新的所有权边界。
@@ -82,6 +82,7 @@ CognitiveSpace 是容器，
 Namespace 是领域，
 FeedbackLoop 是练习 / 反馈闭环，
 ObserveMode 是读取深度，
+Trace 是交互和运行时证据，
 CognitiveEvent 是变化，
 CognitiveState 是变化后的整体状态。
 ```

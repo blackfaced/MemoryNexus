@@ -141,8 +141,10 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Cognitive Lens Roadmap](docs/cognitive-lens-roadmap.md)
 - [STEM Learning Feedback MVP PRD](docs/stem-learning-mvp.md)
 - [STEM Learning MCP Demo](docs/stem-mcp-demo.md)
+- [Trace Contract](docs/trace-contract.md)
 - [Thought Review UI MVP ADR](decisions/ADR-013-thought-review-ui-mvp.md)
 - [Namespace and Feedback Loop ADR](decisions/ADR-014-namespace-feedback-loop.md)
+- [Local-first Trace Learning Runtime ADR](decisions/ADR-016-local-first-trace-learning-runtime.md)
 - [Architecture Decisions](decisions/)
 
 ## License
