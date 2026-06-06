@@ -48,6 +48,15 @@ pub struct FeedbackLoopListFilter {
     pub offset: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct FeedbackLoopWindowFilter {
+    pub space_id: Uuid,
+    pub namespace_id: Uuid,
+    pub window_start: DateTime<Utc>,
+    pub window_end: DateTime<Utc>,
+    pub limit: i64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PatchFeedbackLoop {
     pub attempt: Option<String>,
@@ -83,6 +92,11 @@ pub trait FeedbackLoopRepository: Send + Sync {
     async fn list_for_user(
         &self,
         filter: FeedbackLoopListFilter,
+        user_id: Uuid,
+    ) -> Result<Vec<FeedbackLoopDb>, Error>;
+    async fn list_for_user_window(
+        &self,
+        filter: FeedbackLoopWindowFilter,
         user_id: Uuid,
     ) -> Result<Vec<FeedbackLoopDb>, Error>;
     async fn find_for_user(
@@ -298,6 +312,35 @@ impl FeedbackLoopRepository for PostgresFeedbackLoopRepository {
         .await
     }
 
+    async fn list_for_user_window(
+        &self,
+        filter: FeedbackLoopWindowFilter,
+        user_id: Uuid,
+    ) -> Result<Vec<FeedbackLoopDb>, Error> {
+        sqlx::query_as::<_, FeedbackLoopDb>(
+            r#"
+            SELECT fl.*
+            FROM feedback_loops fl
+            INNER JOIN cognitive_space_members m ON m.space_id = fl.space_id
+            WHERE fl.space_id = $1
+              AND fl.namespace_id = $2
+              AND m.user_id = $3
+              AND fl.created_at >= $4
+              AND fl.created_at < $5
+            ORDER BY fl.created_at ASC
+            LIMIT $6
+            "#,
+        )
+        .bind(filter.space_id)
+        .bind(filter.namespace_id)
+        .bind(user_id)
+        .bind(filter.window_start)
+        .bind(filter.window_end)
+        .bind(filter.limit)
+        .fetch_all(&self.pool)
+        .await
+    }
+
     async fn find_for_user(
         &self,
         feedback_loop_id: Uuid,
@@ -410,6 +453,24 @@ mod tests {
         };
 
         assert_eq!(filter.namespace_id, Some(namespace_id));
+    }
+
+    #[test]
+    fn window_filter_keeps_space_namespace_and_window_scope() {
+        let namespace_id = Uuid::new_v4();
+        let window_start = Utc::now();
+        let window_end = Utc::now();
+        let filter = FeedbackLoopWindowFilter {
+            space_id: Uuid::new_v4(),
+            namespace_id,
+            window_start,
+            window_end,
+            limit: 20,
+        };
+
+        assert_eq!(filter.namespace_id, namespace_id);
+        assert_eq!(filter.window_start, window_start);
+        assert_eq!(filter.window_end, window_end);
     }
 
     #[test]

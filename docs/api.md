@@ -820,6 +820,41 @@ The response stores `report.summary`, `source_memory_ids`,
 `summary_fallback_reason`. Reports are derived interpretations; they do not copy
 or own memories.
 
+### Generate Weekly Learning Review
+
+`POST /api/v1/namespaces/:namespace_id/learning-reviews`
+
+Generates and persists a parent-friendly weekly learning review for practice
+sessions in one skill Namespace such as `learning.stem`. This is the canonical
+namespace-driven practice review surface; `/learning/math` remains only a
+compatibility practice-session surface and is not the long-term report API.
+
+```json
+{
+  "lens_id": "lens-uuid",
+  "window_start": "2026-06-01T00:00:00Z",
+  "window_end": "2026-06-08T00:00:00Z",
+  "limit": 50
+}
+```
+
+The Namespace and Lens must belong to the same `CognitiveSpace`, and access is
+still checked through Space membership. The response is a
+`cognitive_review_reports` record with `report_type:
+"weekly_learning_review"`. `report` includes:
+
+- `practiced_topics`
+- `recurring_mistake_patterns`
+- `improvement_signals`
+- `current_focus`
+- `suggested_next_practice`
+- `source_feedback_loop_ids` / `source_practice_session_ids`
+- `source_memory_ids`
+- `provenance`
+
+When no summary provider is configured, the report uses deterministic fallback
+output and records `summary_source: "deterministic"`.
+
 ### Get Review Report
 
 `GET /api/v1/review-reports/:id`
