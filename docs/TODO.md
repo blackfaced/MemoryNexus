@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-03
+> Last updated: 2026-06-06
 > Source of truth for executable tasks: GitHub Issues.
 
 This file is now a roadmap summary. Do not maintain detailed task status in
@@ -265,15 +265,27 @@ Goal: make MemoryNexus installable by agents and non-developer users without
 requiring a local Rust toolchain. PostgreSQL and Qdrant may still run through
 Docker.
 
+Current baseline:
+
+- Tagged GitHub releases publish stable binary archives for `memorynexus`,
+  `memorynexus-cli`, and `memorynexus-mcp`.
+- Initial release targets are `aarch64-apple-darwin`,
+  `x86_64-apple-darwin`, and `x86_64-unknown-linux-gnu`.
+- Each archive has a matching `.sha256` checksum file for install automation.
+- Source-build developer workflow remains available.
+
+Recently completed:
+
+- [#85 Build and publish release binaries for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/85):
+  release workflow foundation for prebuilt `memorynexus`, `memorynexus-cli`,
+  and `memorynexus-mcp` artifacts.
+
 Recommended sequence:
 
-1. [#85 Build and publish release binaries for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/85):
-   publish prebuilt `memorynexus`, `memorynexus-cli`, and `memorynexus-mcp`
-   artifacts for common platforms.
-2. [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
+1. [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
    make agent install prefer release binaries before falling back to source
    build.
-3. [#86 Document developer vs user agent installation paths](https://github.com/blackfaced/MemoryNexus/issues/86):
+2. [#86 Document developer vs user agent installation paths](https://github.com/blackfaced/MemoryNexus/issues/86):
    separate ordinary user/agent install from contributor Rust development setup.
 
 Parallel / follow-up work:

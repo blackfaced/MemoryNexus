@@ -91,6 +91,35 @@ cargo run --bin memorynexus-cli -- health
 
 The API listens on `http://localhost:8080`.
 
+## Release Binaries
+
+Tagged GitHub releases publish prebuilt archives for:
+
+- `aarch64-apple-darwin`
+- `x86_64-apple-darwin`
+- `x86_64-unknown-linux-gnu`
+
+Each archive is named `memorynexus-<tag>-<target>.tar.gz` and contains three
+Rust binaries:
+
+- `memorynexus`
+- `memorynexus-cli`
+- `memorynexus-mcp`
+- `SHA256SUMS` for the binaries inside the archive
+
+Download the archive and its matching `.sha256` file from the
+[GitHub Releases](https://github.com/blackfaced/MemoryNexus/releases) page,
+verify the checksum, then unpack it:
+
+```bash
+sha256sum -c memorynexus-<tag>-<target>.tar.gz.sha256
+tar -xzf memorynexus-<tag>-<target>.tar.gz
+```
+
+On macOS, use `shasum -a 256 -c memorynexus-<tag>-<target>.tar.gz.sha256`.
+PostgreSQL and Qdrant still run as external services, usually through Docker.
+Source-build development remains available with `cargo run` and `cargo build`.
+
 ## Try The Cognitive Lens MVP
 
 Follow [docs/cli.md](docs/cli.md) for the full walkthrough. The shortest local
