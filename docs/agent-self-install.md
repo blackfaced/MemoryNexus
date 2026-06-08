@@ -14,6 +14,8 @@ agent environment. First identify the current state, then choose the smallest
 safe path:
 
 - Fresh install: no local MemoryNexus checkout or MCP config exists.
+- Release binary install: the user provides a GitHub Release tag and wants to
+  use published binaries instead of compiling locally.
 - Source upgrade: a checkout exists and should be updated from git.
 - Binary rebuild: the MCP config points at `target/debug/memorynexus-mcp` or
   another built binary, so the binary must be rebuilt after source changes.
@@ -64,6 +66,31 @@ what was tried, and which later phases can still be completed.
 
 ## Prerequisites
 
+Published release archives are available for `aarch64-apple-darwin`,
+`x86_64-apple-darwin`, and `x86_64-unknown-linux-gnu`. Each archive is named
+`memorynexus-<tag>-<target>.tar.gz` and contains:
+
+- `memorynexus`
+- `memorynexus-cli`
+- `memorynexus-mcp`
+- `SHA256SUMS` for the binaries inside the archive
+- `PROFILE_SUPPORT.txt` describing Trial, Local One-click, Production, and
+  Developer profile usage
+
+This guide may use those binaries when the user explicitly provides a release
+tag or archive path. Automatic binary-first discovery and fallback is tracked by
+#82 and is not implemented in this guide yet.
+
+Profile mapping for the current release artifacts:
+
+- Trial Profile: use `memorynexus-mcp` when the Rust API is already available
+  or managed separately.
+- Local One-click Profile: use `memorynexus`, `memorynexus-cli`, and
+  `memorynexus-mcp` together with external PostgreSQL and Qdrant.
+- Production Profile: use the same binaries as service artifacts; hosted
+  service provider choices are outside this guide.
+- Developer Profile: keep using `cargo run` and `cargo build` from source.
+
 First check whether the repository already exists:
 
 ```bash
@@ -90,6 +117,62 @@ cd /Users/bytedance/code/MemoryNexus
 ```
 
 If Rust or Docker is missing, ask the user before installing system packages.
+
+## Use Release Binaries When Provided
+
+Use this path only when the user explicitly points you at a release tag, a local
+archive, or a directory containing release binaries. Otherwise continue with the
+source checkout path below until #82 adds automatic binary-first install.
+
+Choose the target triple:
+
+```bash
+uname -s
+uname -m
+```
+
+Map common local machines to release targets:
+
+| Local machine | Release target |
+|---------------|----------------|
+| macOS arm64 | `aarch64-apple-darwin` |
+| macOS x86_64 | `x86_64-apple-darwin` |
+| Linux x86_64 | `x86_64-unknown-linux-gnu` |
+
+Download both files from the GitHub Release page:
+
+```text
+memorynexus-<tag>-<target>.tar.gz
+memorynexus-<tag>-<target>.tar.gz.sha256
+```
+
+Verify and unpack:
+
+```bash
+sha256sum -c memorynexus-<tag>-<target>.tar.gz.sha256
+tar -xzf memorynexus-<tag>-<target>.tar.gz
+```
+
+On macOS, use:
+
+```bash
+shasum -a 256 -c memorynexus-<tag>-<target>.tar.gz.sha256
+```
+
+Then verify the binaries directly:
+
+```bash
+./memorynexus-<tag>-<target>/memorynexus-cli version
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | MEMORYNEXUS_API_URL=http://localhost:8080 \
+    MEMORYNEXUS_TOKEN="placeholder-token" \
+    ./memorynexus-<tag>-<target>/memorynexus-mcp
+```
+
+If this succeeds, use `./memorynexus-<tag>-<target>/memorynexus-mcp` in the MCP
+client config and `./memorynexus-<tag>-<target>/memorynexus` for the API server.
+PostgreSQL and Qdrant still need to be running separately.
 
 ## Build MCP Server
 
@@ -209,11 +292,13 @@ Use this decision table:
 
 | Current state | Action |
 |---------------|--------|
-| No checkout exists | Follow fresh install setup below. |
+| No checkout exists and the user provided a release archive/tag | Use release binaries, then start services and configure MCP. |
+| No checkout exists and no release binary was provided | Follow fresh install setup below. |
 | Checkout exists, no MCP config | Start services, verify API, then add MCP config. |
 | Checkout already contains the user's latest local edits | Skip `git pull`; run tests, rebuild if needed, then restart API/MCP. |
 | MCP config uses `cargo run` | Pull/update source if requested, run tests, restart/reload the agent MCP client. |
 | MCP config uses `target/debug/memorynexus-mcp` | Pull/update source if requested, run tests, rebuild `memorynexus-mcp`, then restart/reload the agent MCP client. |
+| MCP config uses release `memorynexus-mcp` | Replace the release directory only when the user requests a new release tag, then restart/reload the agent MCP client. |
 | API binary or `cargo run --bin memorynexus` is already running | Restart the API after source changes so migrations and new handlers load. |
 | Only docs changed | No API or MCP rebuild is required unless the agent needs a refreshed local checkout. |
 
@@ -397,8 +482,24 @@ Add a MemoryNexus MCP server entry to the local agent client's MCP config.
 Use the client-specific config path for Claw, Hermes, or the current agent
 runtime.
 
-Recommended low-latency config. This mode requires `cargo build --bin
-memorynexus-mcp` after source changes:
+Recommended release-binary config when using a downloaded archive:
+
+```json
+{
+  "mcpServers": {
+    "memorynexus": {
+      "command": "/path/to/memorynexus-<tag>-<target>/memorynexus-mcp",
+      "env": {
+        "MEMORYNEXUS_API_URL": "http://localhost:8080",
+        "MEMORYNEXUS_TOKEN": "<jwt-token>"
+      }
+    }
+  }
+}
+```
+
+Recommended source-build low-latency config. This mode requires `cargo build
+--bin memorynexus-mcp` after source changes:
 
 ```json
 {
@@ -666,7 +767,8 @@ Then report Docker as the blocker for API and end-to-end smoke.
 If full installation is blocked, report the highest completed level:
 
 - **Level 1: Repo Ready**: repository exists and prerequisites checked.
-- **Level 2: MCP Binary Ready**: `cargo build --bin memorynexus-mcp` succeeds.
+- **Level 2: MCP Binary Ready**: release `memorynexus-mcp` is verified or
+  `cargo build --bin memorynexus-mcp` succeeds.
 - **Level 3: MCP Discoverable**: stdio `tools/list` shows MemoryNexus tools.
 - **Level 4: API Ready**: API health check succeeds.
 - **Level 5: Agent Connected**: MCP config is installed and visible in the

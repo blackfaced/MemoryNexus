@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-03
+> Last updated: 2026-06-06
 > Source of truth for executable tasks: GitHub Issues.
 
 This file is now a roadmap summary. Do not maintain detailed task status in
@@ -265,24 +265,39 @@ Goal: make MemoryNexus installable by agents and non-developer users without
 requiring a local Rust toolchain. PostgreSQL and Qdrant may still run through
 Docker.
 
+Current baseline:
+
+- Tagged GitHub releases publish stable binary archives for `memorynexus`,
+  `memorynexus-cli`, and `memorynexus-mcp`.
+- Initial release targets are `aarch64-apple-darwin`,
+  `x86_64-apple-darwin`, and `x86_64-unknown-linux-gnu`.
+- Each archive has a matching `.sha256` checksum file for install automation.
+- The artifact layout is shared by Trial Profile, Local One-click Profile, and
+  Production Profile.
+- Source-build Developer Profile remains available.
+
+Recently completed:
+
+- [#85 Build and publish release binaries for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/85):
+  release workflow foundation for prebuilt `memorynexus`, `memorynexus-cli`,
+  and `memorynexus-mcp` artifacts.
+
 Recommended sequence:
 
-1. [#85 Build and publish release binaries for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/85):
-   publish prebuilt `memorynexus`, `memorynexus-cli`, and `memorynexus-mcp`
-   artifacts for common platforms.
-2. [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
+1. [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
    make agent install prefer release binaries before falling back to source
    build.
-3. [#86 Document developer vs user agent installation paths](https://github.com/blackfaced/MemoryNexus/issues/86):
-   separate ordinary user/agent install from contributor Rust development setup.
+2. [#86 Document Trial, Local One-click, and Production install profiles](https://github.com/blackfaced/MemoryNexus/issues/86):
+   separate Trial, Local One-click, Production, and Developer Profile install
+   paths.
 
 Parallel / follow-up work:
 
-- [#83 Add Docker runtime compose bundle for local services](https://github.com/blackfaced/MemoryNexus/issues/83):
-  provide a runtime compose setup for PostgreSQL and Qdrant.
-- [#84 Create offline install bundle for agents](https://github.com/blackfaced/MemoryNexus/issues/84):
+- [#83 Add Docker runtime compose bundle for Local One-click Profile](https://github.com/blackfaced/MemoryNexus/issues/83):
+  provide a Local One-click runtime compose setup for PostgreSQL and Qdrant.
+- [#84 Create Local One-click offline install bundle for agents](https://github.com/blackfaced/MemoryNexus/issues/84):
   package binaries, runtime compose files, env examples, and install docs into a
-  downloadable archive.
+  downloadable Local One-click archive.
 - [#81 Binary-first and offline agent installation](https://github.com/blackfaced/MemoryNexus/issues/81):
   umbrella issue for the install/distribution track.
 
