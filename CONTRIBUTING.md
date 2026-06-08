@@ -37,42 +37,36 @@
 
 ## 📐 代码规范
 
-### Python (后端)
+### Rust 后端
 
-- 遵循 [PEP 8](https://pep8.org/)
-- 使用 `black` 格式化代码
-- 使用 `ruff` 进行 linting
-- 所有函数添加类型提示
-- 写单元测试
+- MemoryNexus 是 Rust-first 项目，Rust + Axum crate 位于仓库根目录。
+- 新增 API、数据库访问、对象存储、向量检索、AI 编排默认落在 Rust 服务。
+- Memory 归属于 `CognitiveSpace`，不要重新引入 Agent-owned memory 或第二套后端主线。
+- 修改 Rust 行为时，优先补单元测试或端到端验收。
 
 ```bash
-# 格式化
-black src/
-
-# Linting
-ruff check src/
-
-# 测试
-pytest tests/
+cargo fmt --check
+cargo test
+cargo clippy --all-targets --all-features -- -D clippy::all
 ```
 
-### React/TypeScript (前端)
+### 静态 UI
 
-- 遵循项目已有的代码风格
-- 使用有意义的变量命名
-- 组件添加 PropTypes 或 TypeScript 类型
+- 当前 UI 是 Rust 服务直接提供的静态 Thought Review MVP，入口在 `web/thought_review.html`。
+- 修改静态 UI 时保持轻量实现，除非 issue 或 ADR 明确要求升级前端栈。
+- 不要在没有 ADR 的情况下引入 React/Vite/Next、Node dev server、BFF 或第二套 frontend/backend 主线。
 
 ## 🧪 测试
 
-所有新功能必须包含测试：
+所有新功能必须包含测试。开 PR 前至少运行：
 
 ```bash
-# 运行所有测试
-pytest tests/
-
-# 带覆盖率
-pytest tests/ --cov=src --cov-report=html
+cargo fmt --check
+cargo test
+cargo clippy --all-targets --all-features -- -D clippy::all
 ```
+
+如果只改 Markdown 文档，可以说明未跑 Rust 测试的原因，并至少运行 `git diff --check`。
 
 ## 📝 提交信息规范
 
@@ -95,9 +89,9 @@ chore: 构建/工具更新
 
 ## 🔍 Code Review
 
-- 至少有一个 reviewer 批准才能合并
-- 响应 review 反馈
-- 保持分支最新
+- PR 必须通过 CI 中的 Format、Clippy、Build、Test。
+- 响应 review 反馈。
+- 保持分支最新。
 
 ## 📜 许可
 
