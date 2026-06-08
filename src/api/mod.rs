@@ -473,4 +473,26 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn learning_stem_app_clears_stale_namespace_when_switching_spaces() {
+        let html = super::web::learning_stem_app_source();
+
+        assert!(html.contains("resetLearningStemWorkspace"));
+        assert!(html.contains("state.namespace = null;"));
+        assert!(html.contains("state.currentSession = null;"));
+        assert!(html.contains("$(\"attemptPanel\").classList.add(\"hidden\")"));
+        assert!(html.contains("$(\"feedbackPanel\").classList.add(\"hidden\")"));
+        assert!(html.contains("state.namespace.space_id !== state.space.id"));
+        assert!(html.contains("async function switchActiveSpace"));
+        assert!(html.contains("switchActiveSpace(event.target.value)"));
+    }
+
+    #[test]
+    fn learning_stem_recent_sessions_render_practice_adjustment() {
+        let html = super::web::learning_stem_app_source();
+
+        assert!(html.contains("practice_adjustment"));
+        assert!(html.contains("<strong>practice adjustment:</strong>"));
+    }
 }

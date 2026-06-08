@@ -423,6 +423,7 @@
     }
 
     async function setActiveSpace(spaceId) {
+      resetLearningStemWorkspace();
       const space = state.spaces.find((item) => item.id === spaceId);
       if (!space) {
         showError("spaceError", "Please choose a Space first.");
@@ -432,9 +433,37 @@
       state.activeSpaceId = space.id;
       localStorage.setItem("memorynexus_active_space_id", space.id);
       $("spaceSelect").value = space.id;
-      $("activeSpaceNotice").textContent = `Practice is saved in ${space.name}.`;
+      $("activeSpaceNotice").textContent = `Loading learning.stem for ${space.name}...`;
       await ensureLearningStemNamespace(space);
+      $("activeSpaceNotice").textContent = `Practice is saved in ${space.name}.`;
       await loadRecentSessions();
+    }
+
+    function resetLearningStemWorkspace() {
+      state.namespace = null;
+      state.currentSession = null;
+      $("attemptPanel").classList.add("hidden");
+      $("feedbackPanel").classList.add("hidden");
+      $("namespaceStatus").textContent = "Loading learning.stem...";
+      $("recentSessions").innerHTML = `<div class="empty">Loading recent practice sessions...</div>`;
+      clearError("practiceError");
+      clearError("attemptError");
+      clearError("feedbackError");
+    }
+
+    async function switchActiveSpace(spaceId) {
+      clearError("spaceError");
+      try {
+        await setActiveSpace(spaceId);
+        setStatus("Ready");
+      } catch (error) {
+        state.namespace = null;
+        state.currentSession = null;
+        showError("spaceError", error.message || "API error");
+        $("namespaceStatus").textContent = `API error: ${error.message || "Could not load learning.stem."}`;
+        $("recentSessions").innerHTML = `<div class="error">API error: ${escapeHtml(error.message || "Could not load practice sessions.")}</div>`;
+        setStatus("API error");
+      }
     }
 
     async function ensureLearningStemNamespace(space) {
@@ -452,6 +481,9 @@
           })
         });
       }
+      if (namespace.space_id !== space.id) {
+        throw new Error("learning.stem does not belong to the selected Space.");
+      }
       state.namespace = namespace;
       $("namespaceStatus").textContent = `Using ${namespaceName} for this Space.`;
     }
@@ -463,6 +495,10 @@
       }
       if (!state.namespace) {
         showError("spaceError", "learning.stem is still loading.");
+        return false;
+      }
+      if (state.namespace.space_id !== state.space.id) {
+        showError("spaceError", "learning.stem does not match the selected Space. Please reselect the Space.");
         return false;
       }
       return true;
@@ -581,6 +617,7 @@
           ${session.answer ? `<p class="summary"><strong>answer:</strong> ${escapeHtml(session.answer)}</p>` : ""}
           ${session.mistake_pattern ? `<p class="summary"><strong>mistake pattern:</strong> ${escapeHtml(session.mistake_pattern)}</p>` : ""}
           ${session.feedback ? `<p class="summary"><strong>feedback:</strong> ${escapeHtml(session.feedback)}</p>` : ""}
+          ${session.practice_adjustment ? `<p class="summary"><strong>practice adjustment:</strong> ${escapeHtml(session.practice_adjustment)}</p>` : ""}
           ${session.next_exercise ? `<p class="summary"><strong>next exercise:</strong> ${escapeHtml(session.next_exercise)}</p>` : ""}
           <div class="meta">
             <span>${escapeHtml(formatDate(session.updated_at || session.created_at))}</span>
@@ -615,7 +652,7 @@
 
     $("registerButton").addEventListener("click", () => authenticate("register"));
     $("loginButton").addEventListener("click", () => authenticate("login"));
-    $("spaceSelect").addEventListener("change", (event) => setActiveSpace(event.target.value));
+    $("spaceSelect").addEventListener("change", (event) => switchActiveSpace(event.target.value));
     $("createSpaceButton").addEventListener("click", createFamilySpace);
     $("refreshButton").addEventListener("click", () => loadRecentSessions());
     $("logoutButton").addEventListener("click", logout);
