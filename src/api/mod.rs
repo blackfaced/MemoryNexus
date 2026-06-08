@@ -410,4 +410,67 @@ mod tests {
         assert!(!html.contains("$(\"emailInput\").value = \"\""));
         assert!(!html.contains("$(\"passwordInput\").value = \"\""));
     }
+
+    #[test]
+    fn learning_stem_app_is_served_as_static_rust_ui() {
+        let routes = include_str!("mod.rs");
+        let web_routes = include_str!("web.rs");
+        let html = super::web::learning_stem_app_source();
+
+        assert!(routes.contains(".merge(web::routes())"));
+        assert!(web_routes.contains("\"/learning/stem\""));
+        assert!(web_routes.contains("include_str!(\"../../web/learning_stem.html\")"));
+        assert!(html.contains("STEM practice"));
+        assert!(html.contains("id=\"spaceSelect\""));
+        assert!(html.contains("id=\"recentSessions\""));
+    }
+
+    #[test]
+    fn learning_stem_app_uses_namespace_driven_practice_api() {
+        let html = super::web::learning_stem_app_source();
+
+        assert!(html.contains("learning.stem"));
+        assert!(html.contains("kind: \"skill\""));
+        assert!(html.contains("/api/v1/namespaces?space_id=${encodeURIComponent(space.id)}"));
+        assert!(html.contains("/api/v1/namespaces"));
+        assert!(html.contains(
+            "/api/v1/namespaces/${encodeURIComponent(state.namespace.id)}/practice-sessions"
+        ));
+        assert!(html.contains("/attempt"));
+        assert!(html.contains("/feedback"));
+        assert!(!html.contains("/api/v1/learning/math/practice-sessions"));
+    }
+
+    #[test]
+    fn learning_stem_app_uses_parent_learner_language_and_states() {
+        let html = super::web::learning_stem_app_source();
+
+        for token in [
+            "practice",
+            "answer",
+            "mistake pattern",
+            "feedback",
+            "next exercise",
+            "weekly learning review",
+            "fraction word problems",
+            "Loading",
+            "No practice sessions yet",
+            "Please choose a Space first",
+            "API error",
+        ] {
+            assert!(html.contains(token), "missing UI token: {token}");
+        }
+
+        for backend_term in [
+            "MemoryAtom",
+            "CognitiveScene",
+            "CognitiveProjection",
+            "Lens Run",
+        ] {
+            assert!(
+                !html.contains(backend_term),
+                "learning.stem UI should not expose backend term {backend_term}"
+            );
+        }
+    }
 }
