@@ -15,7 +15,7 @@ use crate::ai::{SummaryOptions, SummaryStyle};
 use crate::auth::AuthenticatedUser;
 use crate::db::feedback_loop::{FeedbackLoopDb, FeedbackLoopWindowFilter};
 use crate::db::lens::LensDb;
-use crate::db::memory::MemoryDb;
+use crate::db::memory::{FeedbackLoopEventSnapshotFilter, MemoryDb};
 use crate::db::namespace::NamespaceDb;
 use crate::db::review_report::{
     CognitiveReviewReportDb, CreateCognitiveReviewReport, ReviewReportListFilter,
@@ -203,30 +203,38 @@ pub async fn create_learning_review(
         .await
         .map_err(AppError::Database)?;
 
-    let memories = state
+    let source_feedback_loop_ids = feedback_loops
+        .iter()
+        .map(|session| session.id)
+        .collect::<Vec<_>>();
+    let source_memories = state
         .repositories
         .memories
-        .list_by_space_window(
+        .list_feedback_loop_event_snapshots(
             auth_user.user_id,
-            namespace.space_id,
-            req.window_start,
-            req.window_end,
-            limit,
+            FeedbackLoopEventSnapshotFilter {
+                space_id: namespace.space_id,
+                namespace_id,
+                feedback_loop_ids: source_feedback_loop_ids,
+                window_start: req.window_start,
+                window_end: req.window_end,
+                limit,
+            },
         )
         .await
         .map_err(AppError::Database)?;
-    let source_memories = learning_source_memories(&memories, namespace_id, &feedback_loops);
     let source_memory_ids = source_memories
         .iter()
         .map(|memory| memory.id)
         .collect::<Vec<_>>();
+    let source_memory_refs = source_memories.iter().collect::<Vec<_>>();
     let summary = generate_learning_review_summary(&state, &namespace, &feedback_loops).await;
     let report_json = build_learning_review_report_json(LearningReviewInput {
         namespace: &namespace,
         window_start: req.window_start,
         window_end: req.window_end,
         feedback_loops: &feedback_loops,
-        source_memories: &source_memories,
+        source_memories: &source_memory_refs,
         summary: &summary,
     });
 
@@ -803,31 +811,6 @@ where
     values
 }
 
-fn learning_source_memories<'a>(
-    memories: &'a [MemoryDb],
-    namespace_id: Uuid,
-    feedback_loops: &[FeedbackLoopDb],
-) -> Vec<&'a MemoryDb> {
-    let feedback_loop_ids = feedback_loops
-        .iter()
-        .map(|session| session.id.to_string())
-        .collect::<HashSet<_>>();
-    let namespace_id = namespace_id.to_string();
-
-    memories
-        .iter()
-        .filter(|memory| memory.source_type == "feedback_loop_event")
-        .filter(|memory| {
-            memory.source_metadata["namespace_id"].as_str() == Some(namespace_id.as_str())
-                && memory
-                    .source_metadata
-                    .get("feedback_loop_id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| feedback_loop_ids.contains(id))
-        })
-        .collect()
-}
-
 fn recurring_themes(memories: &[MemoryDb]) -> Vec<String> {
     memories
         .iter()
@@ -1105,37 +1088,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn learning_source_memories_filter_namespace_and_feedback_loop_provenance() {
-        let namespace_id = Uuid::new_v4();
-        let other_namespace_id = Uuid::new_v4();
-        let space_id = Uuid::new_v4();
-        let session = test_feedback_loop(
-            space_id,
-            namespace_id,
-            "Practice fractions",
-            "Solve one word problem",
-            None,
-            None,
-            None,
-            None,
-            "active",
-        );
-        let matching_memory = test_memory(space_id, namespace_id, session.id);
-        let wrong_namespace_memory = test_memory(space_id, other_namespace_id, session.id);
-        let wrong_session_memory = test_memory(space_id, namespace_id, Uuid::new_v4());
-        let memories = vec![
-            matching_memory,
-            wrong_namespace_memory,
-            wrong_session_memory,
-        ];
-
-        let filtered = learning_source_memories(&memories, namespace_id, &[session]);
-
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].id, memories[0].id);
-    }
-
     fn test_namespace(name: &str) -> NamespaceDb {
         NamespaceDb {
             id: Uuid::new_v4(),
@@ -1175,28 +1127,6 @@ mod tests {
             next_task: next_task.map(str::to_string),
             status: status.to_string(),
             created_by: Uuid::new_v4(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
-    }
-
-    fn test_memory(space_id: Uuid, namespace_id: Uuid, feedback_loop_id: Uuid) -> MemoryDb {
-        MemoryDb {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            space_id,
-            title: Some("Practice snapshot".to_string()),
-            content: "Practice goal: fractions".to_string(),
-            memory_type: "text".to_string(),
-            file_path: None,
-            thumbnail_path: None,
-            is_shared: false,
-            source_type: "feedback_loop_event".to_string(),
-            source_metadata: json!({
-                "namespace_id": namespace_id,
-                "feedback_loop_id": feedback_loop_id,
-                "space_id": space_id,
-            }),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

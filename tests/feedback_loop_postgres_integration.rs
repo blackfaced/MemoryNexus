@@ -1,7 +1,12 @@
+use chrono::{Duration, Utc};
 use memorynexus::db::feedback_loop::{
     CreateFeedbackLoop, FeedbackLoopMemorySnapshot, FeedbackLoopRepository, PatchFeedbackLoop,
     PostgresFeedbackLoopRepository,
 };
+use memorynexus::db::memory::{
+    FeedbackLoopEventSnapshotFilter, MemoryRepository, PostgresMemoryRepository,
+};
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -154,6 +159,90 @@ async fn feedback_loop_memory_snapshot_repository_paths_are_atomic_and_traceable
             .await
             .expect("rollback check query should run");
     assert_eq!(leftover_count, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn feedback_loop_snapshot_query_ignores_unrelated_memory_before_limit() {
+    let pool = postgres_pool().await;
+    memorynexus::db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_space_namespace(&pool).await;
+    let feedback_loop_repository = PostgresFeedbackLoopRepository::new(pool.clone());
+    let memory_repository = PostgresMemoryRepository::new(pool.clone());
+
+    let result = feedback_loop_repository
+        .create_with_memory_snapshot(
+            CreateFeedbackLoop {
+                space_id: fixture.space_id,
+                namespace_id: fixture.namespace_id,
+                goal: "Improve fraction word problems".to_string(),
+                task: "Solve one fraction word problem".to_string(),
+                attempt: None,
+                evaluation: Some("Changed units between steps".to_string()),
+                feedback: Some("Label units before calculating".to_string()),
+                adjustment: None,
+                next_task: Some("Try a unit-conversion problem".to_string()),
+                status: "completed".to_string(),
+                created_by: fixture.user_id,
+            },
+            FeedbackLoopMemorySnapshot {
+                user_id: fixture.user_id,
+                event_kind: "create".to_string(),
+                content: "Practice goal: Improve fraction word problems".to_string(),
+                included_fields: vec!["goal".to_string()],
+            },
+        )
+        .await
+        .expect("feedback loop snapshot should create");
+    let snapshot = result.memory.expect("snapshot should exist");
+
+    for index in 0..5 {
+        sqlx::query(
+            r#"
+            INSERT INTO memories (
+                user_id,
+                space_id,
+                title,
+                content,
+                memory_type,
+                is_shared,
+                source_type,
+                source_metadata,
+                created_at
+            )
+            VALUES ($1, $2, 'Unrelated', $3, 'text', false, 'manual', $4, NOW() + ($5::int * INTERVAL '1 second'))
+            "#,
+        )
+        .bind(fixture.user_id)
+        .bind(fixture.space_id)
+        .bind(format!("newer unrelated memory {index}"))
+        .bind(json!({}))
+        .bind(index + 1)
+        .execute(&pool)
+        .await
+        .expect("unrelated memory should insert");
+    }
+
+    let memories = memory_repository
+        .list_feedback_loop_event_snapshots(
+            fixture.user_id,
+            FeedbackLoopEventSnapshotFilter {
+                space_id: fixture.space_id,
+                namespace_id: fixture.namespace_id,
+                feedback_loop_ids: vec![result.feedback_loop.id],
+                window_start: Utc::now() - Duration::minutes(1),
+                window_end: Utc::now() + Duration::minutes(1),
+                limit: 1,
+            },
+        )
+        .await
+        .expect("snapshot query should succeed");
+
+    assert_eq!(memories.len(), 1);
+    assert_eq!(memories[0].id, snapshot.id);
+    assert_eq!(memories[0].source_type, "feedback_loop_event");
 }
 
 struct Fixture {

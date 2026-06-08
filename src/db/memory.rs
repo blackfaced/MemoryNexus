@@ -105,6 +105,16 @@ pub struct MemoryListFilter {
     pub sort: MemoryListSort,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeedbackLoopEventSnapshotFilter {
+    pub space_id: Uuid,
+    pub namespace_id: Uuid,
+    pub feedback_loop_ids: Vec<Uuid>,
+    pub window_start: DateTime<Utc>,
+    pub window_end: DateTime<Utc>,
+    pub limit: i64,
+}
+
 impl MemoryListFilter {
     pub fn normalized(self) -> Self {
         Self {
@@ -145,6 +155,11 @@ pub trait MemoryRepository: Send + Sync {
         window_start: DateTime<Utc>,
         window_end: DateTime<Utc>,
         limit: i64,
+    ) -> Result<Vec<MemoryDb>, sqlx::Error>;
+    async fn list_feedback_loop_event_snapshots(
+        &self,
+        user_id: Uuid,
+        filter: FeedbackLoopEventSnapshotFilter,
     ) -> Result<Vec<MemoryDb>, sqlx::Error>;
     async fn count_by_space(
         &self,
@@ -442,6 +457,54 @@ impl MemoryRepository for PostgresMemoryRepository {
         .await
     }
 
+    async fn list_feedback_loop_event_snapshots(
+        &self,
+        user_id: Uuid,
+        filter: FeedbackLoopEventSnapshotFilter,
+    ) -> Result<Vec<MemoryDb>, sqlx::Error> {
+        if filter.feedback_loop_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let feedback_loop_ids = filter
+            .feedback_loop_ids
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>();
+
+        sqlx::query_as::<_, MemoryDb>(
+            r#"
+            SELECT * FROM memories
+            WHERE space_id = $2
+              AND created_at >= $4
+              AND created_at < $5
+              AND source_type = 'feedback_loop_event'
+              AND source_metadata->>'namespace_id' = $3
+              AND source_metadata->>'feedback_loop_id' = ANY($6::text[])
+              AND (
+                user_id = $1
+                OR is_shared = true
+                OR EXISTS (
+                    SELECT 1 FROM cognitive_space_members
+                    WHERE cognitive_space_members.space_id = memories.space_id
+                      AND cognitive_space_members.user_id = $1
+                )
+              )
+            ORDER BY created_at DESC
+            LIMIT $7
+            "#,
+        )
+        .bind(user_id)
+        .bind(filter.space_id)
+        .bind(filter.namespace_id.to_string())
+        .bind(filter.window_start)
+        .bind(filter.window_end)
+        .bind(feedback_loop_ids)
+        .bind(filter.limit)
+        .fetch_all(&self.pool)
+        .await
+    }
+
     async fn update(&self, id: Uuid, update: UpdateMemory) -> Result<MemoryDb, sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         let memory_type = update
@@ -550,6 +613,22 @@ mod tests {
         ]);
 
         assert_eq!(tags, vec!["rust".to_string(), "lens".to_string()]);
+    }
+
+    #[test]
+    fn feedback_loop_event_snapshot_filter_scopes_provenance_query() {
+        let feedback_loop_id = Uuid::new_v4();
+        let filter = FeedbackLoopEventSnapshotFilter {
+            space_id: Uuid::new_v4(),
+            namespace_id: Uuid::new_v4(),
+            feedback_loop_ids: vec![feedback_loop_id],
+            window_start: Utc::now(),
+            window_end: Utc::now(),
+            limit: 20,
+        };
+
+        assert_eq!(filter.feedback_loop_ids, vec![feedback_loop_id]);
+        assert!(filter.limit > 0);
     }
 
     #[test]

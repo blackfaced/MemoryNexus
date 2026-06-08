@@ -16,10 +16,14 @@ fn weekly_learning_review_reuses_review_report_and_feedback_loop_models() {
 
     assert!(api.contains("CreateLearningReviewRequest"));
     assert!(api.contains("FeedbackLoopWindowFilter"));
+    assert!(api.contains("FeedbackLoopEventSnapshotFilter"));
+    assert!(api.contains("list_feedback_loop_event_snapshots"));
     assert!(api.contains("\"weekly_learning_review\""));
     assert!(api.contains("source_feedback_loop_ids"));
     assert!(api.contains("source_memory_ids"));
-    assert!(api.contains("learning_source_memories"));
+    assert!(!api.contains(
+        "list_by_space_window(\n            auth_user.user_id,\n            namespace.space_id"
+    ));
 }
 
 #[test]
