@@ -422,6 +422,14 @@ mod tests {
             unimplemented!()
         }
 
+        async fn list_feedback_loop_event_snapshots(
+            &self,
+            _user_id: Uuid,
+            _filter: crate::db::memory::FeedbackLoopEventSnapshotFilter,
+        ) -> Result<Vec<MemoryDb>, Error> {
+            unimplemented!()
+        }
+
         async fn count_by_space(
             &self,
             _user_id: Uuid,
