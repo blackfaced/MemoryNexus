@@ -287,16 +287,17 @@ Recommended sequence:
 1. [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
    make agent install prefer release binaries before falling back to source
    build.
-2. [#86 Document developer vs user agent installation paths](https://github.com/blackfaced/MemoryNexus/issues/86):
-   separate ordinary user/agent install from contributor Rust development setup.
+2. [#86 Document Trial, Local One-click, and Production install profiles](https://github.com/blackfaced/MemoryNexus/issues/86):
+   separate Trial, Local One-click, Production, and Developer Profile install
+   paths.
 
 Parallel / follow-up work:
 
-- [#83 Add Docker runtime compose bundle for local services](https://github.com/blackfaced/MemoryNexus/issues/83):
-  provide a runtime compose setup for PostgreSQL and Qdrant.
-- [#84 Create offline install bundle for agents](https://github.com/blackfaced/MemoryNexus/issues/84):
+- [#83 Add Docker runtime compose bundle for Local One-click Profile](https://github.com/blackfaced/MemoryNexus/issues/83):
+  provide a Local One-click runtime compose setup for PostgreSQL and Qdrant.
+- [#84 Create Local One-click offline install bundle for agents](https://github.com/blackfaced/MemoryNexus/issues/84):
   package binaries, runtime compose files, env examples, and install docs into a
-  downloadable archive.
+  downloadable Local One-click archive.
 - [#81 Binary-first and offline agent installation](https://github.com/blackfaced/MemoryNexus/issues/81):
   umbrella issue for the install/distribution track.
 
