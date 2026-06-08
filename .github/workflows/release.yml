@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/release.yml"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -32,12 +36,18 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-24.04
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref_name }}
       TARGET: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout release tag
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_TAG }}
+
+      - name: Checkout source
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -103,6 +113,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
