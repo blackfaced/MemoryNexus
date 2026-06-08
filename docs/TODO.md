@@ -272,7 +272,9 @@ Current baseline:
 - Initial release targets are `aarch64-apple-darwin`,
   `x86_64-apple-darwin`, and `x86_64-unknown-linux-gnu`.
 - Each archive has a matching `.sha256` checksum file for install automation.
-- Source-build developer workflow remains available.
+- The artifact layout is shared by Trial Profile, Local One-click Profile, and
+  Production Profile.
+- Source-build Developer Profile remains available.
 
 Recently completed:
 

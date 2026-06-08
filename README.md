@@ -106,6 +106,8 @@ Rust binaries:
 - `memorynexus-cli`
 - `memorynexus-mcp`
 - `SHA256SUMS` for the binaries inside the archive
+- `PROFILE_SUPPORT.txt` describing how the same artifact supports Trial,
+  Local One-click, Production, and Developer profiles
 
 Download the archive and its matching `.sha256` file from the
 [GitHub Releases](https://github.com/blackfaced/MemoryNexus/releases) page,
@@ -119,6 +121,12 @@ tar -xzf memorynexus-<tag>-<target>.tar.gz
 On macOS, use `shasum -a 256 -c memorynexus-<tag>-<target>.tar.gz.sha256`.
 PostgreSQL and Qdrant still run as external services, usually through Docker.
 Source-build development remains available with `cargo run` and `cargo build`.
+
+The same release archive is shared by install profiles: Trial Profile can use
+`memorynexus-mcp` when an API is already available; Local One-click Profile uses
+all three binaries with local PostgreSQL and Qdrant; Production Profile may use
+the same binaries as service artifacts. The Developer Profile continues to use
+the unchanged source-build workflow.
 
 ## Try The Cognitive Lens MVP
 

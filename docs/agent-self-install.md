@@ -74,10 +74,22 @@ Published release archives are available for `aarch64-apple-darwin`,
 - `memorynexus-cli`
 - `memorynexus-mcp`
 - `SHA256SUMS` for the binaries inside the archive
+- `PROFILE_SUPPORT.txt` describing Trial, Local One-click, Production, and
+  Developer profile usage
 
 This guide may use those binaries when the user explicitly provides a release
 tag or archive path. Automatic binary-first discovery and fallback is tracked by
 #82 and is not implemented in this guide yet.
+
+Profile mapping for the current release artifacts:
+
+- Trial Profile: use `memorynexus-mcp` when the Rust API is already available
+  or managed separately.
+- Local One-click Profile: use `memorynexus`, `memorynexus-cli`, and
+  `memorynexus-mcp` together with external PostgreSQL and Qdrant.
+- Production Profile: use the same binaries as service artifacts; hosted
+  service provider choices are outside this guide.
+- Developer Profile: keep using `cargo run` and `cargo build` from source.
 
 First check whether the repository already exists:
 

@@ -91,6 +91,25 @@ jobs:
           - memorynexus-cli
           - memorynexus-mcp
           - SHA256SUMS
+          - PROFILE_SUPPORT.txt
+          EOF
+
+          cat > "$package_dir/PROFILE_SUPPORT.txt" <<EOF
+          MemoryNexus release artifact profiles
+
+          Trial Profile:
+          - Uses memorynexus-mcp when an agent connects to an existing or separately managed MemoryNexus API.
+
+          Local One-click Profile:
+          - Uses memorynexus, memorynexus-cli, and memorynexus-mcp together.
+          - PostgreSQL and Qdrant remain external services, commonly through Docker.
+
+          Production Profile:
+          - May use memorynexus, memorynexus-cli, and memorynexus-mcp as service artifacts.
+          - Hosted service provider selection is outside this release artifact.
+
+          Developer Profile:
+          - Source-build workflow remains unchanged through cargo run and cargo build.
           EOF
 
           tar -C dist -czf "dist/${archive_base}.tar.gz" "$archive_base"
@@ -138,6 +157,13 @@ jobs:
           - memorynexus-cli
           - memorynexus-mcp
           - SHA256SUMS
+          - PROFILE_SUPPORT.txt
+
+          Artifact profile support:
+          - Trial Profile can use memorynexus-mcp when the API is already available.
+          - Local One-click Profile can use all three binaries with external PostgreSQL and Qdrant.
+          - Production Profile may use the same binaries as service artifacts.
+          - Developer Profile source-build workflow remains unchanged.
 
           Archive checksums are published as matching .sha256 files.
           EOF
