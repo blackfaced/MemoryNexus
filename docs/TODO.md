@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-06
+> Last updated: 2026-06-08
 > Source of truth for executable tasks: GitHub Issues.
 
 This file is now a roadmap summary. Do not maintain detailed task status in
@@ -220,6 +220,16 @@ Recently completed:
   implementation may still expose `/learning/math` compatibility naming.
 - [#73 STEM learning MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
   current `learning_math_*` MCP tools expose the practice flow to agents.
+- [#87 Validate STEM learning MCP flow with an agent end-to-end demo](https://github.com/blackfaced/MemoryNexus/issues/87):
+  the canonical namespace-driven `learning.stem` MCP practice flow is validated
+  end to end, with Memory snapshot provenance.
+- [#89 Make learning practice API namespace-driven and add learning.stem aliases](https://github.com/blackfaced/MemoryNexus/issues/89):
+  practice sessions now use namespace-driven API and MCP surfaces while keeping
+  compatibility aliases during transition.
+- [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
+  weekly learning review reports summarize practiced topics, recurring mistake
+  patterns, improvement signals, and next practice with FeedbackLoop and Memory
+  provenance.
 
 Current open work:
 
@@ -227,15 +237,7 @@ Learning MVP track:
 
 Recommended sequence:
 
-1. [#87 Validate STEM learning MCP flow with an agent end-to-end demo](https://github.com/blackfaced/MemoryNexus/issues/87):
-   validate the current MCP flow before locking the final static UI shape.
-2. [#89 Make learning practice API namespace-driven and add learning.stem aliases](https://github.com/blackfaced/MemoryNexus/issues/89):
-   move practice sessions toward a namespace-driven API while keeping current
-   `/learning/math` and `learning_math_*` surfaces compatible during transition.
-3. [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
-   summarize practiced topics, recurring mistake patterns, improvement signals,
-   and next practice.
-4. [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
+1. [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
    build the Rust-served static UI after the API, MCP, demo, and review report
    contracts are clear.
 
@@ -305,6 +307,15 @@ Parallel / follow-up work:
 
 Supabase is a supported future deployment target, but not a replacement backend
 line. Follow [ADR-015](../decisions/ADR-015-supabase-integration.md):
+
+Recently completed:
+
+- [#92 Define hosted Production Profile without local Docker](https://github.com/blackfaced/MemoryNexus/issues/92):
+  hosted Production Profile docs define managed PostgreSQL, Qdrant Cloud,
+  required environment variables, operational checks, and `QDRANT_API_KEY`
+  support without replacing the Rust API or local Docker paths.
+
+Open work:
 
 1. Validate Supabase Postgres compatibility first: [#66](https://github.com/blackfaced/MemoryNexus/issues/66).
 2. Keep Rust + Axum as the only main backend.
