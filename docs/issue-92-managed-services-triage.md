@@ -57,15 +57,18 @@ small documentation/config hygiene task if stale references remain.
 Recommendation: keep as currently rewritten. No close is needed, and the current
 title is acceptable.
 
-Use #92 as a docs-first Production Profile issue. The implementation should be
-limited to documenting and validating hosted/self-hosted service configuration.
+Use #92 as a docs-first Production Profile issue, with one small runtime
+configuration requirement: Qdrant Cloud needs an optional `QDRANT_API_KEY`
+header path in the existing Qdrant client. The implementation should otherwise
+be limited to documenting and validating hosted/self-hosted service
+configuration.
+
 Likely follow-ups remain:
 
 1. Supabase or Neon PostgreSQL compatibility smoke through existing
    `DATABASE_URL` and SQLx migrations.
-2. Qdrant Cloud compatibility through the existing Qdrant vector backend,
-   including API key support if required.
-3. Binary-first install documentation that supports both local Docker services
+2. Qdrant Cloud compatibility smoke through the existing Qdrant vector backend.
+3. Binary-first install packaging that supports both local Docker services
    and managed services.
 4. A separate research issue and ADR only if replacing Qdrant with pgvector is
    still desired later.
@@ -116,13 +119,12 @@ Architecture boundaries still look correct:
 Remaining implementation split I would keep:
 
 1. Managed PostgreSQL compatibility smoke: Supabase/Neon via `DATABASE_URL`.
-2. Managed Qdrant/Qdrant Cloud compatibility smoke, including credentials if
-   needed.
+2. Managed Qdrant/Qdrant Cloud compatibility smoke with `QDRANT_API_KEY`.
 3. Production Profile docs covering binary/service/container API execution,
    managed dependencies, TLS, backups, monitoring, secrets, upgrades, and smoke
    checks.
 4. Separate pgvector evaluation issue/ADR only if we still want to consider it
    later.
 
-No Rust implementation change is implied by this triage.
+No backend replacement is implied by this triage.
 ````

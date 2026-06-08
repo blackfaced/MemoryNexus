@@ -18,6 +18,7 @@ Backend-only variables for semantic search:
 |----------|---------|---------|
 | `QDRANT_URL` | - | Enables Qdrant vector indexing and search |
 | `QDRANT_COLLECTION` | `memorynexus_memories` | Qdrant collection |
+| `QDRANT_API_KEY` | - | API key for Qdrant Cloud; leave unset for local unauthenticated Qdrant |
 | `MEMORYNEXUS_EMBEDDING_PROVIDER` | `openai` | Use `local` for deterministic smoke tests |
 
 Backend-only variables for Lens Run summaries:

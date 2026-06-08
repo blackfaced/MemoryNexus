@@ -65,14 +65,27 @@ pub trait VectorStore: Send + Sync {
 pub struct QdrantVectorStore {
     base_url: String,
     collection: String,
+    api_key: Option<String>,
     client: reqwest::Client,
 }
 
 impl QdrantVectorStore {
     pub fn new(base_url: String, collection: String) -> Self {
+        Self::new_with_api_key(base_url, collection, None)
+    }
+
+    pub fn new_with_api_key(base_url: String, collection: String, api_key: Option<String>) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             collection,
+            api_key: api_key.and_then(|key| {
+                let key = key.trim().to_string();
+                if key.is_empty() {
+                    None
+                } else {
+                    Some(key)
+                }
+            }),
             client: reqwest::Client::new(),
         }
     }
@@ -81,7 +94,21 @@ impl QdrantVectorStore {
         let base_url = std::env::var("QDRANT_URL").ok()?;
         let collection =
             std::env::var("QDRANT_COLLECTION").unwrap_or_else(|_| DEFAULT_COLLECTION.to_string());
-        Some(Self::new(base_url, collection))
+        let api_key = std::env::var("QDRANT_API_KEY").ok();
+        Some(Self::new_with_api_key(base_url, collection, api_key))
+    }
+
+    fn authenticated_request(
+        &self,
+        method: reqwest::Method,
+        url: String,
+    ) -> reqwest::RequestBuilder {
+        let builder = self.client.request(method, url);
+        if let Some(api_key) = self.api_key.as_deref() {
+            builder.header("api-key", api_key)
+        } else {
+            builder
+        }
     }
 
     fn collection_url(&self) -> String {
@@ -223,8 +250,7 @@ impl QdrantSearchRequest {
 impl VectorStore for QdrantVectorStore {
     async fn ensure_collection(&self, vector_size: usize) -> Result<(), VectorError> {
         let get_response = self
-            .client
-            .get(self.collection_url())
+            .authenticated_request(reqwest::Method::GET, self.collection_url())
             .send()
             .await
             .map_err(|e| VectorError::Request(e.to_string()))?;
@@ -240,8 +266,7 @@ impl VectorStore for QdrantVectorStore {
         }
 
         let create_response = self
-            .client
-            .put(self.collection_url())
+            .authenticated_request(reqwest::Method::PUT, self.collection_url())
             .json(&QdrantCreateCollectionRequest::new(vector_size))
             .send()
             .await
@@ -264,8 +289,7 @@ impl VectorStore for QdrantVectorStore {
         };
 
         let response = self
-            .client
-            .put(self.upsert_url())
+            .authenticated_request(reqwest::Method::PUT, self.upsert_url())
             .json(&body)
             .send()
             .await
@@ -284,8 +308,7 @@ impl VectorStore for QdrantVectorStore {
         let body = QdrantDeleteRequest::for_memory(memory_id);
 
         let response = self
-            .client
-            .post(self.delete_url())
+            .authenticated_request(reqwest::Method::POST, self.delete_url())
             .json(&body)
             .send()
             .await
@@ -310,8 +333,7 @@ impl VectorStore for QdrantVectorStore {
         let body = QdrantSearchRequest::for_space(space_id, user_id, vector, limit);
 
         let response = self
-            .client
-            .post(self.search_url())
+            .authenticated_request(reqwest::Method::POST, self.search_url())
             .json(&body)
             .send()
             .await
@@ -410,6 +432,22 @@ mod tests {
 
         assert_eq!(json["vectors"]["size"], 1536);
         assert_eq!(json["vectors"]["distance"], "Cosine");
+    }
+
+    #[test]
+    fn qdrant_request_includes_api_key_when_configured() {
+        let store = QdrantVectorStore::new_with_api_key(
+            "https://example.qdrant.cloud".to_string(),
+            "memories".to_string(),
+            Some("secret-key".to_string()),
+        );
+
+        let request = store
+            .authenticated_request(reqwest::Method::GET, store.collection_url())
+            .build()
+            .unwrap();
+
+        assert_eq!(request.headers().get("api-key").unwrap(), "secret-key");
     }
 
     #[test]

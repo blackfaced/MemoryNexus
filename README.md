@@ -67,6 +67,10 @@ backend work should land in the Rust crate.
 
 ## Quick Start
 
+This is the local-first development path. For hosted or long-term use without
+local Docker-managed dependencies, see
+[Hosted Production Profile](docs/production-profile.md).
+
 Start local infrastructure:
 
 ```bash
@@ -171,6 +175,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Phase 2 Completion](docs/phase2-completion.md)
 - [Development](docs/development.md)
 - [Deployment](docs/deployment.md)
+- [Hosted Production Profile](docs/production-profile.md)
 - [Roadmap](docs/TODO.md)
 - [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues)
 - [Cognitive Manifesto](docs/cognitive-manifesto.md)
