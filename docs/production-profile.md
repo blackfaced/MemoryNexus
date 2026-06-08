@@ -7,7 +7,8 @@ machine.
 It is an install and deployment profile, not a new backend architecture.
 MemoryNexus remains one Rust + Axum API. PostgreSQL remains the persistence
 backend. Qdrant remains the first vector search backend. Local Docker Compose
-stays available for local-first development, offline use, and trial installs.
+stays available for local-first development, offline use, and the Local
+One-click Profile.
 
 ## Service Shape
 
@@ -51,7 +52,6 @@ Optional S3-compatible object storage:
 | `S3_REGION` | Region, defaulting to `us-east-1` when omitted. |
 | `S3_ACCESS_KEY` | Access key. |
 | `S3_SECRET_KEY` | Secret key. |
-| `S3_BUCKET` | Bucket for media/object storage, when configured by the caller. |
 
 MCP sidecar:
 
@@ -265,5 +265,5 @@ Use local Docker Compose when you need:
 
 - local-first development;
 - offline or LAN-only operation;
-- a Trial or Local One-click Profile;
+- the Local One-click Profile;
 - reproducible local acceptance testing.
