@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 use axum::Router;
+use chrono::{Duration, Utc};
 use memorynexus::{
     auth::JwtAuth,
     db::{
@@ -336,6 +337,119 @@ async fn learning_math_practice_routes_cover_session_lifecycle_and_access_contro
     assert_eq!(unauthorized_create.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn weekly_learning_review_route_enforces_space_namespace_and_lens_boundaries() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_users_and_spaces(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+
+    let owner_token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let outsider_token = token_for(fixture.outsider_user_id, &fixture.outsider_email);
+    let learning_lens_id = seed_lens(
+        &pool,
+        fixture.practice_space_id,
+        fixture.owner_user_id,
+        "Weekly Learning Review",
+    )
+    .await;
+    let cross_space_lens_id = seed_lens(
+        &pool,
+        fixture.wrong_kind_space_id,
+        fixture.owner_user_id,
+        "Cross Space Review",
+    )
+    .await;
+    let window_start = Utc::now() - Duration::days(7);
+    let window_end = Utc::now() + Duration::minutes(1);
+
+    let happy_response = client
+        .post(format!(
+            "{base_url}/api/v1/namespaces/{}/learning-reviews",
+            fixture.stem_namespace_id
+        ))
+        .bearer_auth(&owner_token)
+        .json(&json!({
+            "lens_id": learning_lens_id,
+            "window_start": window_start,
+            "window_end": window_end,
+            "limit": 10
+        }))
+        .send()
+        .await
+        .expect("owner learning review request should send");
+    assert_eq!(happy_response.status(), StatusCode::CREATED);
+    let happy: Value = happy_response
+        .json()
+        .await
+        .expect("happy response should be json");
+    assert_eq!(
+        happy.pointer("/data/report_type").and_then(Value::as_str),
+        Some("weekly_learning_review")
+    );
+    assert_eq!(
+        happy
+            .pointer("/data/report/namespace/id")
+            .and_then(Value::as_str),
+        Some(fixture.stem_namespace_id.to_string().as_str())
+    );
+
+    let unauthorized_response = client
+        .post(format!(
+            "{base_url}/api/v1/namespaces/{}/learning-reviews",
+            fixture.stem_namespace_id
+        ))
+        .bearer_auth(&outsider_token)
+        .json(&json!({
+            "lens_id": learning_lens_id,
+            "window_start": window_start,
+            "window_end": window_end
+        }))
+        .send()
+        .await
+        .expect("outsider learning review request should send");
+    assert_eq!(unauthorized_response.status(), StatusCode::UNAUTHORIZED);
+
+    let missing_namespace_response = client
+        .post(format!(
+            "{base_url}/api/v1/namespaces/{}/learning-reviews",
+            Uuid::new_v4()
+        ))
+        .bearer_auth(&owner_token)
+        .json(&json!({
+            "lens_id": learning_lens_id,
+            "window_start": window_start,
+            "window_end": window_end
+        }))
+        .send()
+        .await
+        .expect("missing namespace learning review request should send");
+    assert_eq!(
+        missing_namespace_response.status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    let cross_space_lens_response = client
+        .post(format!(
+            "{base_url}/api/v1/namespaces/{}/learning-reviews",
+            fixture.stem_namespace_id
+        ))
+        .bearer_auth(&owner_token)
+        .json(&json!({
+            "lens_id": cross_space_lens_id,
+            "window_start": window_start,
+            "window_end": window_end
+        }))
+        .send()
+        .await
+        .expect("cross-space lens learning review request should send");
+    assert_eq!(cross_space_lens_response.status(), StatusCode::BAD_REQUEST);
+}
+
 fn uuid_field(value: &Value, pointer: &str) -> Uuid {
     value
         .pointer(pointer)
@@ -531,6 +645,29 @@ async fn seed_namespace(
     .fetch_one(pool)
     .await
     .expect("namespace seed should insert")
+}
+
+async fn seed_lens(pool: &PgPool, space_id: Uuid, owner_user_id: Uuid, name: &str) -> Uuid {
+    sqlx::query_scalar(
+        r#"
+        INSERT INTO lenses (
+            space_id,
+            name,
+            strategy,
+            output_format,
+            retrieval_mode,
+            created_by
+        )
+        VALUES ($1, $2, 'learning_review', 'bullets', 'keyword', $3)
+        RETURNING id
+        "#,
+    )
+    .bind(space_id)
+    .bind(name)
+    .bind(owner_user_id)
+    .fetch_one(pool)
+    .await
+    .expect("lens seed should insert")
 }
 
 async fn seed_user(pool: &PgPool, email: &str, username: &str) -> Uuid {
