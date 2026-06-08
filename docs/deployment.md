@@ -10,12 +10,17 @@ the agent client; it calls the same Rust API and is not a second backend.
 - Qdrant, when semantic search is enabled
 - S3/MinIO compatible storage, when media upload is enabled
 
+For hosted deployments that should not require local Docker-managed
+dependencies, use the [Hosted Production Profile](production-profile.md).
+
 ## Environment
 
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/memorynexus
 QDRANT_URL=http://qdrant:6333
 QDRANT_COLLECTION=memorynexus_memories
+# Required for Qdrant Cloud; leave unset for local unauthenticated Qdrant.
+QDRANT_API_KEY=<secret>
 MEMORYNEXUS_EMBEDDING_PROVIDER=openai
 OPENAI_API_KEY=<secret>
 JWT_SECRET=<secret>
