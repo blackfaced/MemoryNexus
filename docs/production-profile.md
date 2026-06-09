@@ -1,10 +1,11 @@
-# Hosted Production Profile
+# Production Profile
 
 The Production Profile is for running MemoryNexus against stable hosted or
 self-hosted services without requiring local Docker on every user or agent
 machine.
 
-It is an install and deployment profile, not a new backend architecture.
+It is an install and deployment profile, not a new backend architecture and not
+a Supabase-only recipe.
 MemoryNexus remains one Rust + Axum API. PostgreSQL remains the persistence
 backend. Qdrant remains the first vector search backend. Local Docker Compose
 stays available for local-first development, offline use, and the Local

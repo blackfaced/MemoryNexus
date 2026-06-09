@@ -31,7 +31,13 @@ Backend-only variables for Lens Run summaries:
 | `MEMORYNEXUS_AI_BASE_URL` | `OPENAI_BASE_URL` or provider default | OpenAI-compatible API base URL |
 | `LENS_RUN_SUMMARY_MAX_WORDS` | output-format based | Override Lens Run summary length |
 
-## Run Locally
+## Developer Profile: Run From Source
+
+The commands in this section are for contributors using Developer Profile. They
+require Rust and Cargo. Ordinary agent installs should start with
+[Agent Self-Install](agent-self-install.md): Trial Profile uses the prebuilt
+`memorynexus-mcp` against an existing API, and Local One-click Profile uses
+release binaries plus local PostgreSQL/Qdrant services.
 
 Start PostgreSQL and Qdrant:
 
@@ -114,11 +120,23 @@ memorynexus-cli install status --profile developer --checkout /path/to/MemoryNex
 ```
 
 Generate binary-first plans for Trial or Local One-click without executing
-downloads or installs:
+downloads or installs. Trial plans require only a prebuilt `memorynexus-mcp`,
+`MEMORYNEXUS_API_URL`, and `MEMORYNEXUS_TOKEN`; Local One-click plans add the
+release archive, checksum verification, local API binary, local MCP config, and
+Docker PostgreSQL/Qdrant service checks:
 
 ```bash
 memorynexus-cli upgrade --profile trial
 memorynexus-cli upgrade --profile local-one-click
+```
+
+Generate a Production Profile plan for stable hosted or self-hosted services.
+This profile is not Supabase-only; Supabase, Neon, RDS, self-hosted Postgres,
+Qdrant Cloud, and self-hosted Qdrant are provider choices behind the same Rust
+API:
+
+```bash
+memorynexus-cli upgrade --profile production
 ```
 
 Generate a Developer Profile source-build upgrade plan without executing it:
@@ -144,12 +162,19 @@ memorynexus-cli upgrade \
 
 Important behavior:
 
-- Trial Profile and Local One-click Profile are binary-first and do not require
-  Cargo, Rust, local PostgreSQL, local Qdrant, or Docker for Trial.
+- Trial Profile is binary-first and does not require Cargo, Rust, Docker, local
+  PostgreSQL, or local Qdrant.
+- Local One-click Profile is binary-first and does not require Cargo or Rust;
+  it does require PostgreSQL and Qdrant, usually through Docker, unless the user
+  explicitly provides equivalent local services.
+- Production Profile uses stable hosted or self-hosted PostgreSQL/Qdrant
+  services and does not require local Docker-managed dependencies on each user
+  or agent machine.
 - Local One-click uses the release archive, checksum verification, local bin
   install, Docker PostgreSQL/Qdrant, API health, MCP config, and MCP
   `tools/list` smoke.
-- Developer Profile keeps the source checkout and Cargo path.
+- Developer Profile keeps the source checkout and Cargo path; source build is
+  for contributors, not the default agent install path.
 - Omit `--pull` when the checkout already contains the user's latest local
   edits.
 - Add `--rebuild-mcp` when the agent MCP config points at

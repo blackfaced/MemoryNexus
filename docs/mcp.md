@@ -6,6 +6,14 @@ adapter over the Rust API, not a second backend. Memory still belongs to
 
 ## Configuration
 
+For ordinary agent installs, prefer a release `memorynexus-mcp` binary. Trial
+Profile points that binary at an existing hosted/demo API with
+`MEMORYNEXUS_API_URL` and `MEMORYNEXUS_TOKEN` and does not need Rust or Docker.
+Local One-click Profile uses the same release archive plus a local API binary
+and local PostgreSQL/Qdrant services, usually started with Docker. Production
+Profile points the MCP binary at a stable hosted or self-hosted API. The
+`cargo run` examples below are Developer Profile source-build commands.
+
 Start the MemoryNexus API first:
 
 ```bash
@@ -110,8 +118,11 @@ printf '%s\n' \
   | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
 ```
 
-Expected output includes an `initialize` response and a `tools/list` response
-with the tools above.
+Expected output includes an `initialize` response and a `tools/list` response.
+The `tools/list` response must include MemoryNexus tools such as
+`create_space`, `add_memory`, `search_memories`, `run_lens`,
+`get_install_status`, `upgrade_install`, and the canonical practice-session
+tools.
 
 To call a tool, keep the API running and send a `tools/call` request:
 
@@ -212,12 +223,33 @@ Developer profiles. It reports detected OS/arch, release target, binary path,
 API URL/health, MCP initialize/tools-list smoke commands, and whether a
 source-build fallback is required.
 
+Use the same tool to inspect other profiles:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_install_status","arguments":{"profile":"local-one-click"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_install_status","arguments":{"profile":"production"}}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_install_status","arguments":{"profile":"developer","checkout_dir":"/path/to/MemoryNexus"}}}' \
+  | cargo run --quiet --bin memorynexus-mcp
+```
+
 Plan a binary-first Local One-click install without executing downloads or
 install commands:
 
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"profile":"local-one-click"}}}' \
+  | cargo run --quiet --bin memorynexus-mcp
+```
+
+Trial and Production plans use the same profile field. Trial is
+MCP-binary-only against an existing API; Production targets stable hosted or
+self-hosted API/database/vector services and is not Supabase-only:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"profile":"trial"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"profile":"production"}}}' \
   | cargo run --quiet --bin memorynexus-mcp
 ```
 

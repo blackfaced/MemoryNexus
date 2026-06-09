@@ -65,7 +65,7 @@ Memory, Lens, Lens Run, Cognitive Space, and provenance model.
 The old Python/FastAPI and empty frontend skeletons have been removed. New
 backend work should land in the Rust crate.
 
-## Quick Start
+## Install Profiles
 
 For agents and non-developer users, start with the binary-first profiles in
 [Agent Self-Install](docs/agent-self-install.md):
@@ -80,9 +80,18 @@ For agents and non-developer users, start with the binary-first profiles in
   self-hosted PostgreSQL/Qdrant services. It is not Supabase-only.
 - Developer Profile: use the source checkout and Cargo for contribution work.
 
-The source path below is the Developer Profile. For hosted or long-term use
-without local Docker-managed dependencies, see
-[Hosted Production Profile](docs/production-profile.md).
+Docker is only needed for the Local One-click Profile or local development when
+you want MemoryNexus to run PostgreSQL and Qdrant on the same machine. Trial
+Profile avoids Docker by connecting `memorynexus-mcp` to an existing API.
+Production Profile avoids per-user Docker by using stable managed or
+self-hosted PostgreSQL/Qdrant services.
+
+## Developer Profile Quick Start
+
+The source path below is the Developer Profile for contributors. It is not the
+default agent install path and it requires a Rust toolchain. For hosted or
+long-term use without local Docker-managed dependencies, see
+[Production Profile](docs/production-profile.md).
 
 Start local infrastructure:
 
@@ -136,8 +145,12 @@ tar -xzf memorynexus-<tag>-<target>.tar.gz
 ```
 
 On macOS, use `shasum -a 256 -c memorynexus-<tag>-<target>.tar.gz.sha256`.
-PostgreSQL and Qdrant still run as external services, usually through Docker.
-Source-build development remains available with `cargo run` and `cargo build`.
+Trial Profile uses only `memorynexus-mcp` plus `MEMORYNEXUS_API_URL` /
+`MEMORYNEXUS_TOKEN`; it does not start local PostgreSQL, Qdrant, Docker, or
+Rust. Local One-click Profile runs PostgreSQL and Qdrant as external local
+services, usually through Docker. Production Profile points the same binaries at
+stable hosted or self-hosted services. Source-build development remains
+available with `cargo run` and `cargo build` only for Developer Profile.
 
 The same release archive is shared by install profiles: Trial Profile can use
 `memorynexus-mcp` when an API is already available; Local One-click Profile uses
@@ -188,7 +201,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Phase 2 Completion](docs/phase2-completion.md)
 - [Development](docs/development.md)
 - [Deployment](docs/deployment.md)
-- [Hosted Production Profile](docs/production-profile.md)
+- [Production Profile](docs/production-profile.md)
 - [Roadmap](docs/TODO.md)
 - [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues)
 - [Cognitive Manifesto](docs/cognitive-manifesto.md)

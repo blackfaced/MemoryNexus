@@ -11,7 +11,7 @@ the agent client; it calls the same Rust API and is not a second backend.
 - S3/MinIO compatible storage, when media upload is enabled
 
 For hosted deployments that should not require local Docker-managed
-dependencies, use the [Hosted Production Profile](production-profile.md).
+dependencies, use the [Production Profile](production-profile.md).
 
 ## Environment
 
