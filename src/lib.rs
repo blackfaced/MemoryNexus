@@ -11,6 +11,7 @@ pub mod db;
 pub mod domain;
 pub mod error;
 pub mod eval;
+pub mod install;
 pub mod search;
 pub mod state;
 pub mod storage;

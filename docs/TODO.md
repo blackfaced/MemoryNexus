@@ -283,13 +283,14 @@ Recently completed:
 - [#85 Build and publish release binaries for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/85):
   release workflow foundation for prebuilt `memorynexus`, `memorynexus-cli`,
   and `memorynexus-mcp` artifacts.
+- [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
+  CLI and MCP install helpers now distinguish Trial, Local One-click,
+  Production, and Developer profiles, prefer release-binary plans for
+  non-developer installs, and keep source-build fallback explicit.
 
 Recommended sequence:
 
-1. [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
-   make agent install prefer release binaries before falling back to source
-   build.
-2. [#86 Document Trial, Local One-click, and Production install profiles](https://github.com/blackfaced/MemoryNexus/issues/86):
+1. [#86 Document Trial, Local One-click, and Production install profiles](https://github.com/blackfaced/MemoryNexus/issues/86):
    separate Trial, Local One-click, Production, and Developer Profile install
    paths.
 

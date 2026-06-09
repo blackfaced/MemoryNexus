@@ -101,27 +101,41 @@ wrapped in the normal CLI response envelope.
 The CLI includes local helper commands for agent installs. They do not require
 `MEMORYNEXUS_TOKEN`.
 
-Check the local CLI version, binary path, checkout state, and reachable API
-health/version:
+Check the local CLI version, selected/recommended profile, detected OS/arch,
+release target, binary path, API URL/health, MCP smoke commands, and
+source-build fallback reason:
 
 ```bash
-cargo run --bin memorynexus-cli -- version
-cargo run --bin memorynexus-cli -- install status --checkout /path/to/MemoryNexus
+memorynexus-cli version
+memorynexus-cli install status --profile trial
+memorynexus-cli install status --profile local-one-click
+memorynexus-cli install status --profile production
+memorynexus-cli install status --profile developer --checkout /path/to/MemoryNexus
 ```
 
-Generate an upgrade plan without executing it:
+Generate binary-first plans for Trial or Local One-click without executing
+downloads or installs:
 
 ```bash
-cargo run --bin memorynexus-cli -- upgrade \
+memorynexus-cli upgrade --profile trial
+memorynexus-cli upgrade --profile local-one-click
+```
+
+Generate a Developer Profile source-build upgrade plan without executing it:
+
+```bash
+memorynexus-cli upgrade \
+  --profile developer \
   --checkout /path/to/MemoryNexus \
   --pull \
   --rebuild-mcp
 ```
 
-Apply the plan explicitly:
+Apply the Developer Profile source-build plan explicitly:
 
 ```bash
-cargo run --bin memorynexus-cli -- upgrade \
+memorynexus-cli upgrade \
+  --profile developer \
   --checkout /path/to/MemoryNexus \
   --pull \
   --rebuild-mcp \
@@ -130,6 +144,12 @@ cargo run --bin memorynexus-cli -- upgrade \
 
 Important behavior:
 
+- Trial Profile and Local One-click Profile are binary-first and do not require
+  Cargo, Rust, local PostgreSQL, local Qdrant, or Docker for Trial.
+- Local One-click uses the release archive, checksum verification, local bin
+  install, Docker PostgreSQL/Qdrant, API health, MCP config, and MCP
+  `tools/list` smoke.
+- Developer Profile keeps the source checkout and Cargo path.
 - Omit `--pull` when the checkout already contains the user's latest local
   edits.
 - Add `--rebuild-mcp` when the agent MCP config points at
