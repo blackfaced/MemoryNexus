@@ -131,15 +131,16 @@ Tagged GitHub releases publish prebuilt archives for:
 - `x86_64-apple-darwin`
 - `x86_64-unknown-linux-gnu`
 
-Each archive is named `memorynexus-<tag>-<target>.tar.gz` and contains three
-Rust binaries:
+Each archive is named `memorynexus-<tag>-<target>.tar.gz` and contains a Local
+One-click bundle layout:
 
-- `memorynexus`
-- `memorynexus-cli`
-- `memorynexus-mcp`
-- `SHA256SUMS` for the binaries inside the archive
-- `PROFILE_SUPPORT.txt` describing how the same artifact supports Trial,
-  Local One-click, Production, and Developer profiles
+- `bin/memorynexus`
+- `bin/memorynexus-cli`
+- `bin/memorynexus-mcp`
+- `install.sh` for local binary install, Docker service checks, optional MCP
+  config output, API health, and MCP `tools/list` smoke
+- `README.local-one-click.md` with the one-archive Local One-click flow
+- `SHA256SUMS` and `MANIFEST.json` for files inside the archive
 - `docker-compose.runtime.yml` and `.env.runtime.example` for Local One-click
   PostgreSQL and Qdrant services
 
@@ -153,18 +154,22 @@ tar -xzf memorynexus-<tag>-<target>.tar.gz
 ```
 
 On macOS, use `shasum -a 256 -c memorynexus-<tag>-<target>.tar.gz.sha256`.
-Trial Profile uses only `memorynexus-mcp` plus `MEMORYNEXUS_API_URL` /
+Then follow the extracted `README.local-one-click.md` for the one-archive local
+flow.
+
+Trial Profile uses only `bin/memorynexus-mcp` plus `MEMORYNEXUS_API_URL` /
 `MEMORYNEXUS_TOKEN`; it does not start local PostgreSQL, Qdrant, Docker, or
 Rust. Local One-click Profile runs PostgreSQL and Qdrant as external local
 services, usually through Docker. Production Profile points the same binaries at
-stable hosted or self-hosted services. Source-build development remains
-available with `cargo run` and `cargo build` only for Developer Profile.
+stable hosted or self-hosted services and is better for serious hosted use.
+Source-build development remains available with `cargo run` and `cargo build`
+only for Developer Profile.
 
 The same release archive is shared by install profiles: Trial Profile can use
-`memorynexus-mcp` when an API is already available; Local One-click Profile uses
-all three binaries with local PostgreSQL and Qdrant; Production Profile may use
-the same binaries as service artifacts. The Developer Profile continues to use
-the unchanged source-build workflow.
+`bin/memorynexus-mcp` when an API is already available; Local One-click Profile
+uses all three binaries with local PostgreSQL and Qdrant; Production Profile may
+use the same binaries as service artifacts. The Developer Profile continues to
+use the unchanged source-build workflow.
 
 ## Try The Cognitive Lens MVP
 
