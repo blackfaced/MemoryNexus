@@ -96,8 +96,8 @@ checkout. Skip the build step only when the MCP config uses `cargo run`. Rebuild
 | `learning_math_record_feedback` | Compatibility: record mistake pattern, feedback, adjustment, and next exercise for `learning.math` |
 | `learning_math_list_practice_sessions` | Compatibility: list `learning.math` practice sessions in a Cognitive Space |
 | `learning_math_get_practice_session` | Compatibility: fetch one `learning.math` practice session |
-| `get_install_status` | Inspect local version, checkout state, and API health/version before install or upgrade |
-| `upgrade_install` | Return or apply a local upgrade plan for source, tests, and built binaries |
+| `get_install_status` | Inspect profile-aware install state: OS/arch, release target, binary path, API health, MCP smoke, and fallback |
+| `upgrade_install` | Return profile-aware binary-first or Developer source-build install/upgrade plans |
 
 ## Smoke Test
 
@@ -203,29 +203,45 @@ Install or upgrade inspection:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_install_status","arguments":{"checkout_dir":"/path/to/MemoryNexus"}}}' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_install_status","arguments":{"profile":"trial"}}}' \
   | cargo run --quiet --bin memorynexus-mcp
 ```
 
-Plan an upgrade without executing local commands:
+The status output distinguishes Trial, Local One-click, Production, and
+Developer profiles. It reports detected OS/arch, release target, binary path,
+API URL/health, MCP initialize/tools-list smoke commands, and whether a
+source-build fallback is required.
+
+Plan a binary-first Local One-click install without executing downloads or
+install commands:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"checkout_dir":"/path/to/MemoryNexus","pull":true,"rebuild_mcp":true}}}' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"profile":"local-one-click"}}}' \
   | cargo run --quiet --bin memorynexus-mcp
 ```
 
-Apply an upgrade explicitly:
+Plan a Developer Profile source-build upgrade without executing local commands:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"checkout_dir":"/path/to/MemoryNexus","apply":true,"pull":true,"rebuild_mcp":true}}}' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"profile":"developer","checkout_dir":"/path/to/MemoryNexus","pull":true,"rebuild_mcp":true}}}' \
   | cargo run --quiet --bin memorynexus-mcp
 ```
 
-`upgrade_install` defaults to plan-only. It refuses `git pull` when local files
-are dirty. It does not restart the API or the current MCP client; the response
-reports which restarts are still required.
+Apply a Developer Profile source-build upgrade explicitly:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"upgrade_install","arguments":{"profile":"developer","checkout_dir":"/path/to/MemoryNexus","apply":true,"pull":true,"rebuild_mcp":true}}}' \
+  | cargo run --quiet --bin memorynexus-mcp
+```
+
+`upgrade_install` defaults to plan-only. Trial and Local One-click plans are
+binary-first and do not compile Rust. `apply=true` currently executes only
+Developer Profile source-build commands, refuses `git pull` when local files are
+dirty, and does not restart the API or current MCP client; the response reports
+which restarts are still required.
 
 ## MCP vs CLI
 

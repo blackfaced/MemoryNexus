@@ -67,8 +67,21 @@ backend work should land in the Rust crate.
 
 ## Quick Start
 
-This is the local-first development path. For hosted or long-term use without
-local Docker-managed dependencies, see
+For agents and non-developer users, start with the binary-first profiles in
+[Agent Self-Install](docs/agent-self-install.md):
+
+- Trial Profile: use prebuilt `memorynexus-mcp` with a hosted/demo API through
+  `MEMORYNEXUS_API_URL` and `MEMORYNEXUS_TOKEN`. It does not require Rust,
+  Docker, PostgreSQL, or Qdrant on the local machine.
+- Local One-click Profile: use the release archive containing `memorynexus`,
+  `memorynexus-cli`, and `memorynexus-mcp`, verify the checksum, then run local
+  PostgreSQL and Qdrant through Docker.
+- Production Profile: run release binaries against stable hosted or
+  self-hosted PostgreSQL/Qdrant services. It is not Supabase-only.
+- Developer Profile: use the source checkout and Cargo for contribution work.
+
+The source path below is the Developer Profile. For hosted or long-term use
+without local Docker-managed dependencies, see
 [Hosted Production Profile](docs/production-profile.md).
 
 Start local infrastructure:

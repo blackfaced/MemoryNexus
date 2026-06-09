@@ -11,18 +11,22 @@ client. Memory belongs to `CognitiveSpace`, not to the agent.
 
 Install, upgrade, or reconnect MemoryNexus as an MCP server for this local
 agent environment. First identify the current state, then choose the smallest
-safe path:
+safe binary-first path:
 
-- Fresh install: no local MemoryNexus checkout or MCP config exists.
-- Release binary install: the user provides a GitHub Release tag and wants to
-  use published binaries instead of compiling locally.
-- Source upgrade: a checkout exists and should be updated from git.
-- Binary rebuild: the MCP config points at `target/debug/memorynexus-mcp` or
-  another built binary, so the binary must be rebuilt after source changes.
-- Restart only: source and binary are current, but the API or MCP client is
+- Trial Profile: no local checkout is required. Use a prebuilt
+  `memorynexus-mcp` binary with an existing hosted/demo API through
+  `MEMORYNEXUS_API_URL` and `MEMORYNEXUS_TOKEN`.
+- Local One-click Profile: use the release archive containing `memorynexus`,
+  `memorynexus-cli`, and `memorynexus-mcp`; verify the checksum; install the
+  binaries; start or verify local Docker PostgreSQL and Qdrant.
+- Production Profile: use release binaries against stable hosted or
+  self-hosted services. This is not Supabase-only.
+- Developer Profile: use the source checkout and Cargo only for contributors or
+  when no compatible release binary exists.
+- Restart only: binaries and config are current, but the API or MCP client is
   still running old code.
 
-Expected result:
+Expected Local One-click result:
 
 - The Rust API is running on `http://localhost:8080`.
 - PostgreSQL and Qdrant are running locally.
@@ -42,14 +46,19 @@ Expected result:
 
 Work in phases and stop cleanly at blockers.
 
-1. **Repository ready**: use the existing local repository if present.
-2. **Rust/MCP ready**: build `memorynexus-mcp` before starting Docker services.
-3. **Services ready**: start PostgreSQL and Qdrant.
-4. **API ready**: run the Rust API and verify `/health`.
-5. **Token ready**: reuse or create `MEMORYNEXUS_TOKEN`.
-6. **Agent connected**: write the MCP config and reload the client.
-7. **End-to-end smoke**: write, profile, route, and search through MCP.
-8. **STEM learning smoke**: create a practice session, record an attempt,
+1. **Profile selected**: choose Trial, Local One-click, Production, or
+   Developer.
+2. **Target detected**: map OS/CPU to a supported release target.
+3. **Binary ready**: download or locate the required release binary or archive
+   and verify checksum when an archive is used.
+4. **Services ready**: for Local One-click only, start PostgreSQL and Qdrant.
+5. **API ready**: use the hosted/demo API for Trial, or start/verify the local
+   Rust API for Local One-click.
+6. **Token ready**: reuse or create `MEMORYNEXUS_TOKEN`.
+7. **Agent connected**: write the MCP config and reload the client.
+8. **MCP smoke**: run `initialize` and `tools/list`.
+9. **End-to-end smoke**: write, profile, route, and search through MCP.
+10. **STEM learning smoke**: create a practice session, record an attempt,
    record feedback, list sessions, and retrieve the session.
 
 If a phase fails twice for the same reason, do not loop. Report the blocker,
@@ -77,9 +86,9 @@ Published release archives are available for `aarch64-apple-darwin`,
 - `PROFILE_SUPPORT.txt` describing Trial, Local One-click, Production, and
   Developer profile usage
 
-This guide may use those binaries when the user explicitly provides a release
-tag or archive path. Automatic binary-first discovery and fallback is tracked by
-#82 and is not implemented in this guide yet.
+This guide uses those binaries by default for Trial and Local One-click
+profiles. Source build fallback is explicit and should happen only when no
+compatible binary exists or the user chooses Developer Profile.
 
 Profile mapping for the current release artifacts:
 
@@ -91,7 +100,7 @@ Profile mapping for the current release artifacts:
   service provider choices are outside this guide.
 - Developer Profile: keep using `cargo run` and `cargo build` from source.
 
-First check whether the repository already exists:
+For Developer Profile, first check whether the repository already exists:
 
 ```bash
 test -d /Users/bytedance/code/MemoryNexus && echo "repo exists"
@@ -116,13 +125,16 @@ Run from the repository root:
 cd /Users/bytedance/code/MemoryNexus
 ```
 
-If Rust or Docker is missing, ask the user before installing system packages.
+If Rust is missing, do not install it for Trial or Local One-click. Ask the user
+whether they want Developer Profile before installing a Rust toolchain. If
+Docker is missing, Trial can still proceed; Local One-click needs Docker or a
+separate user-approved service setup.
 
-## Use Release Binaries When Provided
+## Binary-First Profiles
 
-Use this path only when the user explicitly points you at a release tag, a local
-archive, or a directory containing release binaries. Otherwise continue with the
-source checkout path below until #82 adds automatic binary-first install.
+Use this path by default for Trial and Local One-click. If a release tag is not
+provided, generate a plan with `<release-tag>` and ask the user which release to
+use before downloading.
 
 Choose the target triple:
 
@@ -172,12 +184,15 @@ printf '%s\n' \
 
 If this succeeds, use `./memorynexus-<tag>-<target>/memorynexus-mcp` in the MCP
 client config and `./memorynexus-<tag>-<target>/memorynexus` for the API server.
-PostgreSQL and Qdrant still need to be running separately.
+For Trial Profile, only `memorynexus-mcp` and the hosted API/token are needed.
+For Local One-click, PostgreSQL and Qdrant still need to be running separately,
+usually through Docker.
 
-## Build MCP Server
+## Developer Profile Source Build
 
-Build the MCP binary early. This phase does not require PostgreSQL, Qdrant, or
-a running API:
+Use this path only when no compatible release binary exists or the user
+explicitly chooses Developer Profile. Build the MCP binary early. This phase
+does not require PostgreSQL, Qdrant, or a running API:
 
 ```bash
 cargo build --bin memorynexus-mcp
@@ -257,11 +272,15 @@ curl -fsS http://localhost:8080/health
 docker compose ps postgres qdrant
 ```
 
-If the checkout can build the CLI, prefer the built-in status command because it
-also reports the local binary version and API version:
+Prefer the built-in status command when `memorynexus-cli` is available. It
+reports the selected profile, detected OS/arch, release target, binary path,
+API URL, API health, MCP smoke command, and source-build fallback reason:
 
 ```bash
-cargo run --quiet --bin memorynexus-cli -- install status --checkout /path/to/MemoryNexus
+memorynexus-cli install status --profile trial
+memorynexus-cli install status --profile local-one-click
+memorynexus-cli install status --profile production
+memorynexus-cli install status --profile developer --checkout /path/to/MemoryNexus
 ```
 
 4. Inspect the agent MCP config if the client exposes it. Determine whether the
@@ -292,12 +311,14 @@ Use this decision table:
 
 | Current state | Action |
 |---------------|--------|
-| No checkout exists and the user provided a release archive/tag | Use release binaries, then start services and configure MCP. |
-| No checkout exists and no release binary was provided | Follow fresh install setup below. |
-| Checkout exists, no MCP config | Start services, verify API, then add MCP config. |
-| Checkout already contains the user's latest local edits | Skip `git pull`; run tests, rebuild if needed, then restart API/MCP. |
-| MCP config uses `cargo run` | Pull/update source if requested, run tests, restart/reload the agent MCP client. |
-| MCP config uses `target/debug/memorynexus-mcp` | Pull/update source if requested, run tests, rebuild `memorynexus-mcp`, then restart/reload the agent MCP client. |
+| User wants hosted/demo trial | Use Trial Profile with release `memorynexus-mcp`; do not require local Docker or Rust. |
+| User wants local-first without Rust | Use Local One-click Profile with release archive, checksum, local bin install, Docker services, API health, and MCP smoke. |
+| User wants stable hosted deployment | Use Production Profile with release binaries and hosted/self-hosted PostgreSQL/Qdrant services. |
+| No compatible release target exists | Report the unsupported OS/arch and ask before falling back to Developer Profile. |
+| Checkout exists, no MCP config | Prefer release-binary config unless the user chose Developer Profile. |
+| Checkout already contains the user's latest local edits | For Developer Profile, skip `git pull`; run tests, rebuild if needed, then restart API/MCP. |
+| MCP config uses `cargo run` | Developer Profile only: pull/update source if requested, run tests, restart/reload the agent MCP client. |
+| MCP config uses `target/debug/memorynexus-mcp` | Developer Profile only: pull/update source if requested, run tests, rebuild `memorynexus-mcp`, then restart/reload the agent MCP client. |
 | MCP config uses release `memorynexus-mcp` | Replace the release directory only when the user requests a new release tag, then restart/reload the agent MCP client. |
 | API binary or `cargo run --bin memorynexus` is already running | Restart the API after source changes so migrations and new handlers load. |
 | Only docs changed | No API or MCP rebuild is required unless the agent needs a refreshed local checkout. |
@@ -307,7 +328,8 @@ restart the API; do not rely on a running process to pick them up.
 
 ## Upgrade Existing Install
 
-Use this path when a checkout already exists.
+Use this path when a checkout already exists and the selected profile is
+Developer.
 
 1. Enter the checkout:
 
@@ -336,6 +358,7 @@ git pull
 ```bash
 cargo run --quiet --bin memorynexus-cli -- upgrade \
   --checkout /path/to/MemoryNexus \
+  --profile developer \
   --pull \
   --rebuild-mcp
 ```
@@ -367,6 +390,7 @@ The CLI can execute the test/build part when explicitly requested:
 ```bash
 cargo run --quiet --bin memorynexus-cli -- upgrade \
   --checkout /path/to/MemoryNexus \
+  --profile developer \
   --pull \
   --rebuild-mcp \
   --apply
@@ -413,6 +437,16 @@ CLI:
 {
   "name": "get_install_status",
   "arguments": {
+    "profile": "trial"
+  }
+}
+```
+
+```json
+{
+  "name": "get_install_status",
+  "arguments": {
+    "profile": "developer",
     "checkout_dir": "/path/to/MemoryNexus"
   }
 }
@@ -422,6 +456,7 @@ CLI:
 {
   "name": "upgrade_install",
   "arguments": {
+    "profile": "developer",
     "checkout_dir": "/path/to/MemoryNexus",
     "pull": true,
     "rebuild_mcp": true,
@@ -754,9 +789,8 @@ docker images | grep -E 'postgres|qdrant|minio'
 
 5. If Docker remains blocked, complete the non-Docker phases:
 
-- repository check
-- Rust build
-- `memorynexus-mcp` build
+- release binary check
+- `memorynexus-mcp` binary verification
 - MCP `tools/list` smoke
 - MCP client config draft
 
@@ -766,9 +800,9 @@ Then report Docker as the blocker for API and end-to-end smoke.
 
 If full installation is blocked, report the highest completed level:
 
-- **Level 1: Repo Ready**: repository exists and prerequisites checked.
+- **Level 1: Profile Ready**: profile, release target, and prerequisites checked.
 - **Level 2: MCP Binary Ready**: release `memorynexus-mcp` is verified or
-  `cargo build --bin memorynexus-mcp` succeeds.
+  Developer Profile `cargo build --bin memorynexus-mcp` succeeds.
 - **Level 3: MCP Discoverable**: stdio `tools/list` shows MemoryNexus tools.
 - **Level 4: API Ready**: API health check succeeds.
 - **Level 5: Agent Connected**: MCP config is installed and visible in the

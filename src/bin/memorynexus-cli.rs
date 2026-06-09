@@ -81,9 +81,11 @@ enum Command {
     },
     InstallStatus {
         checkout_dir: Option<String>,
+        profile: Option<memorynexus::install::InstallProfile>,
     },
     Upgrade {
         checkout_dir: Option<String>,
+        profile: memorynexus::install::InstallProfile,
         apply: bool,
         pull: bool,
         rebuild_mcp: bool,
@@ -433,6 +435,10 @@ fn parse_install_command(args: &[String]) -> Result<Command, CliError> {
     match subcommand {
         "status" => Ok(Command::InstallStatus {
             checkout_dir: optional_flag(args, "--checkout"),
+            profile: optional_flag(args, "--profile")
+                .map(|value| memorynexus::install::InstallProfile::parse(&value))
+                .transpose()
+                .map_err(CliError::new)?,
         }),
         _ => Err(CliError::new("unknown install subcommand")),
     }
@@ -441,6 +447,11 @@ fn parse_install_command(args: &[String]) -> Result<Command, CliError> {
 fn parse_upgrade_command(args: &[String]) -> Result<Command, CliError> {
     Ok(Command::Upgrade {
         checkout_dir: optional_flag(args, "--checkout"),
+        profile: optional_flag(args, "--profile")
+            .map(|value| memorynexus::install::InstallProfile::parse(&value))
+            .transpose()
+            .map_err(CliError::new)?
+            .unwrap_or(memorynexus::install::InstallProfile::Developer),
         apply: has_flag(args, "--apply"),
         pull: has_flag(args, "--pull"),
         rebuild_mcp: has_flag(args, "--rebuild-mcp"),
@@ -1132,11 +1143,15 @@ async fn execute(config: &Config, command: &Command) -> Result<Value, CliError> 
                 }
             }));
         }
-        Command::InstallStatus { checkout_dir } => {
-            return install_status_response(config, checkout_dir.as_deref()).await;
+        Command::InstallStatus {
+            checkout_dir,
+            profile,
+        } => {
+            return install_status_response(config, checkout_dir.as_deref(), *profile).await;
         }
         Command::Upgrade {
             checkout_dir,
+            profile,
             apply,
             pull,
             rebuild_mcp,
@@ -1145,6 +1160,7 @@ async fn execute(config: &Config, command: &Command) -> Result<Value, CliError> 
         } => {
             return upgrade_response(
                 checkout_dir.as_deref(),
+                *profile,
                 *apply,
                 *pull,
                 *rebuild_mcp,
@@ -1237,23 +1253,37 @@ fn local_version_data() -> Value {
 async fn install_status_response(
     config: &Config,
     checkout_dir: Option<&str>,
+    profile: Option<memorynexus::install::InstallProfile>,
 ) -> Result<Value, CliError> {
-    let checkout = resolve_checkout_dir(checkout_dir)?;
+    let checkout = checkout_dir
+        .map(|path| resolve_checkout_dir(Some(path)))
+        .transpose()?
+        .map(|checkout| checkout_status(&checkout));
     let api_health = fetch_api_health(config).await.unwrap_or_else(|error| {
         json!({
             "reachable": false,
             "error": error.message,
         })
     });
+    let target = memorynexus::install::ReleaseTarget::detect();
+    let data =
+        memorynexus::install::install_status_value(memorynexus::install::InstallStatusInput {
+            selected_profile: profile,
+            api_url: config.api_url.clone(),
+            api_health,
+            local: local_version_data(),
+            checkout,
+            release_tag: None,
+            bin_dir: None,
+            binary_path: std::env::current_exe()
+                .ok()
+                .map(|path| path.display().to_string()),
+            target,
+        });
 
     Ok(json!({
         "ok": true,
-        "data": {
-            "local": local_version_data(),
-            "checkout": checkout_status(&checkout),
-            "api": api_health,
-            "upgrade": upgrade_plan_value(false, false, true, false),
-        }
+        "data": data
     }))
 }
 
@@ -1280,25 +1310,41 @@ async fn fetch_api_health(config: &Config) -> Result<Value, CliError> {
 
 fn upgrade_response(
     checkout_dir: Option<&str>,
+    profile: memorynexus::install::InstallProfile,
     apply: bool,
     pull: bool,
     rebuild_mcp: bool,
     rebuild_api: bool,
     skip_tests: bool,
 ) -> Result<Value, CliError> {
-    let checkout = resolve_checkout_dir(checkout_dir)?;
-    let plan = upgrade_plan_value(pull, rebuild_mcp, !skip_tests, rebuild_api);
+    let checkout = checkout_dir
+        .map(|path| resolve_checkout_dir(Some(path)))
+        .transpose()?;
+    let plan = upgrade_plan_value(profile, pull, rebuild_mcp, !skip_tests, rebuild_api);
     if !apply {
         return Ok(json!({
             "ok": true,
             "data": {
                 "mode": "plan",
-                "checkout": checkout.display().to_string(),
+                "profile": profile.as_str(),
+                "checkout": checkout
+                    .as_ref()
+                    .map(|path| path.display().to_string()),
                 "plan": plan,
                 "apply_hint": "rerun with --apply to execute these local commands",
             }
         }));
     }
+
+    if profile != memorynexus::install::InstallProfile::Developer {
+        return Err(CliError::new(
+            "apply=true currently executes only Developer Profile source-build steps; use the binary-first plan commands for this profile or choose --profile developer explicitly",
+        ));
+    }
+
+    let checkout = checkout.ok_or_else(|| {
+        CliError::new("--checkout is required when applying Developer Profile source-build steps")
+    })?;
 
     let dirty = git_status_short(&checkout)?;
     if pull && !dirty.trim().is_empty() {
@@ -1333,6 +1379,7 @@ fn upgrade_response(
         "ok": true,
         "data": {
             "mode": "applied",
+            "profile": profile.as_str(),
             "checkout": checkout.display().to_string(),
             "plan": plan,
             "results": results,
@@ -1420,49 +1467,23 @@ fn run_local_command(
     }))
 }
 
-fn upgrade_plan_value(pull: bool, rebuild_mcp: bool, run_tests: bool, rebuild_api: bool) -> Value {
-    let mut steps = Vec::new();
-    steps.push(json!({
-        "command": "git status --short",
-        "reason": "detect local edits before any source update",
-    }));
-    if pull {
-        steps.push(json!({
-            "command": "git pull",
-            "reason": "update source from the configured remote; skipped when local edits are already the desired upgrade",
-        }));
-    }
-    if run_tests {
-        steps.push(json!({
-            "command": "cargo test",
-            "reason": "verify the updated checkout before reconnecting agents",
-        }));
-    }
-    if rebuild_mcp {
-        steps.push(json!({
-            "command": "cargo build --bin memorynexus-mcp",
-            "reason": "refresh built-binary MCP installs",
-        }));
-    }
-    if rebuild_api {
-        steps.push(json!({
-            "command": "cargo build --bin memorynexus",
-            "reason": "refresh built-binary API installs",
-        }));
-    }
-    steps.push(json!({
-        "command": "restart API and reload MCP client",
-        "reason": "running processes keep old code until restarted",
-    }));
-
-    json!({
-        "steps": steps,
-        "notes": [
-            "Skip git pull when the checkout already contains the user's local edits.",
-            "Skip cargo build --bin memorynexus-mcp when the MCP config uses cargo run.",
-            "Restart the API after backend code or migrations change; migrations run on API startup."
-        ]
-    })
+fn upgrade_plan_value(
+    profile: memorynexus::install::InstallProfile,
+    pull: bool,
+    rebuild_mcp: bool,
+    run_tests: bool,
+    rebuild_api: bool,
+) -> Value {
+    memorynexus::install::install_plan_value(
+        profile,
+        memorynexus::install::InstallPlanOptions::new(
+            DEFAULT_API_URL,
+            None,
+            None,
+            memorynexus::install::ReleaseTarget::detect(),
+        )
+        .with_source_flags(pull, rebuild_mcp, run_tests, rebuild_api),
+    )
 }
 
 fn require_token(config: &Config) -> Result<String, CliError> {
@@ -1879,6 +1900,21 @@ mod tests {
             command,
             Command::InstallStatus {
                 checkout_dir: Some("/tmp/MemoryNexus".to_string()),
+                profile: None,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_install_status_profile_flag() {
+        let command =
+            parse_command(["memorynexus-cli", "install", "status", "--profile", "trial"]).unwrap();
+
+        assert_eq!(
+            command,
+            Command::InstallStatus {
+                checkout_dir: None,
+                profile: Some(memorynexus::install::InstallProfile::Trial),
             }
         );
     }
@@ -1890,6 +1926,8 @@ mod tests {
             "upgrade",
             "--checkout",
             "/tmp/MemoryNexus",
+            "--profile",
+            "developer",
             "--pull",
             "--rebuild-mcp",
             "--rebuild-api",
@@ -1902,6 +1940,7 @@ mod tests {
             command,
             Command::Upgrade {
                 checkout_dir: Some("/tmp/MemoryNexus".to_string()),
+                profile: memorynexus::install::InstallProfile::Developer,
                 apply: true,
                 pull: true,
                 rebuild_mcp: true,
@@ -1912,8 +1951,119 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_plan_defaults_to_tests_and_restart_without_apply() {
-        let plan = upgrade_plan_value(false, false, true, false);
+    fn install_status_reports_all_profiles_and_release_target() {
+        let status =
+            memorynexus::install::install_status_value(memorynexus::install::InstallStatusInput {
+                selected_profile: Some(memorynexus::install::InstallProfile::Trial),
+                api_url: "https://demo.memorynexus.example".to_string(),
+                api_health: json!({"reachable": true}),
+                local: json!({"version": "0.1.0", "binary": "/tmp/memorynexus-cli"}),
+                checkout: None,
+                release_tag: Some("v0.1.0".to_string()),
+                bin_dir: Some("/tmp/memorynexus/bin".to_string()),
+                binary_path: Some("/tmp/memorynexus/bin/memorynexus-mcp".to_string()),
+                target: memorynexus::install::ReleaseTarget::supported_for_test(
+                    "macos",
+                    "arm64",
+                    "aarch64-apple-darwin",
+                ),
+            });
+
+        assert_eq!(status["selected_profile"], "trial");
+        assert_eq!(status["recommended_profile"], "trial");
+        assert_eq!(status["release"]["target"], "aarch64-apple-darwin");
+        assert_eq!(
+            status["binary"]["path"],
+            "/tmp/memorynexus/bin/memorynexus-mcp"
+        );
+        assert!(status["profiles"]["trial"].is_object());
+        assert!(status["profiles"]["local-one-click"].is_object());
+        assert!(status["profiles"]["production"].is_object());
+        assert!(status["profiles"]["developer"].is_object());
+        assert_eq!(status["fallback"]["source_build_required"], false);
+    }
+
+    #[test]
+    fn trial_profile_plan_avoids_source_and_local_services() {
+        let plan = memorynexus::install::install_plan_value(
+            memorynexus::install::InstallProfile::Trial,
+            memorynexus::install::InstallPlanOptions::for_test("v0.1.0", "aarch64-apple-darwin"),
+        );
+        let text = plan.to_string();
+
+        assert!(text.contains("memorynexus-mcp"));
+        assert!(text.contains("tools/list"));
+        assert!(!text.contains("cargo"));
+        assert!(!text.contains("Docker"));
+        assert!(!text.contains("PostgreSQL"));
+        assert!(!text.contains("Qdrant"));
+    }
+
+    #[test]
+    fn local_one_click_profile_plan_uses_release_archive_not_cargo() {
+        let plan = memorynexus::install::install_plan_value(
+            memorynexus::install::InstallProfile::LocalOneClick,
+            memorynexus::install::InstallPlanOptions::for_test(
+                "v0.1.0",
+                "x86_64-unknown-linux-gnu",
+            ),
+        );
+        let text = plan.to_string();
+
+        assert!(text.contains("memorynexus-v0.1.0-x86_64-unknown-linux-gnu.tar.gz"));
+        assert!(text.contains("sha256"));
+        assert!(text.contains("docker compose up -d postgres qdrant"));
+        assert!(text.contains("/api/v1/health"));
+        assert!(text.contains("tools/list"));
+        assert!(!text.contains("cargo"));
+        assert!(!text.contains("rustup"));
+        assert!(!text.contains("rustc"));
+    }
+
+    #[test]
+    fn developer_profile_keeps_source_build_path() {
+        let plan = memorynexus::install::install_plan_value(
+            memorynexus::install::InstallProfile::Developer,
+            memorynexus::install::InstallPlanOptions::for_test("v0.1.0", "aarch64-apple-darwin"),
+        );
+        let text = plan.to_string();
+
+        assert!(text.contains("cargo test"));
+        assert!(text.contains("cargo build --bin memorynexus-mcp"));
+    }
+
+    #[test]
+    fn unsupported_target_reports_source_fallback_reason() {
+        let status =
+            memorynexus::install::install_status_value(memorynexus::install::InstallStatusInput {
+                selected_profile: Some(memorynexus::install::InstallProfile::Trial),
+                api_url: "http://localhost:8080".to_string(),
+                api_health: json!({"reachable": false}),
+                local: json!({}),
+                checkout: None,
+                release_tag: Some("v0.1.0".to_string()),
+                bin_dir: None,
+                binary_path: None,
+                target: memorynexus::install::ReleaseTarget::unsupported_for_test("linux", "arm64"),
+            });
+
+        assert_eq!(status["binary"]["available"], false);
+        assert_eq!(status["fallback"]["source_build_required"], true);
+        assert!(status["fallback"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("unsupported OS/arch"));
+    }
+
+    #[test]
+    fn developer_upgrade_plan_defaults_to_tests_and_restart_without_apply() {
+        let plan = upgrade_plan_value(
+            memorynexus::install::InstallProfile::Developer,
+            false,
+            false,
+            true,
+            false,
+        );
         let steps = plan["steps"].as_array().unwrap();
 
         assert_eq!(steps[0]["command"], "git status --short");
@@ -1926,7 +2076,13 @@ mod tests {
 
     #[test]
     fn upgrade_plan_includes_binary_rebuild_steps_when_requested() {
-        let plan = upgrade_plan_value(true, true, true, true);
+        let plan = upgrade_plan_value(
+            memorynexus::install::InstallProfile::Developer,
+            true,
+            true,
+            true,
+            true,
+        );
         let commands: Vec<&str> = plan["steps"]
             .as_array()
             .unwrap()
