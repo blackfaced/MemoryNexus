@@ -93,6 +93,12 @@ default agent install path and it requires a Rust toolchain. For hosted or
 long-term use without local Docker-managed dependencies, see
 [Production Profile](docs/production-profile.md).
 
+For Local One-click runtime services without Rust, use
+`docker-compose.runtime.yml` with `.env.runtime.example`; the release
+`memorynexus` API binary then connects through the documented `DATABASE_URL`
+and `QDRANT_URL` values. See
+[Agent Self-Install](docs/agent-self-install.md#start-local-one-click-services).
+
 Start local infrastructure:
 
 ```bash

@@ -478,18 +478,26 @@ contributor testing.
 Start PostgreSQL and Qdrant:
 
 ```bash
-docker compose up -d postgres qdrant
+docker compose \
+  -f docker-compose.runtime.yml \
+  --env-file .env.runtime.example \
+  up -d postgres qdrant
 ```
 
 If Docker image pulling fails, do not keep retrying blindly. Go to
 [Docker Pull Or Proxy Issues](#docker-pull-or-proxy-issues).
 
-Start the API from the release binary in a long-running terminal:
+The runtime compose file starts only PostgreSQL and Qdrant. It does not build or
+run the Rust API and does not require Rust or Cargo. The Local One-click primary
+path is still the release API binary running on the host.
+
+Load the same runtime values into the host shell, then start the API from the
+release binary in a long-running terminal:
 
 ```bash
-export QDRANT_URL=http://localhost:6333
-export QDRANT_COLLECTION=memorynexus_agent_local
-export MEMORYNEXUS_EMBEDDING_PROVIDER=local
+set -a
+. ./.env.runtime.example
+set +a
 
 ./memorynexus-<tag>-<target>/memorynexus
 ```
@@ -500,11 +508,21 @@ For Developer Profile only, the equivalent source-build command is
 In another terminal, verify the API:
 
 ```bash
+export MEMORYNEXUS_API_URL=http://localhost:8080
 ./memorynexus-<tag>-<target>/memorynexus-cli health
 ```
 
 For Developer Profile only, use
 `cargo run --quiet --bin memorynexus-cli -- health`.
+
+To stop only the Local One-click runtime services:
+
+```bash
+docker compose \
+  -f docker-compose.runtime.yml \
+  --env-file .env.runtime.example \
+  down
+```
 
 ## Create Or Reuse Auth Token
 
