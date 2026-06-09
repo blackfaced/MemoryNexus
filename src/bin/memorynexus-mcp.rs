@@ -969,7 +969,14 @@ async fn call_local_tool(
             let rebuild_mcp = optional_bool(arguments, "rebuild_mcp").unwrap_or(false);
             let rebuild_api = optional_bool(arguments, "rebuild_api").unwrap_or(false);
             let skip_tests = optional_bool(arguments, "skip_tests").unwrap_or(false);
-            let plan = upgrade_plan_value(profile, pull, rebuild_mcp, !skip_tests, rebuild_api);
+            let plan = upgrade_plan_value(
+                &config.api_url,
+                profile,
+                pull,
+                rebuild_mcp,
+                !skip_tests,
+                rebuild_api,
+            );
 
             if !apply {
                 return Ok(json!({
@@ -1261,6 +1268,7 @@ fn run_local_command(
 }
 
 fn upgrade_plan_value(
+    api_url: &str,
     profile: memorynexus::install::InstallProfile,
     pull: bool,
     rebuild_mcp: bool,
@@ -1270,7 +1278,7 @@ fn upgrade_plan_value(
     memorynexus::install::install_plan_value(
         profile,
         memorynexus::install::InstallPlanOptions::new(
-            DEFAULT_API_URL,
+            api_url,
             None,
             None,
             memorynexus::install::ReleaseTarget::detect(),
@@ -1329,6 +1337,7 @@ mod tests {
     #[test]
     fn upgrade_plan_defaults_to_safe_plan_only_steps() {
         let plan = upgrade_plan_value(
+            DEFAULT_API_URL,
             memorynexus::install::InstallProfile::Developer,
             false,
             false,
@@ -1431,6 +1440,29 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("apply=true"));
+    }
+
+    #[tokio::test]
+    async fn upgrade_install_trial_plan_uses_configured_api_url() {
+        let config = Config {
+            api_url: "https://demo.example.test".to_string(),
+            token: None,
+        };
+
+        let result = call_local_tool(
+            &config,
+            "upgrade_install",
+            &json!({
+                "apply": false,
+                "profile": "trial"
+            }),
+        )
+        .await
+        .unwrap();
+        let text = result["plan"].to_string();
+
+        assert!(text.contains("https://demo.example.test"));
+        assert!(!text.contains("MEMORYNEXUS_API_URL=http://localhost:8080"));
     }
 
     #[test]
