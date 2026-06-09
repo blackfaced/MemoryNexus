@@ -79,14 +79,16 @@ what was tried, and which later phases can still be completed.
 
 Published release archives are available for `aarch64-apple-darwin`,
 `x86_64-apple-darwin`, and `x86_64-unknown-linux-gnu`. Each archive is named
-`memorynexus-<tag>-<target>.tar.gz` and contains:
+`memorynexus-<tag>-<target>.tar.gz` and contains a Local One-click bundle
+layout:
 
-- `memorynexus`
-- `memorynexus-cli`
-- `memorynexus-mcp`
-- `SHA256SUMS` for the binaries inside the archive
-- `PROFILE_SUPPORT.txt` describing Trial, Local One-click, Production, and
-  Developer profile usage
+- `bin/memorynexus`
+- `bin/memorynexus-cli`
+- `bin/memorynexus-mcp`
+- `install.sh` for local binary install, Docker checks, optional MCP config
+  output, API health, and MCP `tools/list` smoke
+- `README.local-one-click.md` for the one-archive Local One-click flow
+- `SHA256SUMS` and `MANIFEST.json` for files inside the archive
 - `docker-compose.runtime.yml` for Local One-click PostgreSQL and Qdrant
   services
 - `.env.runtime.example` with matching Docker service settings and host API
@@ -98,10 +100,10 @@ compatible binary exists or the user chooses Developer Profile.
 
 Profile mapping for the current release artifacts:
 
-- Trial Profile: use `memorynexus-mcp` when the Rust API is already available
-  or managed separately.
-- Local One-click Profile: use `memorynexus`, `memorynexus-cli`, and
-  `memorynexus-mcp` together with external PostgreSQL and Qdrant.
+- Trial Profile: use `bin/memorynexus-mcp` when the Rust API is already
+  available or managed separately.
+- Local One-click Profile: use `bin/memorynexus`, `bin/memorynexus-cli`, and
+  `bin/memorynexus-mcp` together with external PostgreSQL and Qdrant.
 - Production Profile: use the same binaries as service artifacts; hosted
   service provider choices are outside this guide.
 - Developer Profile: keep using `cargo run` and `cargo build` from source.
@@ -180,17 +182,18 @@ shasum -a 256 -c memorynexus-<tag>-<target>.tar.gz.sha256
 Then verify the binaries directly:
 
 ```bash
-./memorynexus-<tag>-<target>/memorynexus-cli version
+./memorynexus-<tag>-<target>/bin/memorynexus-cli version
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | MEMORYNEXUS_API_URL=http://localhost:8080 \
     MEMORYNEXUS_TOKEN="placeholder-token" \
-    ./memorynexus-<tag>-<target>/memorynexus-mcp
+    ./memorynexus-<tag>-<target>/bin/memorynexus-mcp
 ```
 
-If this succeeds, use `./memorynexus-<tag>-<target>/memorynexus-mcp` in the MCP
-client config and `./memorynexus-<tag>-<target>/memorynexus` for the API server.
-For Trial Profile, only `memorynexus-mcp` and the hosted API/token are needed.
+If this succeeds, use `./memorynexus-<tag>-<target>/bin/memorynexus-mcp` in the
+MCP client config and `./memorynexus-<tag>-<target>/bin/memorynexus` for the API
+server. For Trial Profile, only `bin/memorynexus-mcp` and the hosted API/token
+are needed.
 For Local One-click, PostgreSQL and Qdrant still need to be running separately,
 usually through Docker.
 
@@ -482,11 +485,13 @@ contributor testing.
 Start PostgreSQL and Qdrant:
 
 ```bash
-docker compose \
-  -f docker-compose.runtime.yml \
-  --env-file .env.runtime.example \
-  up -d postgres qdrant
+./install.sh --start-services
 ```
+
+The install script checks Docker availability before starting services and does
+not call `cargo`, `rustc`, or `rustup`. The equivalent manual command is
+`docker compose -f docker-compose.runtime.yml --env-file .env.runtime.example up
+-d postgres qdrant`.
 
 If Docker image pulling fails, do not keep retrying blindly. Go to
 [Docker Pull Or Proxy Issues](#docker-pull-or-proxy-issues).
@@ -503,7 +508,7 @@ set -a
 . ./.env.runtime.example
 set +a
 
-./memorynexus-<tag>-<target>/memorynexus
+./memorynexus-<tag>-<target>/bin/memorynexus
 ```
 
 For Developer Profile only, the equivalent source-build command is
@@ -513,7 +518,7 @@ In another terminal, verify the API:
 
 ```bash
 export MEMORYNEXUS_API_URL=http://localhost:8080
-./memorynexus-<tag>-<target>/memorynexus-cli health
+./memorynexus-<tag>-<target>/bin/memorynexus-cli health
 ```
 
 For Developer Profile only, use
@@ -548,7 +553,7 @@ export MEMORYNEXUS_TOKEN=$(printf '%s' "$AUTH_JSON" | jq -r '.data.token')
 For Local One-click Profile, use the release CLI instead of Cargo:
 
 ```bash
-AUTH_JSON=$(./memorynexus-<tag>-<target>/memorynexus-cli auth register \
+AUTH_JSON=$(./memorynexus-<tag>-<target>/bin/memorynexus-cli auth register \
   --email "agent-local@example.com" \
   --name AgentLocal \
   --password secret123)
@@ -572,7 +577,7 @@ Recommended release-binary config when using a downloaded archive:
 {
   "mcpServers": {
     "memorynexus": {
-      "command": "/path/to/memorynexus-<tag>-<target>/memorynexus-mcp",
+      "command": "/path/to/memorynexus-<tag>-<target>/bin/memorynexus-mcp",
       "env": {
         "MEMORYNEXUS_API_URL": "http://localhost:8080",
         "MEMORYNEXUS_TOKEN": "<jwt-token>"

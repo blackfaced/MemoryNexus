@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/release.yml"
+      - "scripts/package-local-one-click.sh"
+      - "scripts/test-package-local-one-click.sh"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -49,6 +51,9 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         uses: actions/checkout@v5
 
+      - name: Smoke test package layout
+        run: scripts/test-package-local-one-click.sh
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -67,64 +72,11 @@ jobs:
       - name: Package archive
         run: |
           set -euo pipefail
-          archive_base="memorynexus-${RELEASE_TAG}-${TARGET}"
-          package_dir="dist/${archive_base}"
-          mkdir -p "$package_dir"
-
-          cp "target/${TARGET}/release/memorynexus" "$package_dir/"
-          cp "target/${TARGET}/release/memorynexus-cli" "$package_dir/"
-          cp "target/${TARGET}/release/memorynexus-mcp" "$package_dir/"
-          cp docker-compose.runtime.yml "$package_dir/"
-          cp .env.runtime.example "$package_dir/"
-          chmod 0755 "$package_dir/memorynexus" "$package_dir/memorynexus-cli" "$package_dir/memorynexus-mcp"
-
-          if command -v sha256sum >/dev/null 2>&1; then
-            (cd "$package_dir" && sha256sum memorynexus memorynexus-cli memorynexus-mcp > SHA256SUMS)
-          else
-            (cd "$package_dir" && shasum -a 256 memorynexus memorynexus-cli memorynexus-mcp > SHA256SUMS)
-          fi
-
-          cat > "$package_dir/MANIFEST.txt" <<EOF
-          MemoryNexus ${RELEASE_TAG}
-          Target: ${TARGET}
-
-          Binaries:
-          - memorynexus
-          - memorynexus-cli
-          - memorynexus-mcp
-          - SHA256SUMS
-          - PROFILE_SUPPORT.txt
-          - docker-compose.runtime.yml
-          - .env.runtime.example
-          EOF
-
-          cat > "$package_dir/PROFILE_SUPPORT.txt" <<EOF
-          MemoryNexus release artifact profiles
-
-          Trial Profile:
-          - Uses memorynexus-mcp when an agent connects to an existing or separately managed MemoryNexus API.
-
-          Local One-click Profile:
-          - Uses memorynexus, memorynexus-cli, and memorynexus-mcp together.
-          - Starts local PostgreSQL and Qdrant through docker-compose.runtime.yml and .env.runtime.example.
-          - The API still runs as the release memorynexus binary on the host.
-
-          Production Profile:
-          - May use memorynexus, memorynexus-cli, and memorynexus-mcp as service artifacts.
-          - Hosted service provider selection is outside this release artifact.
-
-          Developer Profile:
-          - Source-build workflow remains unchanged through cargo run and cargo build.
-          EOF
-
-          tar -C dist -czf "dist/${archive_base}.tar.gz" "$archive_base"
-
-          cd dist
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "${archive_base}.tar.gz" > "${archive_base}.tar.gz.sha256"
-          else
-            shasum -a 256 "${archive_base}.tar.gz" > "${archive_base}.tar.gz.sha256"
-          fi
+          scripts/package-local-one-click.sh \
+            --release-tag "$RELEASE_TAG" \
+            --target "$TARGET" \
+            --binary-dir "target/${TARGET}/release" \
+            --dist-dir dist
 
       - uses: actions/upload-artifact@v4
         with:
@@ -160,18 +112,20 @@ jobs:
           - x86_64-unknown-linux-gnu
 
           Each archive includes:
-          - memorynexus
-          - memorynexus-cli
-          - memorynexus-mcp
+          - bin/memorynexus
+          - bin/memorynexus-cli
+          - bin/memorynexus-mcp
           - SHA256SUMS
-          - PROFILE_SUPPORT.txt
           - docker-compose.runtime.yml
           - .env.runtime.example
+          - install.sh
+          - README.local-one-click.md
+          - MANIFEST.json
 
           Artifact profile support:
-          - Trial Profile can use memorynexus-mcp when the API is already available.
+          - Trial Profile can use bin/memorynexus-mcp when the API is already available.
           - Local One-click Profile can use all three binaries with bundled runtime compose files for local PostgreSQL and Qdrant.
-          - Production Profile may use the same binaries as service artifacts.
+          - Production Profile may use the same binaries as service artifacts for serious hosted use.
           - Developer Profile source-build workflow remains unchanged.
 
           Archive checksums are published as matching .sha256 files.

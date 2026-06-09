@@ -2072,7 +2072,9 @@ mod tests {
 
         assert!(text.contains("memorynexus-v0.1.0-x86_64-unknown-linux-gnu.tar.gz"));
         assert!(text.contains("sha256"));
-        assert!(text.contains("docker compose up -d postgres qdrant"));
+        assert!(text.contains("install.sh --start-services"));
+        assert!(text.contains("--print-mcp-config"));
+        assert!(text.contains("README.local-one-click.md"));
         assert!(text.contains("/api/v1/health"));
         assert!(text.contains("tools/list"));
         assert!(!text.contains("cargo"));

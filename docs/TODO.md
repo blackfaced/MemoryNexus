@@ -291,19 +291,14 @@ Recently completed:
   README, CLI, MCP, and agent self-install docs now present Trial, Local
   One-click, Production, and Developer Profile as separate paths, clarify Docker
   requirements, and keep source build as Developer-only.
-
-Recommended sequence:
-
-No remaining documentation issue is required before the follow-up packaging
-work below.
-
-Parallel / follow-up work:
-
 - [#83 Add Docker runtime compose bundle for Local One-click Profile](https://github.com/blackfaced/MemoryNexus/issues/83):
-  provide a Local One-click runtime compose setup for PostgreSQL and Qdrant.
+  Local One-click runtime compose and env files now provide PostgreSQL and
+  Qdrant services for release-binary installs.
 - [#84 Create Local One-click offline install bundle for agents](https://github.com/blackfaced/MemoryNexus/issues/84):
-  package binaries, runtime compose files, env examples, and install docs into a
-  downloadable Local One-click archive.
+  release packaging now emits a Local One-click archive with `bin/` binaries,
+  runtime compose/env files, `install.sh`, local install README, checksums, and
+  manifest metadata.
+
 - [#81 Binary-first and offline agent installation](https://github.com/blackfaced/MemoryNexus/issues/81):
   umbrella issue for the install/distribution track.
 
