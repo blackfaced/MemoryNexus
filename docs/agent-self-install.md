@@ -87,6 +87,10 @@ Published release archives are available for `aarch64-apple-darwin`,
 - `SHA256SUMS` for the binaries inside the archive
 - `PROFILE_SUPPORT.txt` describing Trial, Local One-click, Production, and
   Developer profile usage
+- `docker-compose.runtime.yml` for Local One-click PostgreSQL and Qdrant
+  services
+- `.env.runtime.example` with matching Docker service settings and host API
+  binary environment values
 
 This guide uses those binaries by default for Trial and Local One-click
 profiles. Source build fallback is explicit and should happen only when no

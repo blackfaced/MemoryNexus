@@ -140,6 +140,8 @@ Rust binaries:
 - `SHA256SUMS` for the binaries inside the archive
 - `PROFILE_SUPPORT.txt` describing how the same artifact supports Trial,
   Local One-click, Production, and Developer profiles
+- `docker-compose.runtime.yml` and `.env.runtime.example` for Local One-click
+  PostgreSQL and Qdrant services
 
 Download the archive and its matching `.sha256` file from the
 [GitHub Releases](https://github.com/blackfaced/MemoryNexus/releases) page,
