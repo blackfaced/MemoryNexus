@@ -287,12 +287,15 @@ Recently completed:
   CLI and MCP install helpers now distinguish Trial, Local One-click,
   Production, and Developer profiles, prefer release-binary plans for
   non-developer installs, and keep source-build fallback explicit.
+- [#86 Document Trial, Local One-click, and Production install profiles](https://github.com/blackfaced/MemoryNexus/issues/86):
+  README, CLI, MCP, and agent self-install docs now present Trial, Local
+  One-click, Production, and Developer Profile as separate paths, clarify Docker
+  requirements, and keep source build as Developer-only.
 
 Recommended sequence:
 
-1. [#86 Document Trial, Local One-click, and Production install profiles](https://github.com/blackfaced/MemoryNexus/issues/86):
-   separate Trial, Local One-click, Production, and Developer Profile install
-   paths.
+No remaining documentation issue is required before the follow-up packaging
+work below.
 
 Parallel / follow-up work:
 

@@ -56,7 +56,9 @@ Work in phases and stop cleanly at blockers.
    Rust API for Local One-click.
 6. **Token ready**: reuse or create `MEMORYNEXUS_TOKEN`.
 7. **Agent connected**: write the MCP config and reload the client.
-8. **MCP smoke**: run `initialize` and `tools/list`.
+8. **MCP smoke**: run `initialize` and `tools/list`; the `tools/list` response
+   must include MemoryNexus tools such as `create_space`, `add_memory`,
+   `get_profile`, `get_install_status`, and `upgrade_install`.
 9. **End-to-end smoke**: write, profile, route, and search through MCP.
 10. **STEM learning smoke**: create a practice session, record an attempt,
    record feedback, list sessions, and retrieve the session.
@@ -465,7 +467,13 @@ CLI:
 }
 ```
 
-## Start Local Services
+## Start Local One-click Services
+
+This section applies to Local One-click Profile. Trial Profile skips it because
+the API, PostgreSQL, and Qdrant already exist elsewhere. Production Profile uses
+stable hosted or self-hosted services instead of per-user Docker-managed
+dependencies. Developer Profile may use the same local Docker services for
+contributor testing.
 
 Start PostgreSQL and Qdrant:
 
@@ -476,21 +484,27 @@ docker compose up -d postgres qdrant
 If Docker image pulling fails, do not keep retrying blindly. Go to
 [Docker Pull Or Proxy Issues](#docker-pull-or-proxy-issues).
 
-Start the Rust API in a long-running terminal:
+Start the API from the release binary in a long-running terminal:
 
 ```bash
 export QDRANT_URL=http://localhost:6333
 export QDRANT_COLLECTION=memorynexus_agent_local
 export MEMORYNEXUS_EMBEDDING_PROVIDER=local
 
-cargo run --bin memorynexus
+./memorynexus-<tag>-<target>/memorynexus
 ```
+
+For Developer Profile only, the equivalent source-build command is
+`cargo run --bin memorynexus`.
 
 In another terminal, verify the API:
 
 ```bash
-cargo run --quiet --bin memorynexus-cli -- health
+./memorynexus-<tag>-<target>/memorynexus-cli health
 ```
+
+For Developer Profile only, use
+`cargo run --quiet --bin memorynexus-cli -- health`.
 
 ## Create Or Reuse Auth Token
 
@@ -508,6 +522,19 @@ AUTH_JSON=$(cargo run --quiet --bin memorynexus-cli -- auth register \
 
 export MEMORYNEXUS_TOKEN=$(printf '%s' "$AUTH_JSON" | jq -r '.data.token')
 ```
+
+For Local One-click Profile, use the release CLI instead of Cargo:
+
+```bash
+AUTH_JSON=$(./memorynexus-<tag>-<target>/memorynexus-cli auth register \
+  --email "agent-local@example.com" \
+  --name AgentLocal \
+  --password secret123)
+
+export MEMORYNEXUS_TOKEN=$(printf '%s' "$AUTH_JSON" | jq -r '.data.token')
+```
+
+The `cargo run` form is Developer Profile only.
 
 Do not print the token.
 
