@@ -383,12 +383,12 @@ fn local_one_click_plan(options: InstallPlanOptions) -> Value {
                 "reason": "verify release archive checksum before installing binaries",
             },
             {
-                "command": format!("tar -xzf {archive} && install -m 0755 memorynexus-{}-{target}/memorynexus memorynexus-{}-{target}/memorynexus-cli memorynexus-{}-{target}/memorynexus-mcp {bin_dir}/", options.release_tag, options.release_tag, options.release_tag),
-                "reason": "install the prebuilt binaries into the local bin directory",
+                "command": format!("tar -xzf {archive} && memorynexus-{}-{target}/install.sh --prefix {} --print-mcp-config", options.release_tag, bin_dir.trim_end_matches("/bin")),
+                "reason": "install the prebuilt binaries and print a target agent MCP config snippet",
             },
             {
-                "command": "docker compose up -d postgres qdrant",
-                "reason": "start or verify local PostgreSQL and Qdrant services",
+                "command": format!("memorynexus-{}-{target}/install.sh --start-services", options.release_tag),
+                "reason": "check Docker availability, then start or verify local PostgreSQL and Qdrant services with the bundled runtime compose file",
             },
             {
                 "command": format!("MEMORYNEXUS_API_URL={} memorynexus-cli health # checks /api/v1/health", options.api_url),
@@ -405,6 +405,7 @@ fn local_one_click_plan(options: InstallPlanOptions) -> Value {
         ],
         "notes": [
             "Local One-click Profile must use release binaries instead of installing a Rust toolchain.",
+            "The archive includes bin/memorynexus, bin/memorynexus-cli, bin/memorynexus-mcp, docker-compose.runtime.yml, .env.runtime.example, install.sh, README.local-one-click.md, SHA256SUMS, and MANIFEST.json.",
             "Source build fallback is only for unsupported release targets or an explicit Developer Profile choice.",
         ],
     })
