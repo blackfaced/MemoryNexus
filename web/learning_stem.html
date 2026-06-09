@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MemoryNexus STEM Practice</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --ink: #202423;
+      --muted: #5f6863;
+      --line: #d6ddd5;
+      --panel: #fffef9;
+      --field: #ffffff;
+      --accent: #176b5c;
+      --accent-strong: #0f4a42;
+      --warn: #9b4a20;
+      --soft: #e8f0ec;
+      --shadow: 0 18px 44px rgba(30, 44, 38, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; border: 1px solid transparent; }
+    button:disabled { cursor: wait; opacity: 0.6; }
+
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 26px 0 46px;
+    }
+
+    .topbar, .actions, .inline, .session-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .topbar {
+      justify-content: space-between;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand strong { display: block; font-size: 18px; letter-spacing: 0; }
+    .brand span, .status, .muted, .meta { color: var(--muted); font-size: 13px; }
+    .status { min-height: 20px; text-align: right; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.52fr);
+      gap: 22px;
+      margin-top: 24px;
+      align-items: start;
+    }
+
+    .panel, .session-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel { padding: 22px; }
+    .panel h1, .panel h2, .section-title { margin: 0; letter-spacing: 0; }
+    .panel h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.05; max-width: 760px; }
+    .panel h2, .section-title { font-size: 18px; }
+    .prompt { color: var(--muted); margin: 12px 0 18px; max-width: 720px; }
+
+    .auth-grid, .practice-grid, .feedback-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .auth-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .practice-grid { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); }
+    .feedback-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .field, .select, .textarea {
+      width: 100%;
+      color: var(--ink);
+      background: var(--field);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .field, .select { min-height: 42px; padding: 0 12px; }
+    .textarea { min-height: 118px; padding: 12px; resize: vertical; }
+    .textarea.tall { min-height: 150px; }
+
+    .field:focus, .select:focus, .textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(23, 107, 92, 0.14);
+    }
+
+    label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+
+    .btn {
+      min-height: 42px;
+      border-radius: 6px;
+      padding: 0 14px;
+      background: #edf0e8;
+      border-color: #d2d9cf;
+      color: var(--ink);
+    }
+
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: var(--accent-strong); }
+    .btn.ghost { background: transparent; border-color: var(--line); }
+
+    .notice, .empty, .error {
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--soft);
+      color: var(--muted);
+    }
+
+    .error {
+      background: #fff1e9;
+      color: var(--warn);
+      border: 1px solid #efc1a8;
+    }
+
+    .hidden { display: none !important; }
+    .stack { display: grid; gap: 14px; }
+    .section { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .session-list { display: grid; gap: 12px; margin-top: 14px; }
+    .session-card { padding: 14px; }
+    .session-head { justify-content: space-between; align-items: flex-start; }
+    .pill {
+      display: inline-flex;
+      min-height: 26px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 10px;
+      background: var(--soft);
+      color: var(--accent-strong);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .summary { margin: 8px 0 0; color: var(--muted); }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+    @media (max-width: 820px) {
+      .shell { width: min(100% - 24px, 720px); padding-top: 18px; }
+      .topbar, .layout, .auth-grid, .practice-grid, .feedback-grid { display: grid; grid-template-columns: 1fr; }
+      .status { text-align: left; }
+      .panel { padding: 16px; }
+      .panel h1 { font-size: 34px; }
+      .actions .btn, .inline .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>MemoryNexus</strong>
+        <span>STEM practice feedback for parent and learner</span>
+      </div>
+      <div id="sessionStatus" class="status" aria-live="polite">Loading session...</div>
+    </header>
+
+    <section id="authPanel" class="panel section">
+      <h1>STEM practice</h1>
+      <p class="prompt">Sign in to keep practice, answer, mistake pattern, feedback, next exercise, and weekly learning review in one family learning space.</p>
+      <div class="auth-grid">
+        <label>Email <input id="emailInput" class="field" type="email" autocomplete="email" placeholder="parent@example.com"></label>
+        <label>Name <input id="usernameInput" class="field" type="text" autocomplete="name" placeholder="Parent"></label>
+        <label>Password <input id="passwordInput" class="field" type="password" autocomplete="current-password" placeholder="At least 8 characters"></label>
+      </div>
+      <div id="authError" class="error hidden" role="alert"></div>
+      <div class="actions">
+        <button id="registerButton" class="btn primary" type="button">Register</button>
+        <button id="loginButton" class="btn" type="button">Log in</button>
+      </div>
+    </section>
+
+    <section id="appPanel" class="layout hidden">
+      <div class="stack">
+        <article class="panel">
+          <h1>STEM practice</h1>
+          <p class="prompt">Use this first slice for elementary fraction word problems, while keeping the flow broad enough for any STEM practice task.</p>
+          <div id="spaceError" class="error hidden" role="alert"></div>
+          <div id="activeSpaceNotice" class="notice">Please choose a Space first.</div>
+
+          <div class="section stack">
+            <h2>Create practice session</h2>
+            <div class="practice-grid">
+              <label>Practice goal
+                <input id="goalInput" class="field" type="text" value="Improve fraction word problems">
+              </label>
+              <label>Practice exercise
+                <textarea id="exerciseInput" class="textarea">Maya has 3/4 cup of trail mix and shares half with her brother. How much trail mix does her brother get?</textarea>
+              </label>
+            </div>
+            <div id="practiceError" class="error hidden" role="alert"></div>
+            <div class="actions">
+              <button id="createSessionButton" class="btn primary" type="button">Create session</button>
+            </div>
+          </div>
+
+          <div id="attemptPanel" class="section stack hidden">
+            <h2>Record answer</h2>
+            <label>Learner answer
+              <textarea id="answerInput" class="textarea" placeholder="3/8 cup&#10;&#10;Reasoning: Half of 3/4 means multiply by 1/2."></textarea>
+            </label>
+            <div id="attemptError" class="error hidden" role="alert"></div>
+            <div class="actions">
+              <button id="recordAnswerButton" class="btn primary" type="button">Record answer</button>
+            </div>
+          </div>
+
+          <div id="feedbackPanel" class="section stack hidden">
+            <h2>Feedback and next exercise</h2>
+            <div class="feedback-grid">
+              <label>Mistake pattern
+                <textarea id="mistakeInput" class="textarea" placeholder="No mistake this round; learner kept the fraction operation clear."></textarea>
+              </label>
+              <label>Feedback
+                <textarea id="feedbackInput" class="textarea" placeholder="Correct. Keep writing the operation before simplifying so the unit stays attached."></textarea>
+              </label>
+              <label>Practice adjustment
+                <textarea id="adjustmentInput" class="textarea" placeholder="Add one sentence explaining why half means multiply by 1/2."></textarea>
+              </label>
+              <label>Next exercise
+                <textarea id="nextExerciseInput" class="textarea" placeholder="A pitcher has 2/3 liter of juice. If Sam drinks half of it, how much juice does Sam drink?"></textarea>
+              </label>
+            </div>
+            <div id="feedbackError" class="error hidden" role="alert"></div>
+            <div class="actions">
+              <button id="recordFeedbackButton" class="btn primary" type="button">Record feedback</button>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <aside class="panel">
+        <div class="stack">
+          <h2>Learning space</h2>
+          <label>Active Space
+            <select id="spaceSelect" class="select"></select>
+          </label>
+          <div class="inline">
+            <button id="createSpaceButton" class="btn ghost" type="button">Create family Space</button>
+            <button id="refreshButton" class="btn ghost" type="button">Refresh</button>
+            <button id="logoutButton" class="btn ghost" type="button">Log out</button>
+          </div>
+          <div id="namespaceStatus" class="notice">Loading learning.stem...</div>
+        </div>
+
+        <div class="section">
+          <div class="session-head">
+            <h2>Recent practice sessions</h2>
+            <span class="pill">weekly learning review ready</span>
+          </div>
+          <div id="recentSessions" class="session-list">
+            <div class="empty">Loading recent practice sessions...</div>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      token: localStorage.getItem("memorynexus_token") || "",
+      activeSpaceId: localStorage.getItem("memorynexus_active_space_id") || "",
+      user: null,
+      spaces: [],
+      space: null,
+      namespace: null,
+      currentSession: null
+    };
+
+    const namespaceName = "learning.stem";
+    const $ = (id) => document.getElementById(id);
+
+    function setStatus(message) {
+      $("sessionStatus").textContent = message;
+    }
+
+    function setButtonBusy(button, busy, label) {
+      if (!button.dataset.idleLabel) button.dataset.idleLabel = button.textContent;
+      button.disabled = busy;
+      button.textContent = busy ? label : button.dataset.idleLabel;
+    }
+
+    function showError(id, message) {
+      const node = $(id);
+      node.textContent = message;
+      node.classList.remove("hidden");
+    }
+
+    function clearError(id) {
+      const node = $(id);
+      node.textContent = "";
+      node.classList.add("hidden");
+    }
+
+    async function api(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set("Content-Type", "application/json");
+      if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
+      const response = await fetch(path, { ...options, headers });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        if (response.status === 401 && !path.startsWith("/api/v1/auth/")) {
+          handleAuthExpired();
+          throw new Error("API error: session expired. Please log in again.");
+        }
+        throw new Error(payload.error?.message || payload.message || `API error: ${response.status}`);
+      }
+      return payload.data;
+    }
+
+    async function authenticate(mode) {
+      clearError("authError");
+      const email = $("emailInput").value.trim();
+      const username = $("usernameInput").value.trim() || email.split("@")[0] || "Parent";
+      const password = $("passwordInput").value;
+      if (!email) return showError("authError", "Please enter an email.");
+      if (!password) return showError("authError", "Please enter a password.");
+
+      const path = mode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login";
+      const body = mode === "register" ? { email, username, password } : { email, password };
+      setButtonBusy(mode === "register" ? $("registerButton") : $("loginButton"), true, mode === "register" ? "Creating..." : "Logging in...");
+      setStatus(mode === "register" ? "Creating account..." : "Logging in...");
+      try {
+        const data = await api(path, { method: "POST", body: JSON.stringify(body) });
+        state.token = data.token;
+        state.user = data.user;
+        localStorage.setItem("memorynexus_token", state.token);
+        await bootApp();
+      } catch (error) {
+        showError("authError", error.message || "API error");
+        setStatus("API error");
+      } finally {
+        setButtonBusy(mode === "register" ? $("registerButton") : $("loginButton"), false);
+      }
+    }
+
+    function handleAuthExpired() {
+      state.token = "";
+      state.user = null;
+      state.space = null;
+      state.namespace = null;
+      localStorage.removeItem("memorynexus_token");
+      $("authPanel").classList.remove("hidden");
+      $("appPanel").classList.add("hidden");
+    }
+
+    async function bootApp() {
+      if (!state.token) {
+        $("authPanel").classList.remove("hidden");
+        $("appPanel").classList.add("hidden");
+        setStatus("Please log in.");
+        return;
+      }
+      $("authPanel").classList.add("hidden");
+      $("appPanel").classList.remove("hidden");
+      setStatus("Loading...");
+      try {
+        state.user = state.user || await api("/api/v1/auth/me");
+        await loadSpaces();
+        setStatus("Ready");
+      } catch (error) {
+        showError("spaceError", error.message || "API error");
+        setStatus("API error");
+      }
+    }
+
+    async function loadSpaces() {
+      clearError("spaceError");
+      const data = await api("/api/v1/spaces");
+      state.spaces = data.items || [];
+      if (!state.spaces.length) {
+        $("spaceSelect").innerHTML = "";
+        $("activeSpaceNotice").textContent = "Please create a Space first.";
+        $("recentSessions").innerHTML = `<div class="empty">No practice sessions yet.</div>`;
+        return;
+      }
+      $("spaceSelect").innerHTML = state.spaces
+        .map((space) => `<option value="${escapeHtml(space.id)}">${escapeHtml(space.name)}</option>`)
+        .join("");
+      const preferred = state.spaces.find((space) => space.id === state.activeSpaceId) || state.spaces[0];
+      await setActiveSpace(preferred.id);
+    }
+
+    async function createFamilySpace() {
+      setButtonBusy($("createSpaceButton"), true, "Creating...");
+      try {
+        const space = await api("/api/v1/spaces", {
+          method: "POST",
+          body: JSON.stringify({
+            name: "Family STEM Practice",
+            description: "Parent-assisted STEM practice feedback",
+            space_type: "family"
+          })
+        });
+        state.activeSpaceId = space.id;
+        localStorage.setItem("memorynexus_active_space_id", space.id);
+        await loadSpaces();
+      } catch (error) {
+        showError("spaceError", error.message || "API error");
+      } finally {
+        setButtonBusy($("createSpaceButton"), false);
+      }
+    }
+
+    async function setActiveSpace(spaceId) {
+      resetLearningStemWorkspace();
+      const space = state.spaces.find((item) => item.id === spaceId);
+      if (!space) {
+        showError("spaceError", "Please choose a Space first.");
+        return;
+      }
+      state.space = space;
+      state.activeSpaceId = space.id;
+      localStorage.setItem("memorynexus_active_space_id", space.id);
+      $("spaceSelect").value = space.id;
+      $("activeSpaceNotice").textContent = `Loading learning.stem for ${space.name}...`;
+      await ensureLearningStemNamespace(space);
+      $("activeSpaceNotice").textContent = `Practice is saved in ${space.name}.`;
+      await loadRecentSessions();
+    }
+
+    function resetLearningStemWorkspace() {
+      state.namespace = null;
+      state.currentSession = null;
+      $("attemptPanel").classList.add("hidden");
+      $("feedbackPanel").classList.add("hidden");
+      $("namespaceStatus").textContent = "Loading learning.stem...";
+      $("recentSessions").innerHTML = `<div class="empty">Loading recent practice sessions...</div>`;
+      clearError("practiceError");
+      clearError("attemptError");
+      clearError("feedbackError");
+    }
+
+    async function switchActiveSpace(spaceId) {
+      clearError("spaceError");
+      try {
+        await setActiveSpace(spaceId);
+        setStatus("Ready");
+      } catch (error) {
+        state.namespace = null;
+        state.currentSession = null;
+        showError("spaceError", error.message || "API error");
+        $("namespaceStatus").textContent = `API error: ${error.message || "Could not load learning.stem."}`;
+        $("recentSessions").innerHTML = `<div class="error">API error: ${escapeHtml(error.message || "Could not load practice sessions.")}</div>`;
+        setStatus("API error");
+      }
+    }
+
+    async function ensureLearningStemNamespace(space) {
+      $("namespaceStatus").textContent = "Loading learning.stem...";
+      const list = await api(`/api/v1/namespaces?space_id=${encodeURIComponent(space.id)}`);
+      let namespace = (list.items || []).find((item) => item.name === namespaceName);
+      if (!namespace) {
+        namespace = await api("/api/v1/namespaces", {
+          method: "POST",
+          body: JSON.stringify({
+            space_id: space.id,
+            name: namespaceName,
+            kind: "skill",
+            description: "Parent-assisted STEM practice feedback"
+          })
+        });
+      }
+      if (namespace.space_id !== space.id) {
+        throw new Error("learning.stem does not belong to the selected Space.");
+      }
+      state.namespace = namespace;
+      $("namespaceStatus").textContent = `Using ${namespaceName} for this Space.`;
+    }
+
+    function requireReady() {
+      if (!state.space) {
+        showError("spaceError", "Please choose a Space first.");
+        return false;
+      }
+      if (!state.namespace) {
+        showError("spaceError", "learning.stem is still loading.");
+        return false;
+      }
+      if (state.namespace.space_id !== state.space.id) {
+        showError("spaceError", "learning.stem does not match the selected Space. Please reselect the Space.");
+        return false;
+      }
+      return true;
+    }
+
+    async function createSession() {
+      clearError("practiceError");
+      if (!requireReady()) return;
+      const practiceGoal = $("goalInput").value.trim();
+      const exercise = $("exerciseInput").value.trim();
+      if (!practiceGoal) return showError("practiceError", "Practice goal is required.");
+      if (!exercise) return showError("practiceError", "Practice exercise is required.");
+
+      setButtonBusy($("createSessionButton"), true, "Creating...");
+      try {
+        const session = await api(`/api/v1/namespaces/${encodeURIComponent(state.namespace.id)}/practice-sessions`, {
+          method: "POST",
+          body: JSON.stringify({
+            practice_goal: practiceGoal,
+            exercise,
+            capture_memory: true
+          })
+        });
+        state.currentSession = session;
+        $("attemptPanel").classList.remove("hidden");
+        $("feedbackPanel").classList.remove("hidden");
+        setStatus("Practice session created.");
+        await loadRecentSessions();
+      } catch (error) {
+        showError("practiceError", error.message || "API error");
+      } finally {
+        setButtonBusy($("createSessionButton"), false);
+      }
+    }
+
+    async function recordAnswer() {
+      clearError("attemptError");
+      if (!state.currentSession) return showError("attemptError", "Create a practice session first.");
+      const answer = $("answerInput").value.trim();
+      if (!answer) return showError("attemptError", "Learner answer is required.");
+
+      setButtonBusy($("recordAnswerButton"), true, "Recording...");
+      try {
+        state.currentSession = await api(`/api/v1/namespaces/${encodeURIComponent(state.namespace.id)}/practice-sessions/${encodeURIComponent(state.currentSession.id)}/attempt`, {
+          method: "PATCH",
+          body: JSON.stringify({ answer, capture_memory: true })
+        });
+        setStatus("Answer recorded.");
+        await loadRecentSessions();
+      } catch (error) {
+        showError("attemptError", error.message || "API error");
+      } finally {
+        setButtonBusy($("recordAnswerButton"), false);
+      }
+    }
+
+    async function recordFeedback() {
+      clearError("feedbackError");
+      if (!state.currentSession) return showError("feedbackError", "Create a practice session first.");
+      const mistakePattern = $("mistakeInput").value.trim();
+      const feedback = $("feedbackInput").value.trim();
+      const practiceAdjustment = $("adjustmentInput").value.trim();
+      const nextExercise = $("nextExerciseInput").value.trim();
+      if (!mistakePattern && !feedback && !practiceAdjustment && !nextExercise) {
+        return showError("feedbackError", "Add a mistake pattern, feedback, adjustment, or next exercise.");
+      }
+
+      setButtonBusy($("recordFeedbackButton"), true, "Recording...");
+      try {
+        state.currentSession = await api(`/api/v1/namespaces/${encodeURIComponent(state.namespace.id)}/practice-sessions/${encodeURIComponent(state.currentSession.id)}/feedback`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            mistake_pattern: mistakePattern,
+            feedback,
+            practice_adjustment: practiceAdjustment,
+            next_exercise: nextExercise,
+            status: "completed",
+            capture_memory: true
+          })
+        });
+        setStatus("Feedback recorded.");
+        await loadRecentSessions();
+      } catch (error) {
+        showError("feedbackError", error.message || "API error");
+      } finally {
+        setButtonBusy($("recordFeedbackButton"), false);
+      }
+    }
+
+    async function loadRecentSessions() {
+      if (!state.namespace) return;
+      $("recentSessions").innerHTML = `<div class="empty">Loading recent practice sessions...</div>`;
+      try {
+        const data = await api(`/api/v1/namespaces/${encodeURIComponent(state.namespace.id)}/practice-sessions?limit=8`);
+        const items = data.items || [];
+        if (!items.length) {
+          $("recentSessions").innerHTML = `<div class="empty">No practice sessions yet.</div>`;
+          return;
+        }
+        $("recentSessions").innerHTML = items.map(renderSession).join("");
+      } catch (error) {
+        $("recentSessions").innerHTML = `<div class="error">API error: ${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderSession(session) {
+      return `
+        <article class="session-card">
+          <div class="session-head">
+            <div>
+              <strong>${escapeHtml(session.practice_goal || "STEM practice")}</strong>
+              <p class="summary">${escapeHtml(session.exercise || "")}</p>
+            </div>
+            <span class="pill">${escapeHtml(session.status || "active")}</span>
+          </div>
+          ${session.answer ? `<p class="summary"><strong>answer:</strong> ${escapeHtml(session.answer)}</p>` : ""}
+          ${session.mistake_pattern ? `<p class="summary"><strong>mistake pattern:</strong> ${escapeHtml(session.mistake_pattern)}</p>` : ""}
+          ${session.feedback ? `<p class="summary"><strong>feedback:</strong> ${escapeHtml(session.feedback)}</p>` : ""}
+          ${session.practice_adjustment ? `<p class="summary"><strong>practice adjustment:</strong> ${escapeHtml(session.practice_adjustment)}</p>` : ""}
+          ${session.next_exercise ? `<p class="summary"><strong>next exercise:</strong> ${escapeHtml(session.next_exercise)}</p>` : ""}
+          <div class="meta">
+            <span>${escapeHtml(formatDate(session.updated_at || session.created_at))}</span>
+          </div>
+        </article>
+      `;
+    }
+
+    function logout() {
+      localStorage.removeItem("memorynexus_token");
+      state.token = "";
+      state.user = null;
+      state.space = null;
+      state.namespace = null;
+      bootApp();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "recently";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    }
+
+    $("registerButton").addEventListener("click", () => authenticate("register"));
+    $("loginButton").addEventListener("click", () => authenticate("login"));
+    $("spaceSelect").addEventListener("change", (event) => switchActiveSpace(event.target.value));
+    $("createSpaceButton").addEventListener("click", createFamilySpace);
+    $("refreshButton").addEventListener("click", () => loadRecentSessions());
+    $("logoutButton").addEventListener("click", logout);
+    $("createSessionButton").addEventListener("click", createSession);
+    $("recordAnswerButton").addEventListener("click", recordAnswer);
+    $("recordFeedbackButton").addEventListener("click", recordFeedback);
+
+    bootApp();
+  </script>
+</body>
+</html>
