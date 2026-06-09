@@ -74,6 +74,8 @@ jobs:
           cp "target/${TARGET}/release/memorynexus" "$package_dir/"
           cp "target/${TARGET}/release/memorynexus-cli" "$package_dir/"
           cp "target/${TARGET}/release/memorynexus-mcp" "$package_dir/"
+          cp docker-compose.runtime.yml "$package_dir/"
+          cp .env.runtime.example "$package_dir/"
           chmod 0755 "$package_dir/memorynexus" "$package_dir/memorynexus-cli" "$package_dir/memorynexus-mcp"
 
           if command -v sha256sum >/dev/null 2>&1; then
@@ -92,6 +94,8 @@ jobs:
           - memorynexus-mcp
           - SHA256SUMS
           - PROFILE_SUPPORT.txt
+          - docker-compose.runtime.yml
+          - .env.runtime.example
           EOF
 
           cat > "$package_dir/PROFILE_SUPPORT.txt" <<EOF
@@ -102,7 +106,8 @@ jobs:
 
           Local One-click Profile:
           - Uses memorynexus, memorynexus-cli, and memorynexus-mcp together.
-          - PostgreSQL and Qdrant remain external services, commonly through Docker.
+          - Starts local PostgreSQL and Qdrant through docker-compose.runtime.yml and .env.runtime.example.
+          - The API still runs as the release memorynexus binary on the host.
 
           Production Profile:
           - May use memorynexus, memorynexus-cli, and memorynexus-mcp as service artifacts.
@@ -160,10 +165,12 @@ jobs:
           - memorynexus-mcp
           - SHA256SUMS
           - PROFILE_SUPPORT.txt
+          - docker-compose.runtime.yml
+          - .env.runtime.example
 
           Artifact profile support:
           - Trial Profile can use memorynexus-mcp when the API is already available.
-          - Local One-click Profile can use all three binaries with external PostgreSQL and Qdrant.
+          - Local One-click Profile can use all three binaries with bundled runtime compose files for local PostgreSQL and Qdrant.
           - Production Profile may use the same binaries as service artifacts.
           - Developer Profile source-build workflow remains unchanged.
 
