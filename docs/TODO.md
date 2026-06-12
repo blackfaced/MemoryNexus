@@ -313,13 +313,16 @@ Recently completed:
   hosted Production Profile docs define managed PostgreSQL, Qdrant Cloud,
   required environment variables, operational checks, and `QDRANT_API_KEY`
   support without replacing the Rust API or local Docker paths.
+- [#66 Validate Supabase Postgres compatibility](https://github.com/blackfaced/MemoryNexus/issues/66):
+  Supabase is documented as a managed PostgreSQL target through `DATABASE_URL`,
+  with direct/session pooler recommendations, SSL requirements, migration
+  validation steps, and a Rust API smoke checklist.
 
 Open work:
 
-1. Validate Supabase Postgres compatibility first: [#66](https://github.com/blackfaced/MemoryNexus/issues/66).
-2. Keep Rust + Axum as the only main backend.
-3. Keep `CognitiveSpace` membership and permissions in MemoryNexus.
-4. Treat Supabase Auth, Storage, and Realtime as optional later adapters.
+1. Keep Rust + Axum as the only main backend.
+2. Keep `CognitiveSpace` membership and permissions in MemoryNexus.
+3. Treat Supabase Auth, Storage, and Realtime as optional later adapters.
 
 ## Issue Hygiene
 
