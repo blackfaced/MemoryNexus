@@ -215,6 +215,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Development](docs/development.md)
 - [Deployment](docs/deployment.md)
 - [Production Profile](docs/production-profile.md)
+- [Supabase Postgres Compatibility](docs/supabase-postgres.md)
 - [Roadmap](docs/TODO.md)
 - [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues)
 - [Cognitive Manifesto](docs/cognitive-manifesto.md)
