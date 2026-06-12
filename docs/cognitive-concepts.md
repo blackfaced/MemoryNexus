@@ -4,13 +4,14 @@
 
 ## 总览
 
-这些概念可以分成五层：
+这些概念可以分成六层：
 
 1. **认知原材料**：Memory
 2. **认知生命周期结构**：MemoryAtom、CognitiveScene、CognitiveProjection
 3. **认知加工结果**：Reflection、Concept、Belief、Relation、Contradiction
 4. **长期反馈结构**：Namespace、FeedbackLoop
-5. **系统运行结构**：ObserveMode、Trace、CognitiveSpace、Lens、CognitiveEvent、CognitiveState
+5. **运行证据结构**：ObserveMode、Trace
+6. **离线演化结构**：SleepCycle、ConsolidationResult、DreamCandidate
 
 `CognitiveProfile` 是 `CognitiveState` 的对外投影视图，用于 LLM、MCP 和 UI
 消费。它不是新的所有权边界。
@@ -65,6 +66,29 @@ FeedbackLoop
 → Next FeedbackLoop
 ```
 
+Wake / Sleep / Dreaming 链路是：
+
+```text
+Wake:
+Interaction / Practice / MCP Tool Call
+→ fast response
+→ Trace
+
+Sleep:
+Trace / Memory / FeedbackLoop
+→ ConsolidationResult
+→ CognitiveScene / GrowthModel / Pattern
+
+Dreaming:
+ConsolidationResult
+→ DreamCandidate
+→ next practice / review question / scenario / plan
+
+Next Wake:
+new Trace
+→ evaluate whether the candidate helped
+```
+
 一句话概括：
 
 ```text
@@ -83,6 +107,9 @@ Namespace 是领域，
 FeedbackLoop 是练习 / 反馈闭环，
 ObserveMode 是读取深度，
 Trace 是交互和运行时证据，
+SleepCycle 是离线整合周期，
+ConsolidationResult 是睡眠后的稳定化输出，
+DreamCandidate 是候选下一步，
 CognitiveEvent 是变化，
 CognitiveState 是变化后的整体状态。
 ```
@@ -305,6 +332,107 @@ ObserveMode 回答的问题是：
 
 ```text
 这次读取应该像直觉一样快，还是像复盘一样深？
+```
+
+## Trace
+
+Trace 是一次交互或执行的运行证据。
+
+它记录：
+
+- 输入 / 输出摘要。
+- source type 和 task type。
+- ObserveMode。
+- runtime: deterministic、local、cloud、hybrid 或 unknown。
+- latency、token usage、estimated cost 和 local processing ratio。
+- 相关 Memory、LensRun、ReviewReport、FeedbackLoop 等对象 ID。
+- 后续用户反馈或错误状态。
+
+Trace 不是普通用户笔记，也不是新的 ownership boundary。它的权限仍然由
+`CognitiveSpace` 控制。
+
+Trace 回答的问题是：
+
+```text
+这次系统执行发生了什么，花了多少成本，生成了哪些对象，后来证明有没有用？
+```
+
+## SleepCycle
+
+SleepCycle 是一次离线 consolidation 周期。
+
+它把一段时间内的 Trace、Memory、FeedbackLoop、ReviewReport 等证据拿出来整理，
+而不是在用户每次输入时同步运行完整 cognitive pipeline。
+
+常见周期：
+
+- daily
+- weekly
+- manual
+
+SleepCycle 适合做：
+
+- 去噪和聚类。
+- 检测重复错因、主题、趋势和证据不足。
+- 更新 CognitiveScene / GrowthModel。
+- 生成 ConsolidationResult。
+- 为 DreamCandidate generation 提供输入。
+
+SleepCycle 回答的问题是：
+
+```text
+过去这段时间的证据应该如何被离线整理成更稳定的结构？
+```
+
+## ConsolidationResult
+
+ConsolidationResult 是 SleepCycle 的稳定化输出。
+
+它不是用户原始输入，而是对一段时间窗口的概括和抽象。它可以包含：
+
+- new concepts
+- detected patterns
+- detected contradictions
+- improvement signals
+- updated growth model summary
+- next actions
+
+在 `learning.stem` 中，它可能表达：
+
+```text
+最近三次分数应用题里，学习者反复把总量和部分量混淆。
+正确率有改善，但读题定位仍不稳定。
+下一轮应减少新知识点，增加一步式关系识别练习。
+```
+
+ConsolidationResult 回答的问题是：
+
+```text
+这些 Trace 和练习记录被整理之后，稳定出现了什么模式和下一步重点？
+```
+
+## DreamCandidate
+
+DreamCandidate 是基于 ConsolidationResult 生成的候选下一步。
+
+它可以是：
+
+- 下一轮练习题。
+- 复盘问题。
+- 场景模拟。
+- contradiction exploration prompt。
+- planning prompt。
+
+它叫 Candidate，是因为它需要被选择、执行和评估。它不是最终证明有效的计划。
+
+第一版 DreamCandidate 应优先 deterministic / local-first，尤其在 Trial Profile 和
+Local One-click Profile 中不要默认调用云模型。Production Profile 可以在 explicit
+deep / manual sleep cycle 中使用云模型，但必须写入 Trace。
+
+DreamCandidate 回答的问题是：
+
+```text
+基于最近的模式，下一轮最值得尝试的练习、问题或计划是什么？
 ```
 
 ## Memory Salience / Automatic Forgetting

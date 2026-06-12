@@ -20,6 +20,11 @@
   runtime metrics、生成对象和用户反馈，用于 local-first / trace-driven feedback
   learning；但不要把项目改成完整 local agent runtime、model catalog 或 inference
   engine。
+- Sleep-based Memory Consolidation 见 ADR-017：MemoryNexus 采用 Wake / Sleep /
+  Dreaming 架构。前台 Wake 路径保持低延迟并生成 Trace；后台 Sleep 路径离线整合
+  Trace / Memory / FeedbackLoop；Dreaming 生成候选练习、复盘问题、场景模拟或下一步
+  计划。不要把这条路线实现成模型参数训练、RL self-modification、local inference
+  runtime，或每次输入都同步运行完整 cognitive pipeline。
 - Supabase 接入边界见 ADR-015：Supabase 首先是托管 PostgreSQL 兼容目标，不是新的
   backend 主线。Auth / Storage / Realtime 只能作为后续 adapter 单独推进。
 - EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
@@ -36,6 +41,8 @@
 - Namespace / FeedbackLoop 长期模型见 `decisions/ADR-014-namespace-feedback-loop.md`。
 - Local-first Trace Learning Runtime 见
   `decisions/ADR-016-local-first-trace-learning-runtime.md`。
+- Sleep-based Memory Consolidation 见
+  `decisions/ADR-017-sleep-based-memory-consolidation.md`。
 
 ## 开发规则
 
@@ -95,6 +102,24 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 
 ## Issue / 子 Agent 工作流
 
+- Agent 分工默认分三类：
+  - **Planning / Architecture agent**：只负责路线图、ADR、issue 拆分、验收标准和架构边界；
+    不直接实现产品代码，除非 issue 明确是 docs / design。
+  - **Coordinator agent**：负责确认依赖顺序、创建 worktree / branch、编写子 agent
+    handoff prompt、review PR、合并、关闭 issue、清理 worktree / 分支；默认不直接承接
+    issue 实现。
+  - **Worker agent**：只在独立 issue worktree 中干活，拥有该 issue 的实现责任和文件
+    ownership；完成后提交、push、开 PR，并报告 changed files、验证命令和已知缺口。
+- `main` / 主仓工作区只用于协调、review、文档规划和轻量状态检查；不要在主仓直接做
+  feature implementation。每个实现 issue 必须使用独立 worktree 和同名分支，例如
+  `issue-66-supabase-postgres-compat`。
+- 每个 worktree 都要有自己的 issue identity / "soul"：明确 issue 编号、目标、相关
+  ADR、文件 ownership、非目标、验证命令和最终交付格式。子 agent 不能假设其它未合入
+  worktree 的改动存在。
+- Worker agent 必须知道自己不是独占整个仓库：不要回退他人改动；遇到跨 issue 依赖、
+  文件 ownership 冲突、需要修改主线架构或验收不清时，停止并报告给 Coordinator。
+- Coordinator review 时只信证据：看 diff、测试、CI、issue 验收和 ADR/AGENTS 边界；
+  不把 worker 的完成声明当作验收结果。
 - 子 Agent 开工前必须阅读本文件、相关 issue、`README.md`、`docs/TODO.md` 和相关
   ADR。
 - 子 Agent 通用 handoff 模板见 `docs/subagent-issue-workflow.md`。
@@ -113,6 +138,10 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - Trace / runtime metrics issue 默认先做 contract、最小 schema 或 lightweight capture。
   不要实现 OpenJarvis 式完整本地 agent runtime、模型微调、model catalog 或 inference
   backend。
+- Sleep Engine / Dreaming issue 默认先读 ADR-017，并按 Trace -> SleepCycle ->
+  ConsolidationResult -> DreamCandidate -> effectiveness evaluation 的顺序推进。第一版
+  Dreaming 必须优先支持 deterministic / local-first 路径；不要默认接云模型，不要添加
+  scheduler，不要把 Sleep 或 Dreaming 作为普通用户主入口术语。
 
 ## P0 优先级
 
