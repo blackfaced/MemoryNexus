@@ -13,6 +13,10 @@ the agent client; it calls the same Rust API and is not a second backend.
 For hosted deployments that should not require local Docker-managed
 dependencies, use the [Production Profile](production-profile.md).
 
+For Supabase managed PostgreSQL, use the normal `DATABASE_URL` path described in
+[Supabase Postgres Compatibility](supabase-postgres.md). Supabase is a managed
+PostgreSQL target for the Rust API, not a replacement backend.
+
 ## Environment
 
 ```bash
@@ -31,6 +35,11 @@ For local or staging smoke tests, set:
 ```bash
 MEMORYNEXUS_EMBEDDING_PROVIDER=local
 ```
+
+Managed database connections should use SSL. For Supabase, prefer the direct
+connection string or shared pooler session mode for the long-running Rust API.
+Use transaction pooling only after SQLx prepared statement compatibility has
+been explicitly validated.
 
 ## Docker Build
 
