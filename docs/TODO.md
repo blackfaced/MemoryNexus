@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-08
+> Last updated: 2026-06-12
 > Source of truth for executable tasks: GitHub Issues.
 
 This file is now a roadmap summary. Do not maintain detailed task status in
@@ -45,6 +45,10 @@ The current baseline is the Rust-first Cognitive Lens MVP foundation:
   candidate, represented by `learning.stem`.
 - ADR-015 records Supabase as a deployment compatibility path: first as managed
   PostgreSQL, with Auth / Storage / Realtime only as later adapters.
+- ADR-016 introduces Trace as local-first runtime and feedback evidence.
+- ADR-017 introduces Wake / Sleep / Dreaming as the delayed consolidation model:
+  Wake captures Trace, Sleep consolidates offline, and Dreaming generates
+  candidate next practices or review prompts.
 
 ## Phase 2: Cognitive Lens MVP
 
@@ -175,6 +179,14 @@ Direction:
 - EverMemOS is a useful reference for memory lifecycle ideas, but MemoryNexus
   keeps a different product boundary: user-owned cognitive perspective and
   feedback loops, not agent memory for reasoning.
+- Trace is the evidence layer for local-first runtime metrics, generated object
+  links, and feedback effectiveness.
+- Sleep Engine is the offline evolution layer. It should consolidate Trace /
+  Memory / FeedbackLoop evidence after interaction, not during every foreground
+  request.
+- Dreaming produces `DreamCandidate` records: candidate practice, review,
+  scenario, contradiction exploration, or planning prompts. The first
+  implementation path should be deterministic and local-first.
 
 Lifecycle:
 
@@ -194,6 +206,15 @@ Runtime policy:
 Every input -> fast response + optional async processing
 Important input -> focused projection
 Scheduled review / explicit request -> deep consolidation and projection
+```
+
+Wake / Sleep / Dreaming policy:
+
+```text
+Wake -> low-latency response + Trace
+Sleep -> offline consolidation into stable patterns / growth signals
+Dreaming -> candidate next practice / review prompt / scenario
+Next Wake -> new Trace evaluates whether the candidate helped
 ```
 
 Recently completed:
@@ -230,16 +251,27 @@ Recently completed:
   weekly learning review reports summarize practiced topics, recurring mistake
   patterns, improvement signals, and next practice with FeedbackLoop and Memory
   provenance.
+- [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
+  the Rust-served static UI slice supports parent-assisted STEM practice flow.
 
 Current open work:
 
-Learning MVP track:
+Trace learning runtime track:
 
 Recommended sequence:
 
-1. [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
-   build the Rust-served static UI after the API, MCP, demo, and review report
-   contracts are clear.
+1. [#94 Local-first Trace Learning Runtime implementation track](https://github.com/blackfaced/MemoryNexus/issues/94):
+   umbrella for ADR-016 Trace implementation.
+2. [#99 Define Trace schema and repository foundation](https://github.com/blackfaced/MemoryNexus/issues/99):
+   persist the minimal Trace evidence layer.
+3. [#100 Capture lightweight Trace for Lens Run and MCP tool calls](https://github.com/blackfaced/MemoryNexus/issues/100):
+   capture first runtime/provenance surfaces.
+4. [#97 Add ObserveMode runtime metrics and local-first execution fields](https://github.com/blackfaced/MemoryNexus/issues/97):
+   expose mode/runtime/cost/latency fields.
+5. [#95 Define local/cloud routing policy for ObserveMode](https://github.com/blackfaced/MemoryNexus/issues/95):
+   document deterministic/local/cloud policy before runtime routing expands.
+6. [#101 Use Trace to evaluate STEM feedback effectiveness](https://github.com/blackfaced/MemoryNexus/issues/101):
+   connect feedback to later attempts and weekly review signals.
 
 Foundation / lifecycle support track:
 
@@ -250,7 +282,26 @@ Foundation / lifecycle support track:
 - [#62 Define Lens-based CognitiveProjection contract](https://github.com/blackfaced/MemoryNexus/issues/62)
 - [#63 Prototype CognitiveScene consolidation](https://github.com/blackfaced/MemoryNexus/issues/63)
 
-Candidate follow-up work after the STEM learning slice:
+Sleep Engine / Dreaming track:
+
+Recommended sequence:
+
+1. [#116 Sleep Engine and offline memory consolidation track](https://github.com/blackfaced/MemoryNexus/issues/116):
+   umbrella for ADR-017 implementation.
+2. [#119 Define SleepCycle, ConsolidationResult, and DreamCandidate contract](https://github.com/blackfaced/MemoryNexus/issues/119):
+   define contracts before schema or API work.
+3. [#117 Prototype deterministic daily sleep consolidation over Trace fixtures](https://github.com/blackfaced/MemoryNexus/issues/117):
+   prove local-first consolidation over learning.stem evidence.
+4. [#123 Generate deterministic DreamCandidates for learning.stem](https://github.com/blackfaced/MemoryNexus/issues/123):
+   generate candidate next fraction practice and review prompts.
+5. [#120 Add manual SleepCycle API, CLI, and MCP trigger](https://github.com/blackfaced/MemoryNexus/issues/120):
+   expose explicit/manual execution before scheduler automation.
+6. [#124 Define Dreaming runtime routing for deterministic, local, and cloud execution](https://github.com/blackfaced/MemoryNexus/issues/124):
+   define Trial / Local One-click / Production policy before provider work.
+7. [#125 Evaluate DreamCandidate effectiveness and prune low-value plans](https://github.com/blackfaced/MemoryNexus/issues/125):
+   close the loop with future Trace and FeedbackLoop evidence.
+
+Candidate follow-up work:
 
 - Add end-to-end acceptance tests for Space -> Namespace -> FeedbackLoop ->
   Memory -> Lens Run -> Review Report/Profile.
@@ -260,6 +311,8 @@ Candidate follow-up work after the STEM learning slice:
   the full deep cognitive pipeline.
 - Keep product entry points narrow; do not expose every possible namespace in
   the first UI.
+- Add automated daily / weekly Sleep scheduler only after manual SleepCycle and
+  deterministic DreamCandidate generation are validated.
 
 ## Distribution and Agent Install
 
