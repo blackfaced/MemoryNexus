@@ -110,6 +110,14 @@ cargo clippy --all-targets --all-features -- -D clippy::all
     issue 实现。
   - **Worker agent**：只在独立 issue worktree 中干活，拥有该 issue 的实现责任和文件
     ownership；完成后提交、push、开 PR，并报告 changed files、验证命令和已知缺口。
+- Planning / Architecture agent 和 Coordinator agent 是两个不同角色：
+  - Planner 负责问题定义、长期方向、概念边界、issue 拆分和验收标准。
+  - Coordinator 负责执行调度、worktree / branch、worker prompt、PR review、CI 检查、
+    合入顺序和清理。
+  - Coordinator 可以质疑 Planner 产出的 issue 是否可执行或是否违反 ADR/AGENTS 边界，
+    但不要在没有用户要求时主动扩写长期架构。
+  - Planner 不合 PR、不清理 worktree、不承担实现验收；Coordinator 不默认承接
+    feature implementation。
 - `main` / 主仓工作区只用于协调、review、文档规划和轻量状态检查；不要在主仓直接做
   feature implementation。每个实现 issue 必须使用独立 worktree 和同名分支，例如
   `issue-66-supabase-postgres-compat`。
