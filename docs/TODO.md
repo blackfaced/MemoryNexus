@@ -289,7 +289,8 @@ Recommended sequence:
 1. [#116 Sleep Engine and offline memory consolidation track](https://github.com/blackfaced/MemoryNexus/issues/116):
    umbrella for ADR-017 implementation.
 2. [#119 Define SleepCycle, ConsolidationResult, and DreamCandidate contract](https://github.com/blackfaced/MemoryNexus/issues/119):
-   define contracts before schema or API work.
+   define contracts before schema or API work. The shared contract lives in
+   [Sleep Cycle Contract](sleep-cycle-contract.md).
 3. [#117 Prototype deterministic daily sleep consolidation over Trace fixtures](https://github.com/blackfaced/MemoryNexus/issues/117):
    prove local-first consolidation over learning.stem evidence.
 4. [#123 Generate deterministic DreamCandidates for learning.stem](https://github.com/blackfaced/MemoryNexus/issues/123):

@@ -146,10 +146,12 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - Trace / runtime metrics issue 默认先做 contract、最小 schema 或 lightweight capture。
   不要实现 OpenJarvis 式完整本地 agent runtime、模型微调、model catalog 或 inference
   backend。
-- Sleep Engine / Dreaming issue 默认先读 ADR-017，并按 Trace -> SleepCycle ->
-  ConsolidationResult -> DreamCandidate -> effectiveness evaluation 的顺序推进。第一版
-  Dreaming 必须优先支持 deterministic / local-first 路径；不要默认接云模型，不要添加
-  scheduler，不要把 Sleep 或 Dreaming 作为普通用户主入口术语。
+- Sleep Engine / Dreaming issue 默认先读 ADR-017 和 `docs/sleep-cycle-contract.md`，
+  并按 Trace -> SleepCycle -> ConsolidationResult -> DreamCandidate ->
+  effectiveness evaluation 的顺序推进。实现 schema / API / CLI / MCP 前必须先对齐
+  该 contract，不要让各 worker 自行发明字段。第一版 Dreaming 必须优先支持
+  deterministic / local-first 路径；不要默认接云模型，不要添加 scheduler，不要把
+  Sleep 或 Dreaming 作为普通用户主入口术语。
 
 ## P0 优先级
 

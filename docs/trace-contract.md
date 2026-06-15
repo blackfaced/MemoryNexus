@@ -184,6 +184,11 @@ All linked objects must belong to the same `CognitiveSpace`. If a Trace has
 `namespace_id`, linked namespace-scoped objects must either share that namespace
 or explicitly record why they are cross-namespace evidence.
 
+Sleep / Dreaming field-level relationships are defined in
+[Sleep Cycle Contract](sleep-cycle-contract.md). Implementations should align
+SleepCycle, ConsolidationResult, and DreamCandidate links with that contract
+before adding schema or API surfaces.
+
 ## Lifecycle
 
 Minimum lifecycle:
@@ -270,6 +275,8 @@ Recommended order:
    - `mode = deep`
    - `runtime = deterministic`, `local`, `cloud`, or `hybrid`
    - link generated DreamCandidate IDs when that contract is implemented
+   - follow [Sleep Cycle Contract](sleep-cycle-contract.md) for
+     DreamCandidate source and evaluation relationships
 
 ## Metrics
 
