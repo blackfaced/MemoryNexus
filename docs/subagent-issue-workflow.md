@@ -58,8 +58,8 @@ Stop and ask for clarification or add an issue-context comment if:
 - It changes ownership, permission, or persistence boundaries.
 - It mixes multiple product domains, such as learning, piano, chess, drawing,
   and personal review in one task.
-- It is unclear whether the work belongs in Phase 4 Thought Review demo or the
-  Phase 5 `learning.stem` product MVP.
+- It is unclear whether the work belongs in Phase 4 Thought Review demo, the
+  prior `learning.stem` slice, or the new Dictation Coach upstream product.
 
 ## Current Project Defaults
 
@@ -68,9 +68,12 @@ Stop and ask for clarification or add an issue-context comment if:
   model.
 - Thought Review is the reflective namespace demo and project presentation entry
   point.
-- STEM Learning Feedback is the first product MVP candidate. Use
-  `learning.stem` as the product namespace, with parent-assisted elementary
-  fraction word problems as the first validation task.
+- STEM Learning Feedback is a prior learning slice. The new first upstream
+  product direction is Dictation Coach, with namespaces such as
+  `child.chinese.dictation` and `child.english.spelling`.
+- Surface Gateway work must distinguish Surfaces from Adapters. Capture,
+  Performance, Reflection, Planning, and Observation are Surfaces; Chat Agent,
+  MCP, CLI, Web, Mobile, and Dashboard are Adapters.
 - Phase 4 UI work should continue from `web/thought_review.html`.
 - Phase 5 work should start with design and minimal model/API plans before
   schema or UI expansion.

@@ -3,9 +3,15 @@
 > Scope: issue #59. This is a narrow product PRD, not an implementation of the
 > Rust APIs or UI.
 
+> Status update: this PRD is now a prior learning slice. It validated
+> Namespace + FeedbackLoop + practice session + weekly review concepts. The
+> next first upstream product direction is Dictation Coach, documented in
+> [ADR-020](../decisions/ADR-020-dictation-coach-first-upstream-product.md) and
+> the refreshed [Roadmap](TODO.md).
+
 ## Positioning
 
-STEM Learning Feedback is the first product MVP candidate for MemoryNexus.
+STEM Learning Feedback was an early product MVP candidate for MemoryNexus.
 Thought Review remains the reflective demo and presentation entry point;
 `learning.stem` tests whether the same Space-owned memory foundation can become
 a concrete long-term feedback engine for skill practice.

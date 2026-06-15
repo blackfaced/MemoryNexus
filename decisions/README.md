@@ -23,7 +23,10 @@ decisions/
 ├── ADR-014-namespace-feedback-loop.md ✅ Namespace 与 Feedback Loop 模型
 ├── ADR-015-supabase-integration.md ✅ Supabase 集成边界
 ├── ADR-016-local-first-trace-learning-runtime.md ✅ Local-first Trace Learning Runtime
-└── ADR-017-sleep-based-memory-consolidation.md ✅ Sleep-based Memory Consolidation
+├── ADR-017-sleep-based-memory-consolidation.md ✅ Sleep-based Memory Consolidation
+├── ADR-018-long-term-feedback-engine.md ✅ Long-term Feedback Engine 定位
+├── ADR-019-surfaces-adapters-engine.md ✅ Surfaces / Adapters / Engine 分层
+└── ADR-020-dictation-coach-first-upstream-product.md ✅ Dictation Coach 首个上游产品
 ```
 
 ## 📖 ADR 是什么？
@@ -39,7 +42,7 @@ ADR（Architecture Decision Record）是记录重要架构决策的文档，包�
 
 ## 🔗 相关资源
 
-- [架构设计文档](../docs/architecture.md)
+- [架构设计文档](../docs/architecture/README.md)
 - [Cognitive Lens 路线图](../docs/cognitive-lens-roadmap.md)
 
 ## 📝 如何贡献新决策

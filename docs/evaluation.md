@@ -1,5 +1,10 @@
 # Lens Evaluation
 
+> Status update: Lens evaluation remains useful for regression coverage, but the
+> next evaluation direction is GrowthBench / DictationBench. MemoryNexus should
+> evaluate feedback usefulness and growth signals, not only retrieval or summary
+> quality.
+
 MemoryNexus includes a small deterministic evaluation harness for Lens quality.
 It is intentionally local-first: it does not require PostgreSQL, Qdrant, network
 access, or provider API keys.
@@ -76,3 +81,28 @@ This is not yet a real benchmark suite:
 
 The goal is to make Lens quality regressions visible early while the cognitive
 domain model is still changing quickly.
+
+## Next Direction: GrowthBench / DictationBench
+
+The new long-term feedback roadmap needs a benchmark that asks:
+
+```text
+Did the system detect repeated patterns, generate a useful next practice, and
+observe whether the next attempt improved?
+```
+
+Initial DictationBench should evaluate:
+
+- recurring Chinese dictation error detection;
+- recurring English spelling / sentence dictation error detection;
+- next-practice generation aligned with the detected pattern;
+- multi-day improvement signals;
+- insufficient-evidence handling;
+- latency;
+- estimated cost;
+- local processing ratio;
+- useful feedback rate.
+
+Default evaluation must stay deterministic and local-first. Provider-backed
+cases can be optional later, but the baseline should not require external API
+credentials.

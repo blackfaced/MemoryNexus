@@ -4,6 +4,13 @@ The Rust API is the main backend path. Memory ownership is scoped by
 `CognitiveSpace`; users and agents operate inside spaces instead of owning
 memory directly.
 
+Status update: this document describes the current object-level REST API.
+New upstream apps and agents should move toward the Surface Gateway model in
+[Surface Gateway](architecture/surface-gateway.md): adapters call Capture,
+Performance, Reflection, Planning, and Observation surfaces instead of directly
+manipulating Engine internals. Existing routes remain compatibility paths while
+the gateway is introduced.
+
 ## Conventions
 
 - Base URL: `http://localhost:8080`

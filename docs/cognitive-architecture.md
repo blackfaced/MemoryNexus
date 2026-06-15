@@ -2,6 +2,14 @@
 
 > The engineering shape for turning the Cognitive Manifesto into Rust code.
 
+> Status update: this remains the theoretical functional-core reference for
+> cognitive objects. The current product architecture is now the long-term
+> feedback engine described in [Architecture](architecture/README.md),
+> [MemoryNexus Engine](architecture/memorynexus-engine.md), and
+> [Surfaces and Adapters](architecture/surfaces-and-adapters.md). New work should
+> route external apps and agents through Surface Gateway rather than directly
+> exposing Engine internals.
+
 ## Goal
 
 MemoryNexus should evolve toward a Rust-first cognitive architecture where the core model is not CRUD over notes, but state evolution over a Cognitive Space.

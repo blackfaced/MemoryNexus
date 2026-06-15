@@ -4,8 +4,8 @@ This guide is written for another local coding agent. Give this file to Claw,
 Hermes, or a similar agent when you want it to install and connect
 MemoryNexus by itself.
 
-MemoryNexus is a Rust-first cognitive lens memory system. The agent is only a
-client. Memory belongs to `CognitiveSpace`, not to the agent.
+MemoryNexus is a Rust-first long-term feedback engine. The agent is only a
+client/adapter. Memory belongs to `CognitiveSpace`, not to the agent.
 
 ## Task For The Agent
 

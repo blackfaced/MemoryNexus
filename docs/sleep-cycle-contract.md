@@ -3,6 +3,8 @@
 `SleepCycle`, `ConsolidationResult`, and `DreamCandidate` define the first
 internal contract for Sleep-based Memory Consolidation from
 [ADR-017](../decisions/ADR-017-sleep-based-memory-consolidation.md).
+`PracticePlan` is the product-facing plan that may be selected from one or more
+DreamCandidates once a Surface or Adapter needs to show the next action.
 
 This is a docs-only contract. It is not a database migration, API schema, job
 scheduler, model runtime, or product UI specification.
@@ -16,7 +18,7 @@ scheduler, model runtime, or product UI specification.
   boundary.
 - Define the minimum fields needed to connect Sleep outputs to `Trace`,
   `Memory`, `FeedbackLoop`, `CognitiveScene`, `GrowthModel`, `ReviewReport`,
-  and later effectiveness evaluation.
+  `PracticePlan`, and later effectiveness evaluation.
 - Keep the first implementation path deterministic and local-first.
 
 ## Non-Goals

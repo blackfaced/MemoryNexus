@@ -4,6 +4,11 @@ This guide targets local personal agents such as Claw or Hermes. The goal is to
 let an agent use MemoryNexus as a personal cognitive substrate without making
 the agent own memory.
 
+> Status update: current MCP tools expose existing object-level capabilities.
+> The new architecture introduces Surface Gateway, where agents are Adapters
+> calling Capture, Performance, Reflection, Planning, and Observation Surfaces.
+> Until that gateway exists, this guide remains the compatibility path.
+
 If you want another agent to install and connect MemoryNexus by itself, give it
 [Agent Self-Install Guide](agent-self-install.md). That file is written as an
 agent-executable task brief with install-or-upgrade detection, commands, MCP

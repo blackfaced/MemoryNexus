@@ -213,7 +213,7 @@ export MEMORYNEXUS_SPACE_ID=$(printf '%s' "$SPACE_JSON" | jq -r '.data.id')
 cargo run --bin memorynexus-cli -- memory add \
   --space "$MEMORYNEXUS_SPACE_ID" \
   --title "CLI smoke memory" \
-  --content "MemoryNexus is a Rust-first cognitive lens memory system. Memory belongs to Cognitive Space, and Lens interprets one memory universe through many minds." \
+  --content "MemoryNexus is a Rust-first long-term feedback engine. Memory belongs to Cognitive Space, and agents access it through adapters." \
   --tags "cli,smoke,lens"
 
 cargo run --bin memorynexus-cli -- memory add \
