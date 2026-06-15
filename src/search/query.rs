@@ -202,7 +202,7 @@ impl SearchEngine {
         let mut param_idx = 4;
 
         if let Some(namespace_id) = query.namespace_id {
-            sql.push_str(&format!(" AND m.namespace_id = ${}", param_idx));
+            push_namespace_filter(&mut sql, param_idx);
             params.push(namespace_id.to_string());
             param_idx += 1;
         }
@@ -430,6 +430,10 @@ impl SearchEngine {
     }
 }
 
+fn push_namespace_filter(sql: &mut String, param_idx: usize) {
+    sql.push_str(&format!(" AND m.namespace_id = ${param_idx}::uuid"));
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticSearchError {
     #[error("语义搜索需要非空查询")]
@@ -494,6 +498,15 @@ mod tests {
 
         assert_eq!(query.space_id, Some(space_id));
         assert_eq!(query.namespace_id, Some(namespace_id));
+    }
+
+    #[test]
+    fn namespace_keyword_filter_casts_dynamic_parameter_to_uuid() {
+        let mut sql = String::new();
+
+        push_namespace_filter(&mut sql, 4);
+
+        assert_eq!(sql, " AND m.namespace_id = $4::uuid");
     }
 
     #[test]

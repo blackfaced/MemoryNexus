@@ -78,10 +78,9 @@ async fn resolve_search_context(
                 ));
             }
         }
-        let namespace_id =
-            validate_search_namespace(state, user_id, lens.space_id, query.namespace_id)
-                .await?
-                .or(lens.namespace_id);
+        let requested_namespace_id =
+            validate_search_namespace(state, user_id, lens.space_id, query.namespace_id).await?;
+        let namespace_id = resolve_lens_namespace(lens.namespace_id, requested_namespace_id)?;
 
         return Ok(SearchContext {
             space_id: lens.space_id,
@@ -112,6 +111,23 @@ fn search_lens_provenance(lens: LensDb) -> SearchLensProvenance {
         strategy: lens.strategy,
         output_format: lens.output_format,
         retrieval_mode: lens.retrieval_mode,
+    }
+}
+
+fn resolve_lens_namespace(
+    lens_namespace_id: Option<Uuid>,
+    requested_namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    match (lens_namespace_id, requested_namespace_id) {
+        (Some(lens_namespace_id), Some(requested_namespace_id))
+            if lens_namespace_id != requested_namespace_id =>
+        {
+            Err(AppError::BadRequest(
+                "namespace_id must match the Lens namespace".to_string(),
+            ))
+        }
+        (Some(lens_namespace_id), _) => Ok(Some(lens_namespace_id)),
+        (None, requested_namespace_id) => Ok(requested_namespace_id),
     }
 }
 
@@ -236,6 +252,15 @@ mod tests {
     fn test_semantic_search_missing_query_maps_to_bad_request() {
         let error = map_semantic_search_error(SemanticSearchError::EmptyQuery);
         assert!(matches!(error, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn search_rejects_namespace_that_conflicts_with_lens_namespace() {
+        let error = resolve_lens_namespace(Some(Uuid::new_v4()), Some(Uuid::new_v4())).unwrap_err();
+
+        assert!(
+            matches!(error, AppError::BadRequest(message) if message.contains("Lens namespace"))
+        );
     }
 
     #[test]

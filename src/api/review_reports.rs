@@ -108,6 +108,23 @@ async fn validate_provenance(
     })
 }
 
+fn resolve_lens_namespace(
+    lens_namespace_id: Option<Uuid>,
+    requested_namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    match (lens_namespace_id, requested_namespace_id) {
+        (Some(lens_namespace_id), Some(requested_namespace_id))
+            if lens_namespace_id != requested_namespace_id =>
+        {
+            Err(AppError::BadRequest(
+                "namespace_id must match the Lens namespace".to_string(),
+            ))
+        }
+        (Some(lens_namespace_id), _) => Ok(Some(lens_namespace_id)),
+        (None, requested_namespace_id) => Ok(requested_namespace_id),
+    }
+}
+
 async fn validate_namespace(
     state: &AppState,
     user_id: Uuid,
@@ -163,7 +180,7 @@ pub async fn create(
         &state,
         auth_user.user_id,
         req.space_id,
-        req.namespace_id.or(lens.namespace_id),
+        resolve_lens_namespace(lens.namespace_id, req.namespace_id)?,
         req.feedback_loop_id,
     )
     .await?;
@@ -1036,6 +1053,15 @@ mod tests {
         assert_eq!(request.space_id, space_id);
         assert_eq!(request.namespace_id, Some(namespace_id));
         assert_eq!(request.feedback_loop_id, Some(feedback_loop_id));
+    }
+
+    #[test]
+    fn review_report_rejects_namespace_that_conflicts_with_lens_namespace() {
+        let error = resolve_lens_namespace(Some(Uuid::new_v4()), Some(Uuid::new_v4())).unwrap_err();
+
+        assert!(
+            matches!(error, AppError::BadRequest(message) if message.contains("Lens namespace"))
+        );
     }
 
     #[test]
