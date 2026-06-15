@@ -11,6 +11,7 @@ pub mod reminder;
 pub mod review_report;
 pub mod space;
 pub mod tag;
+pub mod trace;
 pub mod user;
 
 /// 初始化数据库连接池

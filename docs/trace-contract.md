@@ -200,6 +200,38 @@ start trace
 The first implementation may create only completed traces if that is simpler.
 Long-running background work can later use `started` and `completed` states.
 
+## Current Implementation Status
+
+Issue #99 implements the first persistent foundation in
+`migrations/014_traces.sql` and `src/db/trace.rs`.
+
+The current repository API is completed-only:
+
+```text
+create_completed(trace)
+get trace for user by id
+list traces for user by space
+```
+
+The table still reserves the full lifecycle status set from this contract
+(`started`, `completed`, `failed`, `cancelled`, `skipped`) so later capture work
+can add explicit start/fail/complete repository methods without a status-value
+migration. For now, `create_completed` always stores `status = completed` and
+requires `completed_at`.
+
+Differences from the full conceptual contract:
+
+- No production surface captures Trace yet. Lens Run, MCP, FeedbackLoop, review
+  report, Sleep, and Dreaming capture are follow-up issues.
+- The repository does not yet expose a mutable started/completed lifecycle.
+- Generated object links are stored as UUID arrays for the first known object
+  families, including future Sleep and Dreaming IDs, but cross-object same-Space
+  validation is not yet enforced by the repository because those capture paths
+  do not exist in this issue.
+- Input and output fields are summary-only by convention. Callers must pass
+  already redacted summaries; raw provider payload redaction is outside this
+  foundation issue.
+
 ## Privacy And Retention
 
 Trace may contain sensitive input/output summaries. Implementations must:
