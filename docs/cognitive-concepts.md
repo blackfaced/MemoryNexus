@@ -361,6 +361,9 @@ Trace 回答的问题是：
 
 SleepCycle 是一次离线 consolidation 周期。
 
+字段级 contract 见 [Sleep Cycle Contract](sleep-cycle-contract.md)。后续
+Sleep / Dreaming schema、API、CLI 或 MCP 实现必须先对齐该 contract。
+
 它把一段时间内的 Trace、Memory、FeedbackLoop、ReviewReport 等证据拿出来整理，
 而不是在用户每次输入时同步运行完整 cognitive pipeline。
 
@@ -388,6 +391,8 @@ SleepCycle 回答的问题是：
 
 ConsolidationResult 是 SleepCycle 的稳定化输出。
 
+字段级 contract 见 [Sleep Cycle Contract](sleep-cycle-contract.md)。
+
 它不是用户原始输入，而是对一段时间窗口的概括和抽象。它可以包含：
 
 - new concepts
@@ -414,6 +419,8 @@ ConsolidationResult 回答的问题是：
 ## DreamCandidate
 
 DreamCandidate 是基于 ConsolidationResult 生成的候选下一步。
+
+字段级 contract 见 [Sleep Cycle Contract](sleep-cycle-contract.md)。
 
 它可以是：
 
