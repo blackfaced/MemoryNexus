@@ -205,6 +205,8 @@ async fn insert_feedback_loop_memory_snapshot(
         INSERT INTO memories (
             user_id,
             space_id,
+            namespace_id,
+            feedback_loop_id,
             title,
             content,
             memory_type,
@@ -213,12 +215,14 @@ async fn insert_feedback_loop_memory_snapshot(
             source_type,
             source_metadata
         )
-        VALUES ($1, $2, $3, $4, 'text', NULL, false, 'feedback_loop_event', $5)
+        VALUES ($1, $2, $3, $4, $5, $6, 'text', NULL, false, 'feedback_loop_event', $7)
         RETURNING *
         "#,
     )
     .bind(snapshot.user_id)
     .bind(feedback_loop.space_id)
+    .bind(feedback_loop.namespace_id)
+    .bind(feedback_loop.id)
     .bind("Practice snapshot")
     .bind(&snapshot.content)
     .bind(serde_json::json!({

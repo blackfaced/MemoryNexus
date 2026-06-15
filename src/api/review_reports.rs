@@ -27,6 +27,8 @@ use crate::state::AppState;
 pub struct CreateReviewReportRequest {
     pub space_id: Uuid,
     pub lens_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub window_start: DateTime<Utc>,
     pub window_end: DateTime<Utc>,
     #[serde(default = "default_report_type")]
@@ -46,6 +48,7 @@ pub struct CreateLearningReviewRequest {
 pub struct ListReviewReportsQuery {
     pub space_id: Uuid,
     pub lens_id: Option<Uuid>,
+    pub namespace_id: Option<Uuid>,
     pub limit: Option<i64>,
 }
 
@@ -57,6 +60,93 @@ pub struct ReviewReportListResponse {
 
 fn default_report_type() -> String {
     "periodic_review".to_string()
+}
+
+struct ProvenanceScope {
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
+}
+
+async fn validate_provenance(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
+) -> Result<ProvenanceScope, AppError> {
+    let namespace_id = validate_namespace(state, user_id, space_id, namespace_id).await?;
+    let Some(feedback_loop_id) = feedback_loop_id else {
+        return Ok(ProvenanceScope {
+            namespace_id,
+            feedback_loop_id: None,
+        });
+    };
+
+    let feedback_loop = state
+        .repositories
+        .feedback_loops
+        .find_for_user(feedback_loop_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if feedback_loop.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "feedback_loop_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    if let Some(namespace_id) = namespace_id {
+        if feedback_loop.namespace_id != namespace_id {
+            return Err(AppError::BadRequest(
+                "feedback_loop_id must belong to namespace_id".to_string(),
+            ));
+        }
+    }
+
+    Ok(ProvenanceScope {
+        namespace_id: Some(feedback_loop.namespace_id),
+        feedback_loop_id: Some(feedback_loop_id),
+    })
+}
+
+fn resolve_lens_namespace(
+    lens_namespace_id: Option<Uuid>,
+    requested_namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    match (lens_namespace_id, requested_namespace_id) {
+        (Some(lens_namespace_id), Some(requested_namespace_id))
+            if lens_namespace_id != requested_namespace_id =>
+        {
+            Err(AppError::BadRequest(
+                "namespace_id must match the Lens namespace".to_string(),
+            ))
+        }
+        (Some(lens_namespace_id), _) => Ok(Some(lens_namespace_id)),
+        (None, requested_namespace_id) => Ok(requested_namespace_id),
+    }
+}
+
+async fn validate_namespace(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    let Some(namespace_id) = namespace_id else {
+        return Ok(None);
+    };
+    let namespace = state
+        .repositories
+        .namespaces
+        .find_for_user(namespace_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if namespace.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "namespace_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    Ok(Some(namespace_id))
 }
 
 /// POST /api/v1/review-reports - Generate and persist a derived review report.
@@ -86,6 +176,14 @@ pub async fn create(
             "lens_id must belong to the requested Cognitive Space".to_string(),
         ));
     }
+    let provenance = validate_provenance(
+        &state,
+        auth_user.user_id,
+        req.space_id,
+        resolve_lens_namespace(lens.namespace_id, req.namespace_id)?,
+        req.feedback_loop_id,
+    )
+    .await?;
 
     state
         .repositories
@@ -104,6 +202,7 @@ pub async fn create(
             req.window_start,
             req.window_end,
             limit,
+            provenance.namespace_id,
         )
         .await
         .map_err(AppError::Database)?;
@@ -118,6 +217,8 @@ pub async fn create(
         window_end: req.window_end,
         memories: &memories,
         summary: &summary,
+        namespace_id: provenance.namespace_id,
+        feedback_loop_id: provenance.feedback_loop_id,
     });
 
     let report = state
@@ -126,6 +227,8 @@ pub async fn create(
         .create(CreateCognitiveReviewReport {
             space_id: req.space_id,
             lens_id: req.lens_id,
+            namespace_id: provenance.namespace_id,
+            feedback_loop_id: provenance.feedback_loop_id,
             report_type,
             window_start: req.window_start,
             window_end: req.window_end,
@@ -245,6 +348,8 @@ pub async fn create_learning_review(
             space_id: namespace.space_id,
             lens_id: req.lens_id,
             report_type: "weekly_learning_review".to_string(),
+            namespace_id: Some(namespace.id),
+            feedback_loop_id: None,
             window_start: req.window_start,
             window_end: req.window_end,
             report: report_json,
@@ -307,6 +412,13 @@ pub async fn list(
             ));
         }
     }
+    let namespace_id = validate_namespace(
+        &state,
+        auth_user.user_id,
+        query.space_id,
+        query.namespace_id,
+    )
+    .await?;
 
     let reports = state
         .repositories
@@ -315,6 +427,7 @@ pub async fn list(
             ReviewReportListFilter {
                 space_id: query.space_id,
                 lens_id: query.lens_id,
+                namespace_id,
                 limit: query.limit.unwrap_or(20).clamp(1, 100),
             },
             auth_user.user_id,
@@ -599,6 +712,8 @@ fn deterministic_learning_review_summary(
 
 struct ReviewReportInput<'a> {
     lens: &'a LensDb,
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
     report_type: &'a str,
     window_start: DateTime<Utc>,
     window_end: DateTime<Utc>,
@@ -619,6 +734,11 @@ fn build_review_report_json(input: ReviewReportInput<'_>) -> Value {
             "strategy": input.lens.strategy,
             "output_format": input.lens.output_format,
             "retrieval_mode": input.lens.retrieval_mode,
+        },
+        "provenance": {
+            "space_id": input.lens.space_id,
+            "namespace_id": input.namespace_id,
+            "feedback_loop_id": input.feedback_loop_id,
         },
         "summary": input.summary.text,
         "memory_count": input.memories.len(),
@@ -915,10 +1035,41 @@ mod tests {
     }
 
     #[test]
+    fn create_review_report_request_accepts_namespace_and_feedback_loop_provenance() {
+        let space_id = Uuid::new_v4();
+        let lens_id = Uuid::new_v4();
+        let namespace_id = Uuid::new_v4();
+        let feedback_loop_id = Uuid::new_v4();
+        let request: CreateReviewReportRequest = serde_json::from_value(serde_json::json!({
+            "space_id": space_id,
+            "lens_id": lens_id,
+            "namespace_id": namespace_id,
+            "feedback_loop_id": feedback_loop_id,
+            "window_start": "2026-06-01T00:00:00Z",
+            "window_end": "2026-06-08T00:00:00Z"
+        }))
+        .unwrap();
+
+        assert_eq!(request.space_id, space_id);
+        assert_eq!(request.namespace_id, Some(namespace_id));
+        assert_eq!(request.feedback_loop_id, Some(feedback_loop_id));
+    }
+
+    #[test]
+    fn review_report_rejects_namespace_that_conflicts_with_lens_namespace() {
+        let error = resolve_lens_namespace(Some(Uuid::new_v4()), Some(Uuid::new_v4())).unwrap_err();
+
+        assert!(
+            matches!(error, AppError::BadRequest(message) if message.contains("Lens namespace"))
+        );
+    }
+
+    #[test]
     fn review_report_json_keeps_lens_window_and_provenance() {
         let lens = LensDb {
             id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
             name: "Weekly Review".to_string(),
             description: None,
             strategy: "personal_context".to_string(),
@@ -938,6 +1089,8 @@ mod tests {
 
         let report = build_review_report_json(ReviewReportInput {
             lens: &lens,
+            namespace_id: Some(Uuid::new_v4()),
+            feedback_loop_id: Some(Uuid::new_v4()),
             report_type: "weekly_review",
             window_start: Utc.with_ymd_and_hms(2026, 5, 18, 0, 0, 0).unwrap(),
             window_end: Utc.with_ymd_and_hms(2026, 5, 25, 0, 0, 0).unwrap(),
@@ -947,6 +1100,8 @@ mod tests {
 
         assert_eq!(report["report_type"], "weekly_review");
         assert_eq!(report["lens"]["id"], json!(lens.id));
+        assert!(report["provenance"]["namespace_id"].is_string());
+        assert!(report["provenance"]["feedback_loop_id"].is_string());
         assert_eq!(report["summary_provider"], "deterministic");
         assert_eq!(report["memory_count"], 0);
     }
@@ -956,6 +1111,7 @@ mod tests {
         let lens = LensDb {
             id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
             name: "最近的我".to_string(),
             description: None,
             strategy: "weekly_thought_review".to_string(),
@@ -975,6 +1131,8 @@ mod tests {
 
         let report = build_review_report_json(ReviewReportInput {
             lens: &lens,
+            namespace_id: None,
+            feedback_loop_id: None,
             report_type: "weekly_review",
             window_start: Utc.with_ymd_and_hms(2026, 5, 18, 0, 0, 0).unwrap(),
             window_end: Utc.with_ymd_and_hms(2026, 5, 25, 0, 0, 0).unwrap(),

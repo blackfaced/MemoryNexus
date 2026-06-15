@@ -9,6 +9,7 @@ use uuid::Uuid;
 pub struct LensDb {
     pub id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
     pub name: String,
     pub description: Option<String>,
     pub strategy: String,
@@ -22,6 +23,7 @@ pub struct LensDb {
 #[derive(Debug, Clone)]
 pub struct CreateLens {
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
     pub name: String,
     pub description: Option<String>,
     pub strategy: String,
@@ -33,7 +35,12 @@ pub struct CreateLens {
 #[async_trait::async_trait]
 pub trait LensRepository: Send + Sync {
     async fn create(&self, lens: CreateLens) -> Result<LensDb, Error>;
-    async fn list_for_space(&self, space_id: Uuid, user_id: Uuid) -> Result<Vec<LensDb>, Error>;
+    async fn list_for_space(
+        &self,
+        space_id: Uuid,
+        user_id: Uuid,
+        namespace_id: Option<Uuid>,
+    ) -> Result<Vec<LensDb>, Error>;
     async fn find_for_user(&self, lens_id: Uuid, user_id: Uuid) -> Result<Option<LensDb>, Error>;
 }
 
@@ -54,6 +61,7 @@ impl LensRepository for PostgresLensRepository {
             r#"
             INSERT INTO lenses (
                 space_id,
+                namespace_id,
                 name,
                 description,
                 strategy,
@@ -61,11 +69,12 @@ impl LensRepository for PostgresLensRepository {
                 retrieval_mode,
                 created_by
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
             "#,
         )
         .bind(lens.space_id)
+        .bind(lens.namespace_id)
         .bind(&lens.name)
         .bind(&lens.description)
         .bind(&lens.strategy)
@@ -76,18 +85,25 @@ impl LensRepository for PostgresLensRepository {
         .await
     }
 
-    async fn list_for_space(&self, space_id: Uuid, user_id: Uuid) -> Result<Vec<LensDb>, Error> {
+    async fn list_for_space(
+        &self,
+        space_id: Uuid,
+        user_id: Uuid,
+        namespace_id: Option<Uuid>,
+    ) -> Result<Vec<LensDb>, Error> {
         sqlx::query_as::<_, LensDb>(
             r#"
             SELECT l.*
             FROM lenses l
             INNER JOIN cognitive_space_members m ON m.space_id = l.space_id
             WHERE l.space_id = $1 AND m.user_id = $2
+              AND ($3::uuid IS NULL OR l.namespace_id = $3)
             ORDER BY l.created_at ASC
             "#,
         )
         .bind(space_id)
         .bind(user_id)
+        .bind(namespace_id)
         .fetch_all(&self.pool)
         .await
     }
@@ -118,6 +134,7 @@ mod tests {
         let created_by = Uuid::new_v4();
         let lens = CreateLens {
             space_id,
+            namespace_id: Some(Uuid::new_v4()),
             name: "Project Context".to_string(),
             description: Some("Interpret project memory".to_string()),
             strategy: "project_context".to_string(),
@@ -127,6 +144,7 @@ mod tests {
         };
 
         assert_eq!(lens.space_id, space_id);
+        assert!(lens.namespace_id.is_some());
         assert_eq!(lens.created_by, created_by);
         assert_eq!(lens.strategy, "project_context");
         assert_eq!(lens.output_format, "brief");

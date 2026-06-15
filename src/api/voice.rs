@@ -153,6 +153,8 @@ pub(crate) async fn create_voice_capture_memory(
         .create(CreateMemory {
             user_id,
             space_id: input.space_id,
+            namespace_id: None,
+            feedback_loop_id: None,
             title: input.title,
             content: transcription.text.trim().to_string(),
             memory_type: MemoryType::Audio,
@@ -370,6 +372,8 @@ mod tests {
                 id: Uuid::new_v4(),
                 user_id: memory.user_id,
                 space_id: memory.space_id,
+                namespace_id: memory.namespace_id,
+                feedback_loop_id: memory.feedback_loop_id,
                 title: memory.title,
                 content: memory.content,
                 memory_type: memory.memory_type.to_string(),
@@ -418,6 +422,7 @@ mod tests {
             _window_start: chrono::DateTime<Utc>,
             _window_end: chrono::DateTime<Utc>,
             _limit: i64,
+            _namespace_id: Option<Uuid>,
         ) -> Result<Vec<MemoryDb>, Error> {
             unimplemented!()
         }

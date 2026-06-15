@@ -40,6 +40,8 @@ pub struct MemoryDb {
     pub id: Uuid,
     pub user_id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     pub memory_type: String,
@@ -57,6 +59,8 @@ pub struct MemoryDb {
 pub struct CreateMemory {
     pub user_id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     pub memory_type: MemoryType,
@@ -100,6 +104,7 @@ impl std::fmt::Display for MemoryListSort {
 /// 记忆列表过滤参数。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MemoryListFilter {
+    pub namespace_id: Option<Uuid>,
     pub tag: Option<String>,
     pub memory_type: Option<MemoryType>,
     pub sort: MemoryListSort,
@@ -122,6 +127,7 @@ impl MemoryListFilter {
                 .tag
                 .map(|tag| tag.trim().to_string())
                 .filter(|tag| !tag.is_empty()),
+            namespace_id: self.namespace_id,
             memory_type: self.memory_type,
             sort: self.sort,
         }
@@ -155,6 +161,7 @@ pub trait MemoryRepository: Send + Sync {
         window_start: DateTime<Utc>,
         window_end: DateTime<Utc>,
         limit: i64,
+        namespace_id: Option<Uuid>,
     ) -> Result<Vec<MemoryDb>, sqlx::Error>;
     async fn list_feedback_loop_event_snapshots(
         &self,
@@ -219,6 +226,8 @@ impl MemoryRepository for PostgresMemoryRepository {
             INSERT INTO memories (
                 user_id,
                 space_id,
+                namespace_id,
+                feedback_loop_id,
                 title,
                 content,
                 memory_type,
@@ -227,12 +236,14 @@ impl MemoryRepository for PostgresMemoryRepository {
                 source_type,
                 source_metadata
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *
             "#,
         )
         .bind(memory.user_id)
         .bind(memory.space_id)
+        .bind(memory.namespace_id)
+        .bind(memory.feedback_loop_id)
         .bind(&memory.title)
         .bind(&memory.content)
         .bind(memory.memory_type.to_string())
@@ -330,6 +341,7 @@ impl MemoryRepository for PostgresMemoryRepository {
             .memory_type
             .map(|memory_type| memory_type.to_string());
         let tag = filter.tag;
+        let namespace_id = filter.namespace_id;
         let sort = filter.sort.to_string();
 
         sqlx::query_as::<_, MemoryDb>(
@@ -345,20 +357,21 @@ impl MemoryRepository for PostgresMemoryRepository {
                       AND cognitive_space_members.user_id = $1
                 )
               )
-              AND ($5::text IS NULL OR memory_type = $5)
+              AND ($5::uuid IS NULL OR namespace_id = $5)
+              AND ($6::text IS NULL OR memory_type = $6)
               AND (
-                $6::text IS NULL
+                $7::text IS NULL
                 OR EXISTS (
                     SELECT 1
                     FROM memory_tags
                     JOIN tags ON tags.id = memory_tags.tag_id
                     WHERE memory_tags.memory_id = memories.id
-                      AND tags.name = $6
+                      AND tags.name = $7
                 )
               )
             ORDER BY
-              CASE WHEN $7 = 'oldest' THEN created_at END ASC,
-              CASE WHEN $7 = 'newest' THEN created_at END DESC,
+              CASE WHEN $8 = 'oldest' THEN created_at END ASC,
+              CASE WHEN $8 = 'newest' THEN created_at END DESC,
               id ASC
             LIMIT $3 OFFSET $4
             "#,
@@ -367,6 +380,7 @@ impl MemoryRepository for PostgresMemoryRepository {
         .bind(space_id)
         .bind(limit)
         .bind(offset)
+        .bind(namespace_id)
         .bind(memory_type)
         .bind(tag)
         .bind(sort)
@@ -385,6 +399,7 @@ impl MemoryRepository for PostgresMemoryRepository {
             .memory_type
             .map(|memory_type| memory_type.to_string());
         let tag = filter.tag;
+        let namespace_id = filter.namespace_id;
 
         let result: (i64,) = sqlx::query_as(
             r#"
@@ -399,21 +414,23 @@ impl MemoryRepository for PostgresMemoryRepository {
                       AND cognitive_space_members.user_id = $1
                 )
               )
-              AND ($3::text IS NULL OR memory_type = $3)
+              AND ($3::uuid IS NULL OR namespace_id = $3)
+              AND ($4::text IS NULL OR memory_type = $4)
               AND (
-                $4::text IS NULL
+                $5::text IS NULL
                 OR EXISTS (
                     SELECT 1
                     FROM memory_tags
                     JOIN tags ON tags.id = memory_tags.tag_id
                     WHERE memory_tags.memory_id = memories.id
-                      AND tags.name = $4
+                      AND tags.name = $5
                 )
               )
             "#,
         )
         .bind(user_id)
         .bind(space_id)
+        .bind(namespace_id)
         .bind(memory_type)
         .bind(tag)
         .fetch_one(&self.pool)
@@ -428,6 +445,7 @@ impl MemoryRepository for PostgresMemoryRepository {
         window_start: DateTime<Utc>,
         window_end: DateTime<Utc>,
         limit: i64,
+        namespace_id: Option<Uuid>,
     ) -> Result<Vec<MemoryDb>, sqlx::Error> {
         sqlx::query_as::<_, MemoryDb>(
             r#"
@@ -435,6 +453,7 @@ impl MemoryRepository for PostgresMemoryRepository {
             WHERE space_id = $2
               AND created_at >= $3
               AND created_at < $4
+              AND ($6::uuid IS NULL OR namespace_id = $6)
               AND (
                 user_id = $1
                 OR is_shared = true
@@ -453,6 +472,7 @@ impl MemoryRepository for PostgresMemoryRepository {
         .bind(window_start)
         .bind(window_end)
         .bind(limit)
+        .bind(namespace_id)
         .fetch_all(&self.pool)
         .await
     }
@@ -466,12 +486,6 @@ impl MemoryRepository for PostgresMemoryRepository {
             return Ok(Vec::new());
         }
 
-        let feedback_loop_ids = filter
-            .feedback_loop_ids
-            .into_iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>();
-
         sqlx::query_as::<_, MemoryDb>(
             r#"
             SELECT * FROM memories
@@ -479,8 +493,8 @@ impl MemoryRepository for PostgresMemoryRepository {
               AND created_at >= $4
               AND created_at < $5
               AND source_type = 'feedback_loop_event'
-              AND source_metadata->>'namespace_id' = $3
-              AND source_metadata->>'feedback_loop_id' = ANY($6::text[])
+              AND namespace_id = $3
+              AND feedback_loop_id = ANY($6::uuid[])
               AND (
                 user_id = $1
                 OR is_shared = true
@@ -496,10 +510,10 @@ impl MemoryRepository for PostgresMemoryRepository {
         )
         .bind(user_id)
         .bind(filter.space_id)
-        .bind(filter.namespace_id.to_string())
+        .bind(filter.namespace_id)
         .bind(filter.window_start)
         .bind(filter.window_end)
-        .bind(feedback_loop_ids)
+        .bind(filter.feedback_loop_ids)
         .bind(filter.limit)
         .fetch_all(&self.pool)
         .await
@@ -587,9 +601,13 @@ mod tests {
 
     #[test]
     fn test_create_memory_validation() {
+        let namespace_id = Uuid::new_v4();
+        let feedback_loop_id = Uuid::new_v4();
         let memory = CreateMemory {
             user_id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: Some(namespace_id),
+            feedback_loop_id: Some(feedback_loop_id),
             title: Some("Test".to_string()),
             content: "Content".to_string(),
             memory_type: MemoryType::Text,
@@ -601,6 +619,23 @@ mod tests {
         };
 
         assert!(!memory.content.is_empty());
+        assert_eq!(memory.namespace_id, Some(namespace_id));
+        assert_eq!(memory.feedback_loop_id, Some(feedback_loop_id));
+    }
+
+    #[test]
+    fn memory_list_filter_carries_namespace_partition() {
+        let namespace_id = Uuid::new_v4();
+        let filter = MemoryListFilter {
+            namespace_id: Some(namespace_id),
+            tag: Some(" practice ".to_string()),
+            memory_type: Some(MemoryType::Text),
+            sort: MemoryListSort::Newest,
+        }
+        .normalized();
+
+        assert_eq!(filter.namespace_id, Some(namespace_id));
+        assert_eq!(filter.tag, Some("practice".to_string()));
     }
 
     #[test]

@@ -29,6 +29,7 @@ pub async fn search(
     let context = resolve_search_context(&state, auth_user.user_id, &query).await?;
     let mut effective_query = query.clone();
     effective_query.space_id = Some(context.space_id);
+    effective_query.namespace_id = context.namespace_id;
     if context.use_semantic {
         effective_query.semantic = true;
     }
@@ -51,6 +52,7 @@ pub async fn search(
 
 struct SearchContext {
     space_id: Uuid,
+    namespace_id: Option<Uuid>,
     use_semantic: bool,
     lens: Option<SearchLensProvenance>,
 }
@@ -76,18 +78,25 @@ async fn resolve_search_context(
                 ));
             }
         }
+        let requested_namespace_id =
+            validate_search_namespace(state, user_id, lens.space_id, query.namespace_id).await?;
+        let namespace_id = resolve_lens_namespace(lens.namespace_id, requested_namespace_id)?;
 
         return Ok(SearchContext {
             space_id: lens.space_id,
+            namespace_id,
             use_semantic: lens.retrieval_mode == "semantic",
             lens: Some(search_lens_provenance(lens)),
         });
     }
 
     let space = resolve_space(state, user_id, query.space_id).await?;
+    let namespace_id =
+        validate_search_namespace(state, user_id, space.id, query.namespace_id).await?;
 
     Ok(SearchContext {
         space_id: space.id,
+        namespace_id,
         use_semantic: query.semantic,
         lens: None,
     })
@@ -97,11 +106,53 @@ fn search_lens_provenance(lens: LensDb) -> SearchLensProvenance {
     SearchLensProvenance {
         id: lens.id,
         space_id: lens.space_id,
+        namespace_id: lens.namespace_id,
         name: lens.name,
         strategy: lens.strategy,
         output_format: lens.output_format,
         retrieval_mode: lens.retrieval_mode,
     }
+}
+
+fn resolve_lens_namespace(
+    lens_namespace_id: Option<Uuid>,
+    requested_namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    match (lens_namespace_id, requested_namespace_id) {
+        (Some(lens_namespace_id), Some(requested_namespace_id))
+            if lens_namespace_id != requested_namespace_id =>
+        {
+            Err(AppError::BadRequest(
+                "namespace_id must match the Lens namespace".to_string(),
+            ))
+        }
+        (Some(lens_namespace_id), _) => Ok(Some(lens_namespace_id)),
+        (None, requested_namespace_id) => Ok(requested_namespace_id),
+    }
+}
+
+async fn validate_search_namespace(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    let Some(namespace_id) = namespace_id else {
+        return Ok(None);
+    };
+    let namespace = state
+        .repositories
+        .namespaces
+        .find_for_user(namespace_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if namespace.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "namespace_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    Ok(Some(namespace_id))
 }
 
 async fn resolve_space(
@@ -204,10 +255,20 @@ mod tests {
     }
 
     #[test]
+    fn search_rejects_namespace_that_conflicts_with_lens_namespace() {
+        let error = resolve_lens_namespace(Some(Uuid::new_v4()), Some(Uuid::new_v4())).unwrap_err();
+
+        assert!(
+            matches!(error, AppError::BadRequest(message) if message.contains("Lens namespace"))
+        );
+    }
+
+    #[test]
     fn search_lens_provenance_keeps_strategy_and_space() {
         let lens = LensDb {
             id: uuid::Uuid::new_v4(),
             space_id: uuid::Uuid::new_v4(),
+            namespace_id: Some(uuid::Uuid::new_v4()),
             name: "Project Context".to_string(),
             description: None,
             strategy: "project_context".to_string(),
@@ -221,6 +282,7 @@ mod tests {
 
         assert_eq!(provenance.id, lens.id);
         assert_eq!(provenance.space_id, lens.space_id);
+        assert_eq!(provenance.namespace_id, lens.namespace_id);
         assert_eq!(provenance.strategy, "project_context");
         assert_eq!(provenance.retrieval_mode, "semantic");
     }
