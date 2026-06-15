@@ -20,6 +20,8 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 pub struct RunLensRequest {
     pub lens_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub query: String,
     pub limit: Option<i64>,
 }
@@ -28,6 +30,7 @@ pub struct RunLensRequest {
 pub struct ListLensRunsQuery {
     pub lens_id: Option<Uuid>,
     pub space_id: Option<Uuid>,
+    pub namespace_id: Option<Uuid>,
     pub limit: Option<i64>,
 }
 
@@ -55,6 +58,14 @@ pub async fn create(
         .await
         .map_err(AppError::Database)?
         .ok_or(AppError::Unauthorized)?;
+    let provenance = validate_provenance(
+        &state,
+        auth_user.user_id,
+        lens.space_id,
+        req.namespace_id.or(lens.namespace_id),
+        req.feedback_loop_id,
+    )
+    .await?;
 
     let limit = normalize_limit(req.limit);
     let engine = SearchEngine::with_semantic_dependencies(
@@ -64,6 +75,7 @@ pub async fn create(
     );
     let search_query = SearchQuery {
         space_id: Some(lens.space_id),
+        namespace_id: provenance.namespace_id,
         q: Some(query.to_string()),
         semantic: lens.retrieval_mode.eq_ignore_ascii_case("semantic"),
         limit,
@@ -108,6 +120,8 @@ pub async fn create(
         strategy: &lens.strategy,
         output_format: &lens.output_format,
         retrieval_mode: &lens.retrieval_mode,
+        namespace_id: provenance.namespace_id,
+        feedback_loop_id: provenance.feedback_loop_id,
         query,
         search_mode: &result.search_mode,
         memories: &result.items,
@@ -124,6 +138,8 @@ pub async fn create(
         .create_completed(CreateCompletedLensRun {
             lens_id: lens.id,
             space_id: lens.space_id,
+            namespace_id: provenance.namespace_id,
+            feedback_loop_id: provenance.feedback_loop_id,
             query: Some(query.to_string()),
             input_memory_ids: memory_ids,
             output,
@@ -183,6 +199,27 @@ pub async fn list(
             .map_err(AppError::Database)?
             .ok_or(AppError::Unauthorized)?;
     }
+    let namespace_id = if let Some(namespace_id) = query.namespace_id {
+        let space_id = if let Some(space_id) = query.space_id {
+            space_id
+        } else if let Some(lens_id) = query.lens_id {
+            state
+                .repositories
+                .lenses
+                .find_for_user(lens_id, auth_user.user_id)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or(AppError::Unauthorized)?
+                .space_id
+        } else {
+            return Err(AppError::BadRequest(
+                "space_id or lens_id is required with namespace_id".to_string(),
+            ));
+        };
+        validate_namespace(&state, auth_user.user_id, space_id, Some(namespace_id)).await?
+    } else {
+        None
+    };
 
     let runs = state
         .repositories
@@ -191,6 +228,7 @@ pub async fn list(
             LensRunListFilter {
                 lens_id: query.lens_id,
                 space_id: query.space_id,
+                namespace_id,
                 limit: normalize_limit(query.limit),
             },
             auth_user.user_id,
@@ -208,9 +246,81 @@ fn normalize_limit(limit: Option<i64>) -> i64 {
     limit.unwrap_or(5).clamp(1, 20)
 }
 
+struct ProvenanceScope {
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
+}
+
+async fn validate_provenance(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
+) -> Result<ProvenanceScope, AppError> {
+    let namespace_id = validate_namespace(state, user_id, space_id, namespace_id).await?;
+    let Some(feedback_loop_id) = feedback_loop_id else {
+        return Ok(ProvenanceScope {
+            namespace_id,
+            feedback_loop_id: None,
+        });
+    };
+
+    let feedback_loop = state
+        .repositories
+        .feedback_loops
+        .find_for_user(feedback_loop_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if feedback_loop.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "feedback_loop_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    if let Some(namespace_id) = namespace_id {
+        if feedback_loop.namespace_id != namespace_id {
+            return Err(AppError::BadRequest(
+                "feedback_loop_id must belong to namespace_id".to_string(),
+            ));
+        }
+    }
+
+    Ok(ProvenanceScope {
+        namespace_id: Some(feedback_loop.namespace_id),
+        feedback_loop_id: Some(feedback_loop_id),
+    })
+}
+
+async fn validate_namespace(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    let Some(namespace_id) = namespace_id else {
+        return Ok(None);
+    };
+    let namespace = state
+        .repositories
+        .namespaces
+        .find_for_user(namespace_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if namespace.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "namespace_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    Ok(Some(namespace_id))
+}
+
 fn memory_output(memory: &MemorySearchItem) -> Value {
     json!({
         "id": memory.id,
+        "namespace_id": memory.namespace_id,
+        "feedback_loop_id": memory.feedback_loop_id,
         "title": memory.title,
         "content": memory.content,
         "memory_type": memory.memory_type,
@@ -224,6 +334,8 @@ struct LensOutputInput<'a> {
     strategy: &'a str,
     output_format: &'a str,
     retrieval_mode: &'a str,
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
     query: &'a str,
     search_mode: &'a str,
     memories: &'a [MemorySearchItem],
@@ -251,6 +363,10 @@ async fn build_lens_output(input: LensOutputInput<'_>) -> Value {
             "retrieval_mode": input.retrieval_mode,
         },
         "query": input.query,
+        "provenance": {
+            "namespace_id": input.namespace_id,
+            "feedback_loop_id": input.feedback_loop_id,
+        },
         "search_mode": input.search_mode,
         "memory_count": memories.len(),
         "memories": memories,
@@ -615,6 +731,8 @@ mod tests {
             id,
             user_id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
+            feedback_loop_id: None,
             title: Some("Direction".to_string()),
             content: "MemoryNexus is Rust-first.".to_string(),
             memory_type: "text".to_string(),
@@ -629,9 +747,13 @@ mod tests {
     #[test]
     fn run_lens_request_deserializes() {
         let lens_id = Uuid::new_v4();
+        let namespace_id = Uuid::new_v4();
+        let feedback_loop_id = Uuid::new_v4();
         let json = format!(
             r#"{{
                 "lens_id":"{lens_id}",
+                "namespace_id":"{namespace_id}",
+                "feedback_loop_id":"{feedback_loop_id}",
                 "query":"Summarize the project direction",
                 "limit":3
             }}"#
@@ -639,6 +761,8 @@ mod tests {
         let req: RunLensRequest = serde_json::from_str(&json).unwrap();
 
         assert_eq!(req.lens_id, lens_id);
+        assert_eq!(req.namespace_id, Some(namespace_id));
+        assert_eq!(req.feedback_loop_id, Some(feedback_loop_id));
         assert_eq!(req.query, "Summarize the project direction");
         assert_eq!(req.limit, Some(3));
     }
@@ -648,12 +772,14 @@ mod tests {
         let lens_id = Uuid::new_v4();
         let query: ListLensRunsQuery = serde_json::from_value(json!({
             "lens_id": lens_id,
+            "namespace_id": Uuid::new_v4(),
             "limit": 3
         }))
         .unwrap();
 
         assert_eq!(query.lens_id, Some(lens_id));
         assert_eq!(query.space_id, None);
+        assert!(query.namespace_id.is_some());
         assert_eq!(query.limit, Some(3));
     }
 
@@ -668,6 +794,8 @@ mod tests {
             strategy: "project_context",
             output_format: "brief",
             retrieval_mode: "semantic",
+            namespace_id: Some(Uuid::new_v4()),
+            feedback_loop_id: Some(Uuid::new_v4()),
             query: "Summarize the project direction",
             search_mode: "semantic",
             memories: &memories,
@@ -679,6 +807,8 @@ mod tests {
         .await;
 
         assert_eq!(output["lens"]["id"], lens_id.to_string());
+        assert!(output["provenance"]["namespace_id"].is_string());
+        assert!(output["provenance"]["feedback_loop_id"].is_string());
         assert_eq!(output["query"], "Summarize the project direction");
         assert_eq!(output["search_mode"], "semantic");
         assert_eq!(output["memory_count"], 1);
@@ -718,6 +848,8 @@ mod tests {
             strategy: "project_context",
             output_format: "brief",
             retrieval_mode: "semantic",
+            namespace_id: None,
+            feedback_loop_id: None,
             query: "Summarize the project direction",
             search_mode: "semantic",
             memories: &memories,
@@ -745,6 +877,8 @@ mod tests {
             strategy: "engineering_review",
             output_format: "brief",
             retrieval_mode: "semantic",
+            namespace_id: None,
+            feedback_loop_id: None,
             query: "我最近项目很多，不知道哪个值得继续。",
             search_mode: "keyword",
             memories: &memories,
@@ -805,6 +939,8 @@ mod tests {
             strategy: "project_context",
             output_format: "brief",
             retrieval_mode: "semantic",
+            namespace_id: None,
+            feedback_loop_id: None,
             query: "Summarize the project direction",
             search_mode: "semantic",
             memories: &memories,

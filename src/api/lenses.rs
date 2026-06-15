@@ -16,6 +16,7 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 pub struct CreateLensRequest {
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
     pub name: String,
     pub description: Option<String>,
     pub strategy: Option<String>,
@@ -26,6 +27,7 @@ pub struct CreateLensRequest {
 #[derive(Debug, Deserialize)]
 pub struct ListLensesQuery {
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -58,6 +60,8 @@ pub async fn create(
         .lenses
         .create(CreateLens {
             space_id: space.id,
+            namespace_id: validate_namespace(&state, auth_user.user_id, space.id, req.namespace_id)
+                .await?,
             name: name.to_string(),
             description: req.description,
             strategy: normalize_optional(req.strategy, "default"),
@@ -88,7 +92,17 @@ pub async fn list(
     let lenses = state
         .repositories
         .lenses
-        .list_for_space(query.space_id, auth_user.user_id)
+        .list_for_space(
+            query.space_id,
+            auth_user.user_id,
+            validate_namespace(
+                &state,
+                auth_user.user_id,
+                query.space_id,
+                query.namespace_id,
+            )
+            .await?,
+        )
         .await
         .map_err(AppError::Database)?;
 
@@ -122,6 +136,30 @@ fn normalize_optional(value: Option<String>, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+async fn validate_namespace(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    let Some(namespace_id) = namespace_id else {
+        return Ok(None);
+    };
+    let namespace = state
+        .repositories
+        .namespaces
+        .find_for_user(namespace_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if namespace.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "namespace_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    Ok(Some(namespace_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,9 +167,11 @@ mod tests {
     #[test]
     fn create_lens_request_deserializes() {
         let space_id = Uuid::new_v4();
+        let namespace_id = Uuid::new_v4();
         let json = format!(
             r#"{{
                 "space_id":"{space_id}",
+                "namespace_id":"{namespace_id}",
                 "name":"Project Context",
                 "description":"Project interpretation",
                 "strategy":"project_context",
@@ -142,8 +182,23 @@ mod tests {
         let req: CreateLensRequest = serde_json::from_str(&json).unwrap();
 
         assert_eq!(req.space_id, space_id);
+        assert_eq!(req.namespace_id, Some(namespace_id));
         assert_eq!(req.name, "Project Context");
         assert_eq!(req.strategy, Some("project_context".to_string()));
+    }
+
+    #[test]
+    fn list_lenses_query_accepts_namespace_filter() {
+        let space_id = Uuid::new_v4();
+        let namespace_id = Uuid::new_v4();
+        let query: ListLensesQuery = serde_json::from_value(serde_json::json!({
+            "space_id": space_id,
+            "namespace_id": namespace_id
+        }))
+        .unwrap();
+
+        assert_eq!(query.space_id, space_id);
+        assert_eq!(query.namespace_id, Some(namespace_id));
     }
 
     #[test]

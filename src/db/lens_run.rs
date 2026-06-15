@@ -11,6 +11,8 @@ pub struct LensRunDb {
     pub id: Uuid,
     pub lens_id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub query: Option<String>,
     pub input_memory_ids: Vec<Uuid>,
     pub output: Option<Value>,
@@ -24,6 +26,8 @@ pub struct LensRunDb {
 pub struct CreateCompletedLensRun {
     pub lens_id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub query: Option<String>,
     pub input_memory_ids: Vec<Uuid>,
     pub output: Value,
@@ -34,6 +38,7 @@ pub struct CreateCompletedLensRun {
 pub struct LensRunListFilter {
     pub lens_id: Option<Uuid>,
     pub space_id: Option<Uuid>,
+    pub namespace_id: Option<Uuid>,
     pub limit: i64,
 }
 
@@ -66,6 +71,8 @@ impl LensRunRepository for PostgresLensRunRepository {
             INSERT INTO lens_runs (
                 lens_id,
                 space_id,
+                namespace_id,
+                feedback_loop_id,
                 query,
                 input_memory_ids,
                 output,
@@ -73,12 +80,14 @@ impl LensRunRepository for PostgresLensRunRepository {
                 created_by,
                 completed_at
             )
-            VALUES ($1, $2, $3, $4, $5, 'completed', $6, NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', $8, NOW())
             RETURNING *
             "#,
         )
         .bind(run.lens_id)
         .bind(run.space_id)
+        .bind(run.namespace_id)
+        .bind(run.feedback_loop_id)
         .bind(&run.query)
         .bind(&run.input_memory_ids)
         .bind(&run.output)
@@ -115,6 +124,7 @@ impl LensRunRepository for PostgresLensRunRepository {
             WHERE m.user_id = $1
               AND ($2::uuid IS NULL OR r.lens_id = $2)
               AND ($3::uuid IS NULL OR r.space_id = $3)
+              AND ($5::uuid IS NULL OR r.namespace_id = $5)
             ORDER BY r.created_at DESC
             LIMIT $4
             "#,
@@ -123,6 +133,7 @@ impl LensRunRepository for PostgresLensRunRepository {
         .bind(filter.lens_id)
         .bind(filter.space_id)
         .bind(filter.limit)
+        .bind(filter.namespace_id)
         .fetch_all(&self.pool)
         .await
     }
@@ -143,6 +154,8 @@ mod tests {
         let run = CreateCompletedLensRun {
             lens_id,
             space_id,
+            namespace_id: Some(Uuid::new_v4()),
+            feedback_loop_id: Some(Uuid::new_v4()),
             query: Some("Summarize project direction".to_string()),
             input_memory_ids: vec![memory_id],
             output: json!({
@@ -154,6 +167,8 @@ mod tests {
 
         assert_eq!(run.lens_id, lens_id);
         assert_eq!(run.space_id, space_id);
+        assert!(run.namespace_id.is_some());
+        assert!(run.feedback_loop_id.is_some());
         assert_eq!(run.input_memory_ids, vec![memory_id]);
         assert_eq!(run.created_by, created_by);
         assert_eq!(run.output["memory_count"], 1);
@@ -165,11 +180,13 @@ mod tests {
         let filter = LensRunListFilter {
             lens_id: Some(lens_id),
             space_id: None,
+            namespace_id: Some(Uuid::new_v4()),
             limit: 5,
         };
 
         assert_eq!(filter.lens_id, Some(lens_id));
         assert_eq!(filter.space_id, None);
+        assert!(filter.namespace_id.is_some());
         assert_eq!(filter.limit, 5);
     }
 }

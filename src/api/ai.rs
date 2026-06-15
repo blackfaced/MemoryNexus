@@ -48,6 +48,7 @@ pub struct SummarizeResponse {
 pub struct LensSummaryProvenance {
     pub id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
     pub name: String,
     pub strategy: String,
     pub output_format: String,
@@ -250,6 +251,7 @@ fn summary_lens_provenance(lens: LensDb) -> LensSummaryProvenance {
     LensSummaryProvenance {
         id: lens.id,
         space_id: lens.space_id,
+        namespace_id: lens.namespace_id,
         name: lens.name,
         strategy: lens.strategy,
         output_format: lens.output_format,
@@ -399,6 +401,7 @@ mod tests {
             lens: Some(LensSummaryProvenance {
                 id: lens_id,
                 space_id,
+                namespace_id: None,
                 name: "Project Context".to_string(),
                 strategy: "project_context".to_string(),
                 output_format: "brief".to_string(),
@@ -466,6 +469,7 @@ mod tests {
         let lens = LensDb {
             id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
             name: "Project Context".to_string(),
             description: None,
             strategy: "project_context".to_string(),
@@ -479,6 +483,7 @@ mod tests {
 
         assert_eq!(provenance.id, lens.id);
         assert_eq!(provenance.space_id, lens.space_id);
+        assert_eq!(provenance.namespace_id, lens.namespace_id);
         assert_eq!(provenance.strategy, "project_context");
     }
 
@@ -487,6 +492,7 @@ mod tests {
         let lens = LensSummaryProvenance {
             id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
             name: "Learning Review".to_string(),
             strategy: "learning_review".to_string(),
             output_format: "bullets".to_string(),
@@ -503,6 +509,7 @@ mod tests {
         let lens = LensSummaryProvenance {
             id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
             name: "Project Context".to_string(),
             strategy: "project_context".to_string(),
             output_format: "brief".to_string(),

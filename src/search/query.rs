@@ -21,6 +21,9 @@ pub struct SearchQuery {
     /// Lens interpretation strategy
     pub lens_id: Option<Uuid>,
 
+    /// Namespace partition inside the Cognitive Space
+    pub namespace_id: Option<Uuid>,
+
     /// 搜索关键词
     pub q: Option<String>,
 
@@ -59,6 +62,7 @@ impl Default for SearchQuery {
             q: None,
             space_id: None,
             lens_id: None,
+            namespace_id: None,
             tags: None,
             memory_type: None,
             from: None,
@@ -89,6 +93,7 @@ pub struct SearchResult {
 pub struct SearchLensProvenance {
     pub id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
     pub name: String,
     pub strategy: String,
     pub output_format: String,
@@ -101,6 +106,8 @@ pub struct MemorySearchItem {
     pub id: Uuid,
     pub user_id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     pub memory_type: String,
@@ -117,6 +124,8 @@ impl From<MemoryDb> for MemorySearchItem {
             id: m.id,
             user_id: m.user_id,
             space_id: m.space_id,
+            namespace_id: m.namespace_id,
+            feedback_loop_id: m.feedback_loop_id,
             title: m.title,
             content: m.content,
             memory_type: m.memory_type,
@@ -191,6 +200,12 @@ impl SearchEngine {
         let mut params: Vec<String> = Vec::new();
         let keyword = query.q.clone().unwrap_or_default();
         let mut param_idx = 4;
+
+        if let Some(namespace_id) = query.namespace_id {
+            sql.push_str(&format!(" AND m.namespace_id = ${}", param_idx));
+            params.push(namespace_id.to_string());
+            param_idx += 1;
+        }
 
         // 关键词搜索
         if let Some(ref q) = query.q {
@@ -343,6 +358,7 @@ impl SearchEngine {
             SELECT * FROM memories
             WHERE id = ANY($1)
               AND space_id = $3
+              AND ($4::uuid IS NULL OR namespace_id = $4)
               AND (
                 user_id = $2
                 OR is_shared = true
@@ -356,6 +372,7 @@ impl SearchEngine {
         .bind(&ids)
         .bind(user_id)
         .bind(space_id)
+        .bind(query.namespace_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -468,10 +485,15 @@ mod tests {
     #[test]
     fn test_search_query_space_deserialize() {
         let space_id = Uuid::new_v4();
-        let json = format!(r#"{{"q":"Rust","space_id":"{}"}}"#, space_id);
+        let namespace_id = Uuid::new_v4();
+        let json = format!(
+            r#"{{"q":"Rust","space_id":"{}","namespace_id":"{}"}}"#,
+            space_id, namespace_id
+        );
         let query: SearchQuery = serde_json::from_str(&json).unwrap();
 
         assert_eq!(query.space_id, Some(space_id));
+        assert_eq!(query.namespace_id, Some(namespace_id));
     }
 
     #[test]
@@ -489,6 +511,8 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: Some(Uuid::new_v4()),
+            feedback_loop_id: Some(Uuid::new_v4()),
             title: Some("Test".to_string()),
             content: "Content".to_string(),
             memory_type: "text".to_string(),
@@ -504,6 +528,8 @@ mod tests {
         let item: MemorySearchItem = memory.into();
         assert!(item.title.is_some());
         assert_eq!(item.title.unwrap(), "Test");
+        assert!(item.namespace_id.is_some());
+        assert!(item.feedback_loop_id.is_some());
     }
 
     #[test]
