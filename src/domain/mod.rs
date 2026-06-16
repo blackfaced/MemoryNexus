@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod trace;
+
 pub type SpaceId = Uuid;
 pub type ActorId = Uuid;
 pub type MemoryId = Uuid;
