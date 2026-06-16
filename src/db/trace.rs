@@ -31,10 +31,6 @@ pub struct TraceDb {
     pub generated_lens_run_ids: Vec<Uuid>,
     pub generated_review_report_ids: Vec<Uuid>,
     pub generated_feedback_loop_ids: Vec<Uuid>,
-    pub generated_reflection_ids: Vec<Uuid>,
-    pub generated_sleep_cycle_ids: Vec<Uuid>,
-    pub generated_consolidation_result_ids: Vec<Uuid>,
-    pub generated_dream_candidate_ids: Vec<Uuid>,
     pub user_feedback: Option<Value>,
     pub error: Option<Value>,
     pub metadata: Value,
@@ -64,10 +60,6 @@ pub struct CreateCompletedTrace {
     pub generated_lens_run_ids: Vec<Uuid>,
     pub generated_review_report_ids: Vec<Uuid>,
     pub generated_feedback_loop_ids: Vec<Uuid>,
-    pub generated_reflection_ids: Vec<Uuid>,
-    pub generated_sleep_cycle_ids: Vec<Uuid>,
-    pub generated_consolidation_result_ids: Vec<Uuid>,
-    pub generated_dream_candidate_ids: Vec<Uuid>,
     pub user_feedback: Option<Value>,
     pub error: Option<Value>,
     pub metadata: Value,
@@ -288,10 +280,6 @@ impl TraceRepository for PostgresTraceRepository {
                 generated_lens_run_ids,
                 generated_review_report_ids,
                 generated_feedback_loop_ids,
-                generated_reflection_ids,
-                generated_sleep_cycle_ids,
-                generated_consolidation_result_ids,
-                generated_dream_candidate_ids,
                 user_feedback,
                 error,
                 metadata
@@ -299,7 +287,7 @@ impl TraceRepository for PostgresTraceRepository {
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, 'completed', $12, $13, $14, $15, $16, $17, $18, $19,
-                $20, $21, $22, $23, $24, $25, $26, $27, $28
+                $20, $21, $22, $23, $24
             )
             RETURNING *
             "#,
@@ -325,10 +313,6 @@ impl TraceRepository for PostgresTraceRepository {
         .bind(&trace.generated_lens_run_ids)
         .bind(&trace.generated_review_report_ids)
         .bind(&trace.generated_feedback_loop_ids)
-        .bind(&trace.generated_reflection_ids)
-        .bind(&trace.generated_sleep_cycle_ids)
-        .bind(&trace.generated_consolidation_result_ids)
-        .bind(&trace.generated_dream_candidate_ids)
         .bind(&trace.user_feedback)
         .bind(&trace.error)
         .bind(&trace.metadata)
@@ -423,10 +407,6 @@ mod tests {
             generated_lens_run_ids: vec![lens_run_id],
             generated_review_report_ids: vec![],
             generated_feedback_loop_ids: vec![],
-            generated_reflection_ids: vec![],
-            generated_sleep_cycle_ids: vec![],
-            generated_consolidation_result_ids: vec![],
-            generated_dream_candidate_ids: vec![],
             user_feedback: None,
             error: None,
             metadata: json!({"contract": "trace-foundation"}),
