@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod growth_model;
 pub mod trace;
 
 pub type SpaceId = Uuid;

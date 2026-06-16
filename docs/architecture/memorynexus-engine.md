@@ -117,18 +117,23 @@ It is the operational loop where practice and feedback become observable.
 
 `GrowthModel` is the namespace-specific long-term growth picture.
 
-It may include:
+It belongs to a `CognitiveSpace` and one `Namespace`. It is not a cross-domain
+profile of a person, and it should not be updated from evidence outside the
+same Space / Namespace boundary.
+
+The first domain draft includes evidence-backed:
 
 - strengths;
 - weaknesses;
 - recurring patterns;
 - current stage;
 - recommended focus;
-- evidence IDs;
-- stability or mastery signals.
+- evidence IDs.
 
-GrowthModel is not a generic user profile. It is domain-specific and evidence
-backed.
+Evidence IDs are explicit typed references such as Trace, FeedbackLoop, or
+Memory IDs. A GrowthModel can describe observed strengths, weaknesses, patterns,
+stage, and focus, but it must not claim causal improvement unless later
+evaluation evidence supports that claim.
 
 ### SleepCycle
 
