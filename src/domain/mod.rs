@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod event;
 pub mod growth_model;
 pub mod surface;
 pub mod trace;
