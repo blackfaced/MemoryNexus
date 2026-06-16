@@ -206,6 +206,68 @@ Returns lenses in the requested space if the current user is a member.
 
 Returns a lens only if the current user can access its Cognitive Space.
 
+## Namespaces
+
+Namespace is an Engine domain partition inside a `CognitiveSpace`. It is used
+for domain routing and filtering, for example:
+
+```text
+child.chinese.dictation
+child.english.spelling
+child.english.sentence-dictation
+personal.thoughts
+learning.stem
+```
+
+Namespace does not own memory and does not carry role or permission semantics.
+Access remains based on Cognitive Space membership.
+
+Namespace name validation:
+
+- Names are trimmed before storage.
+- Names may contain lowercase ASCII letters, numbers, dots, underscores, and
+  hyphens.
+- Names must not be empty.
+- Names must use non-empty dotted segments, so leading dots, trailing dots, and
+  doubled dots are rejected.
+- Uppercase letters are rejected to keep names stable across adapters.
+
+Same-Space rule: when a request combines `space_id` and `namespace_id`, the
+Namespace must belong to that same Cognitive Space. FeedbackLoop,
+practice-session, Memory snapshot, and review paths reject requests that would
+mix objects across Spaces.
+
+### Create Namespace
+
+`POST /api/v1/namespaces`
+
+```json
+{
+  "space_id": "space-uuid",
+  "name": "child.english.sentence-dictation",
+  "kind": "skill",
+  "description": "Daily English sentence dictation",
+  "status": "active"
+}
+```
+
+`kind` is `reflective` or `skill`. `status` is optional and defaults to
+`active`; supported values are `active` and `archived`. Names are unique inside
+one Cognitive Space, but the same name can exist in another Space.
+
+### List Namespaces
+
+`GET /api/v1/namespaces?space_id=<SPACE_ID>`
+
+Returns Namespaces in the requested Cognitive Space if the current user is a
+member.
+
+### Get Namespace
+
+`GET /api/v1/namespaces/:id`
+
+Returns a Namespace only if the current user can access its Cognitive Space.
+
 ## Lens Runs
 
 Lens Run is one synchronous interpretation pass over a Lens and a query. The
@@ -308,8 +370,8 @@ Returns visible Lens Runs ordered by newest first. At least one of `lens_id` or
 FeedbackLoop captures one long-running feedback cycle inside a Namespace and
 Cognitive Space. A create or patch request can explicitly opt in to creating a
 Space-owned Memory snapshot of the practice event. Namespace remains provenance
-and filtering context; writer permission still comes from Cognitive Space
-membership.
+plus domain routing and filtering context; writer permission still comes from
+Cognitive Space membership.
 
 ### Create Feedback Loop
 
@@ -392,11 +454,12 @@ committed in the same database transaction.
 The STEM learning API is a thin product-facing layer over Namespace and
 FeedbackLoop. The canonical route is namespace-driven:
 `/api/v1/namespaces/:namespace_id/practice-sessions`. Product domains such as
-`learning.stem` and `learning.math` are Namespace records inside a
-`CognitiveSpace`, not permanent API route segments. The Namespace must be a
-`skill` Namespace, and the API always validates that the Namespace,
-FeedbackLoop, optional Memory snapshot, and authenticated writer all stay inside
-the same Space.
+`learning.stem`, `learning.math`, `child.chinese.dictation`,
+`child.english.spelling`, and `child.english.sentence-dictation` are Namespace
+records inside a `CognitiveSpace`, not permanent API route segments. The
+Namespace must be a `skill` Namespace, and the API always validates that the
+Namespace, FeedbackLoop, optional Memory snapshot, and authenticated writer all
+stay inside the same Space.
 
 The first-slice `/api/v1/learning/math/...` route remains as a compatibility
 surface. It creates or reuses the `learning.math` skill Namespace when

@@ -42,13 +42,16 @@ to a Space, not to an agent, app, adapter, or namespace.
 
 ### Namespace
 
-`Namespace` is a domain partition inside a Space.
+`Namespace` is an Engine domain partition inside a `CognitiveSpace`. It routes
+Trace, Memory, FeedbackLoop, GrowthModel, PracticePlan, and review evidence to a
+long-running domain such as dictation, project reflection, or skill practice.
 
 Examples:
 
 ```text
 child.chinese.dictation
 child.english.spelling
+child.english.sentence-dictation
 personal.thoughts
 project.memorynexus
 skill.piano
@@ -66,6 +69,21 @@ It does not answer:
 ```text
 Who owns this data?
 ```
+
+Ownership, membership, and writer permissions remain on `CognitiveSpace`.
+Namespace does not introduce role semantics and is not a second permission
+boundary.
+
+Namespace names are stable lowercase identifiers. The current API accepts
+lowercase ASCII letters, numbers, dots, underscores, and hyphens; trims leading
+and trailing whitespace; and rejects empty names, uppercase names, leading or
+trailing dots, and empty dotted segments such as `learning..stem`.
+
+Same-Space rule: any Engine object that references both `space_id` and
+`namespace_id` must keep them in the same `CognitiveSpace`. FeedbackLoop,
+practice-session, Memory snapshot, review, GrowthModel, and PracticePlan paths
+must validate this at the API or repository boundary before storing or reading
+cross-object state.
 
 ### Trace
 
