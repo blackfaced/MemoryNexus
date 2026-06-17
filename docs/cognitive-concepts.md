@@ -176,6 +176,22 @@ MemoryAtom 回答的问题是：
 这段经历里有哪些可单独追踪的认知信号？
 ```
 
+最小候选字段：
+
+- `id`
+- `space_id`
+- `namespace_id?`
+- `source_memory_ids`
+- `atom_type`: observation / claim / emotion / pattern_signal / practice_signal
+- `content`
+- `confidence`
+- `salience`
+- `state`: candidate / accepted / merged / rejected
+- `provenance`
+
+第一阶段应保持 prototype-only，用 fixture 验证 atom extraction 是否真的改善
+CognitiveProjection；不要在没有具体验收场景前直接铺开持久化 schema。
+
 ## CognitiveScene
 
 CognitiveScene 是多个 MemoryAtom、Reflection、Concept、Belief 和 Contradiction
@@ -206,6 +222,29 @@ CognitiveScene 回答的问题是：
 ```text
 哪些认知信号正在形成一个长期主题、问题场或练习场？
 ```
+
+最小候选字段：
+
+- `id`
+- `space_id`
+- `namespace_id?`
+- `title`
+- `scene_type`: theme / practice_field / contradiction_field / project_field
+- `source_atom_ids`
+- `source_memory_ids`
+- `related_reflection_ids`
+- `related_concept_ids`
+- `related_belief_ids`
+- `related_contradiction_ids`
+- `summary`
+- `salience`
+- `state`: candidate / active / dormant / superseded / archived
+- `provenance`
+
+CognitiveScene 仍然从属于 `CognitiveSpace` 权限边界。它可以引用 Reflection、
+Concept、Belief 和 Contradiction，但不拥有 Memory，也不替代 Namespace。
+第一阶段应先通过小型 MemoryNexus project-note fixture 验证 scene consolidation，
+再决定是否落库。
 
 ## CognitiveProjection
 
