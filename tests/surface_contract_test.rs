@@ -3,6 +3,7 @@ use memorynexus::domain::surface::{
     SurfaceResponse, SurfaceVisibility,
 };
 use serde_json::{json, Value};
+use std::fs;
 use uuid::Uuid;
 
 fn sample_request(surface: Surface, action: SurfaceAction) -> SurfaceRequest {
@@ -102,9 +103,21 @@ fn valid_surface_action_combinations_are_accepted() {
         (Surface::Reflection, SurfaceAction::ReviewEvidence),
         (Surface::Planning, SurfaceAction::GenerateNextTask),
         (Surface::Observation, SurfaceAction::GetStateSummary),
+        (Surface::Observation, SurfaceAction::RequestConsolidation),
     ] {
         sample_request(surface, action).validate().unwrap();
     }
+}
+
+#[test]
+fn manual_consolidation_resolver_uses_only_active_namespaces() {
+    let source =
+        fs::read_to_string("src/api/surfaces.rs").expect("surface api source should be readable");
+
+    assert!(
+        source.contains("namespace.status == \"active\""),
+        "manual consolidation must reject archived namespaces"
+    );
 }
 
 #[test]
