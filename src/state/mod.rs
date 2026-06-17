@@ -455,6 +455,7 @@ pub struct Repositories {
     pub review_reports: Arc<dyn super::db::review_report::CognitiveReviewReportRepository>,
     pub spaces: Arc<dyn super::db::space::CognitiveSpaceRepository>,
     pub tags: Arc<dyn super::db::tag::TagRepository>,
+    pub traces: Arc<dyn super::db::trace::TraceRepository>,
     pub users: Arc<dyn super::db::user::UserRepository>,
     pub vectors: Arc<dyn VectorRepository>,
 }

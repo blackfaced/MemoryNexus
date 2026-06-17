@@ -105,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
             pool.clone(),
         )),
         tags: Arc::new(db::tag::PostgresTagRepository::new(pool.clone())),
+        traces: Arc::new(db::trace::PostgresTraceRepository::new(pool.clone())),
         users: Arc::new(db::user::PostgresUserRepository::new(pool.clone())),
         vectors: vector_repo,
     };

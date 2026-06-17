@@ -21,6 +21,7 @@ mod review_reports;
 mod search;
 mod semantic;
 mod spaces;
+mod surfaces;
 mod tags;
 mod upload;
 mod voice;
@@ -61,6 +62,8 @@ pub fn routes() -> Router<AppState> {
             "/api/v1/spaces/invites/accept",
             axum::routing::post(spaces::accept_invite),
         )
+        // Surface Gateway
+        .route("/api/v1/surfaces", axum::routing::post(surfaces::handle))
         // Lens
         .route("/api/v1/lenses", axum::routing::get(lenses::list))
         .route("/api/v1/lenses", axum::routing::post(lenses::create))
@@ -423,6 +426,18 @@ mod tests {
         assert!(html.contains("STEM practice"));
         assert!(html.contains("id=\"spaceSelect\""));
         assert!(html.contains("id=\"recentSessions\""));
+    }
+
+    #[test]
+    fn surface_gateway_route_uses_shared_handle_entrypoint() {
+        let routes_source = include_str!("mod.rs");
+        let routes = routes_source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("routes source should contain production code before tests");
+
+        assert!(routes.contains("\"/api/v1/surfaces\""));
+        assert!(routes.contains("axum::routing::post(surfaces::handle)"));
     }
 
     #[test]
