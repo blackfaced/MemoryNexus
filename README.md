@@ -76,12 +76,13 @@ backend work should land in the Rust crate.
 
 ## Install Profiles
 
-For agents and non-developer users, start with the binary-first profiles in
-[Agent Self-Install](docs/agent-self-install.md):
+For agents and non-developer users, the intended path is the binary-first
+profiles in [Agent Self-Install](docs/agent-self-install.md):
 
-- Trial Profile: use prebuilt `memorynexus-mcp` with a hosted/demo API through
-  `MEMORYNEXUS_API_URL` and `MEMORYNEXUS_TOKEN`. It does not require Rust,
-  Docker, PostgreSQL, or Qdrant on the local machine.
+- Trial Profile: use prebuilt `memorynexus-mcp`, once a release is available,
+  with a hosted/demo API through `MEMORYNEXUS_API_URL` and
+  `MEMORYNEXUS_TOKEN`. It does not require Rust, Docker, PostgreSQL, or Qdrant
+  on the local machine.
 - Local One-click Profile: use the release archive containing `memorynexus`,
   `memorynexus-cli`, and `memorynexus-mcp`, verify the checksum, then run local
   PostgreSQL and Qdrant through Docker.
@@ -134,7 +135,7 @@ The API listens on `http://localhost:8080`.
 
 ## Release Binaries
 
-Tagged GitHub releases publish prebuilt archives for:
+Tagged GitHub releases are expected to publish prebuilt archives for:
 
 - `aarch64-apple-darwin`
 - `x86_64-apple-darwin`
@@ -153,7 +154,9 @@ One-click bundle layout:
 - `docker-compose.runtime.yml` and `.env.runtime.example` for Local One-click
   PostgreSQL and Qdrant services
 
-Download the archive and its matching `.sha256` file from the
+If no release is available yet, use Developer Profile source-build commands or
+a maintainer-provided local binary. Download the archive and its matching
+`.sha256` file from the
 [GitHub Releases](https://github.com/blackfaced/MemoryNexus/releases) page,
 verify the checksum, then unpack it:
 

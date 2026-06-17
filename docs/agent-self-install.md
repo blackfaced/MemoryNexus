@@ -13,9 +13,9 @@ Install, upgrade, or reconnect MemoryNexus as an MCP server for this local
 agent environment. First identify the current state, then choose the smallest
 safe binary-first path:
 
-- Trial Profile: no local checkout is required. Use a prebuilt
-  `memorynexus-mcp` binary with an existing hosted/demo API through
-  `MEMORYNEXUS_API_URL` and `MEMORYNEXUS_TOKEN`.
+- Trial Profile: no local checkout is required once a release binary is
+  available. Use a prebuilt `memorynexus-mcp` binary with an existing
+  hosted/demo API through `MEMORYNEXUS_API_URL` and `MEMORYNEXUS_TOKEN`.
 - Local One-click Profile: use the release archive containing `memorynexus`,
   `memorynexus-cli`, and `memorynexus-mcp`; verify the checksum; install the
   binaries; start or verify local Docker PostgreSQL and Qdrant.
@@ -77,10 +77,17 @@ what was tried, and which later phases can still be completed.
 
 ## Prerequisites
 
-Published release archives are available for `aarch64-apple-darwin`,
-`x86_64-apple-darwin`, and `x86_64-unknown-linux-gnu`. Each archive is named
-`memorynexus-<tag>-<target>.tar.gz` and contains a Local One-click bundle
-layout:
+Release archives are the target binary-first distribution path for
+`aarch64-apple-darwin`, `x86_64-apple-darwin`, and
+`x86_64-unknown-linux-gnu`.
+
+As of 2026-06-17, the first GitHub Release artifact is still pending. If no
+release is available, use Developer Profile source-build commands or a
+maintainer-provided local binary. Do not pretend Trial or Local One-click is
+plug-and-play until the release archive and checksum exist.
+
+When published, each archive is named `memorynexus-<tag>-<target>.tar.gz` and
+contains a Local One-click bundle layout:
 
 - `bin/memorynexus`
 - `bin/memorynexus-cli`
@@ -95,8 +102,8 @@ layout:
   binary environment values
 
 This guide uses those binaries by default for Trial and Local One-click
-profiles. Source build fallback is explicit and should happen only when no
-compatible binary exists or the user chooses Developer Profile.
+profiles after a release exists. Source build fallback is explicit and should
+happen when no compatible binary exists or the user chooses Developer Profile.
 
 Profile mapping for the current release artifacts:
 

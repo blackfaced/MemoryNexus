@@ -5,19 +5,22 @@ adapter over the Rust API, not a second backend. Memory still belongs to
 `CognitiveSpace`; MCP clients only call tools that operate through the API.
 
 Current MCP tools are compatibility surfaces over existing object-level APIs.
-The refreshed architecture treats MCP as an Adapter. New capabilities should
-move toward Surface Gateway actions for Capture, Performance, Reflection,
-Planning, and Observation instead of giving agents direct Engine ownership.
+Surface Gateway exists in the HTTP API for Capture, Performance, and manual
+consolidation, but MCP tools have not yet been moved onto that Gateway. The
+refreshed architecture treats MCP as an Adapter. New capabilities should move
+toward Surface Gateway actions for Capture, Performance, Reflection, Planning,
+and Observation instead of giving agents direct Engine ownership.
 
 ## Configuration
 
-For ordinary agent installs, prefer a release `memorynexus-mcp` binary. Trial
-Profile points that binary at an existing hosted/demo API with
-`MEMORYNEXUS_API_URL` and `MEMORYNEXUS_TOKEN` and does not need Rust or Docker.
-Local One-click Profile uses the same release archive plus a local API binary
-and local PostgreSQL/Qdrant services, usually started with Docker. Production
-Profile points the MCP binary at a stable hosted or self-hosted API. The
-`cargo run` examples below are Developer Profile source-build commands.
+For ordinary agent installs, prefer a release `memorynexus-mcp` binary once a
+release is published. Trial Profile points that binary at an existing
+hosted/demo API with `MEMORYNEXUS_API_URL` and `MEMORYNEXUS_TOKEN` and does not
+need Rust or Docker. Local One-click Profile uses the same release archive plus
+a local API binary and local PostgreSQL/Qdrant services, usually started with
+Docker. Production Profile points the MCP binary at a stable hosted or
+self-hosted API. Until the first release artifact is published, the `cargo run`
+examples below are the working Developer Profile source-build path.
 
 Start the MemoryNexus API first:
 
