@@ -493,6 +493,9 @@ fn app_state(pool: PgPool) -> AppState {
         review_reports: Arc::new(PostgresCognitiveReviewReportRepository::new(pool.clone())),
         spaces: Arc::new(PostgresCognitiveSpaceRepository::new(pool.clone())),
         tags: Arc::new(PostgresTagRepository::new(pool.clone())),
+        traces: Arc::new(memorynexus::db::trace::PostgresTraceRepository::new(
+            pool.clone(),
+        )),
         users: Arc::new(PostgresUserRepository::new(pool.clone())),
         vectors: Arc::new(NoopVectorRepository),
     };

@@ -111,6 +111,7 @@ impl std::fmt::Display for TraceSourceType {
 #[serde(rename_all = "snake_case")]
 pub enum TraceTaskType {
     Chat,
+    Capture,
     Search,
     LensRun,
     Review,
@@ -128,6 +129,7 @@ impl TraceTaskType {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Chat => "chat",
+            Self::Capture => "capture",
             Self::Search => "search",
             Self::LensRun => "lens_run",
             Self::Review => "review",

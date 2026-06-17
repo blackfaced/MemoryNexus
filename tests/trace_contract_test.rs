@@ -71,6 +71,22 @@ fn trace_base_migration_defines_foundational_runtime_contract() {
 }
 
 #[test]
+fn capture_trace_task_type_is_added_by_forward_migration() {
+    let base_sql =
+        fs::read_to_string("migrations/014_traces.sql").expect("trace migration should exist");
+    let capture_sql = fs::read_to_string("migrations/017_trace_capture_task_type.sql")
+        .expect("capture trace migration should exist");
+
+    assert!(
+        !base_sql.contains("'capture'"),
+        "014 is already merged and must not be edited for new trace task types"
+    );
+    assert!(capture_sql.contains("DROP CONSTRAINT IF EXISTS traces_task_type_check"));
+    assert!(capture_sql.contains("ADD CONSTRAINT traces_task_type_check"));
+    assert!(capture_sql.contains("'capture'"));
+}
+
+#[test]
 fn trace_base_migration_keeps_first_phase_generated_links() {
     let sql =
         fs::read_to_string("migrations/014_traces.sql").expect("trace migration should exist");
@@ -98,6 +114,10 @@ fn trace_enums_accept_only_contract_values() {
     assert_eq!(
         serde_json::from_str::<TraceTaskType>("\"lens_run\"").unwrap(),
         TraceTaskType::LensRun
+    );
+    assert_eq!(
+        serde_json::from_str::<TraceTaskType>("\"capture\"").unwrap(),
+        TraceTaskType::Capture
     );
     assert_eq!(
         serde_json::from_str::<TraceMode>("\"focused\"").unwrap(),
