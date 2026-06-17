@@ -1,12 +1,16 @@
 use axum::{extract::State, http::StatusCode, Json};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sqlx::{Error, PgPool};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
 use crate::db::feedback_loop::{CreateFeedbackLoop, FeedbackLoopDb, PatchFeedbackLoop};
 use crate::db::memory::{CreateMemory, MemoryType};
+use crate::db::sleep_cycles::{
+    CompleteSleepCycle, CreateSleepCycle, PostgresSleepCycleRepository, SleepCycleRepository,
+};
 use crate::db::space::SpaceMemberRole;
 use crate::db::trace::{
     CreateCompletedTrace, TraceMode, TraceRuntime, TraceSourceType, TraceTaskType,
@@ -14,6 +18,7 @@ use crate::db::trace::{
 use crate::domain::event::{
     EngineEvent, EngineEventEnvelope, EnginePayloadRef, EnginePayloadRefKind,
 };
+use crate::domain::sleep_cycle::{SleepCycleStatus, SleepCycleType};
 use crate::domain::surface::{
     RuntimePreference, Surface, SurfaceAction, SurfaceAdapter, SurfaceRequest, SurfaceResponse,
     SurfaceVisibility,
@@ -40,6 +45,13 @@ struct SubmitAttemptPayload {
     attempt: Value,
 }
 
+#[derive(Debug, Deserialize)]
+struct ManualConsolidationPayload {
+    space_id: Uuid,
+    evidence_window_start: DateTime<Utc>,
+    evidence_window_end: DateTime<Utc>,
+}
+
 pub async fn handle(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
@@ -59,6 +71,9 @@ pub async fn handle(
         }
         (Surface::Performance, SurfaceAction::SubmitAttempt) => {
             submit_attempt(&state, auth_user.user_id, request).await
+        }
+        (Surface::Observation, SurfaceAction::RequestConsolidation) => {
+            request_manual_consolidation(&state, auth_user.user_id, request).await
         }
         _ => Err(AppError::NotImplemented(format!(
             "{:?} {:?} is not implemented yet",
@@ -316,6 +331,141 @@ async fn submit_attempt(
     Ok((StatusCode::OK, Json(ApiResponse::success(response))))
 }
 
+async fn request_manual_consolidation(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let payload: ManualConsolidationPayload = serde_json::from_value(request.payload.clone())
+        .map_err(|_| {
+            AppError::BadRequest(
+                "space_id, evidence_window_start, and evidence_window_end are required".to_string(),
+            )
+        })?;
+    if payload.evidence_window_start >= payload.evidence_window_end {
+        return Err(AppError::BadRequest(
+            "evidence_window_start must be before evidence_window_end".to_string(),
+        ));
+    }
+
+    require_space_writer(state, payload.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+    let input_trace_ids = select_trace_evidence(
+        &state.db,
+        payload.space_id,
+        namespace.id,
+        payload.evidence_window_start,
+        payload.evidence_window_end,
+    )
+    .await?;
+
+    let now = Utc::now();
+    let triggering_trace = state
+        .repositories
+        .traces
+        .create_completed(CreateCompletedTrace {
+            space_id: payload.space_id,
+            namespace_id: Some(namespace.id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Consolidation,
+            mode: manual_trace_mode(request.context.mode.as_deref())?,
+            runtime: deterministic_trace_runtime(request.context.runtime_preference),
+            input_summary: Some(
+                "Manual consolidation requested through Surface Gateway".to_string(),
+            ),
+            output_summary: Some(format!(
+                "Selected {} Trace records for the evidence window",
+                input_trace_ids.len()
+            )),
+            started_at: now,
+            completed_at: Utc::now(),
+            latency_ms: None,
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: Vec::new(),
+            user_feedback: None,
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "surface": request.surface,
+                "action": request.action,
+                "namespace": request.namespace,
+                "evidence_window_start": payload.evidence_window_start,
+                "evidence_window_end": payload.evidence_window_end,
+                "selected_input_trace_count": input_trace_ids.len(),
+            }),
+        })
+        .await
+        .map_err(AppError::Database)?;
+
+    let sleep_cycle_repository = PostgresSleepCycleRepository::new(state.db.clone());
+    let sleep_cycle = sleep_cycle_repository
+        .create(CreateSleepCycle {
+            space_id: payload.space_id,
+            namespace_id: Some(namespace.id),
+            cycle_type: SleepCycleType::Manual,
+            status: SleepCycleStatus::Running,
+            evidence_window_start: payload.evidence_window_start,
+            evidence_window_end: payload.evidence_window_end,
+            input_trace_ids: input_trace_ids.clone(),
+            input_memory_ids: Vec::new(),
+            input_feedback_loop_ids: Vec::new(),
+            input_review_report_ids: Vec::new(),
+            triggering_trace_id: Some(triggering_trace.id),
+            metadata: json!({
+                "trigger": "surface_gateway",
+                "surface": request.surface,
+                "action": request.action,
+                "adapter": request.adapter,
+            }),
+        })
+        .await
+        .map_err(map_sleep_cycle_create_error)?;
+
+    let sleep_cycle = sleep_cycle_repository
+        .mark_completed(
+            sleep_cycle.id,
+            CompleteSleepCycle {
+                generated_memory_ids: Vec::new(),
+                metadata: json!({
+                    "summary": deterministic_consolidation_summary(input_trace_ids.len()),
+                    "selected_input_trace_count": input_trace_ids.len(),
+                    "runtime": "deterministic",
+                }),
+            },
+        )
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("manual consolidation record not found".to_string()))?;
+
+    let response = SurfaceResponse::new(
+        Surface::Observation,
+        SurfaceAction::RequestConsolidation,
+        json!({
+            "cycle_id": sleep_cycle.id,
+            "status": sleep_cycle.status,
+            "namespace": request.namespace,
+            "evidence_window_start": sleep_cycle.evidence_window_start,
+            "evidence_window_end": sleep_cycle.evidence_window_end,
+            "input_trace_ids": sleep_cycle.input_trace_ids,
+            "input_trace_count": sleep_cycle.input_trace_ids.len(),
+        }),
+        triggering_trace.id,
+        Vec::new(),
+        SurfaceVisibility::Debug,
+    );
+
+    Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
+}
+
 async fn patch_feedback_loop_attempt(
     state: &AppState,
     feedback_loop_id: Uuid,
@@ -338,6 +488,67 @@ async fn patch_feedback_loop_attempt(
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("FeedbackLoop not found".to_string()))
+}
+
+async fn select_trace_evidence(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    window_start: DateTime<Utc>,
+    window_end: DateTime<Utc>,
+) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM traces
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND started_at >= $3
+          AND started_at < $4
+          AND status = 'completed'
+          AND task_type <> 'consolidation'
+        ORDER BY started_at ASC, id ASC
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(window_start)
+    .bind(window_end)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)
+}
+
+fn manual_trace_mode(mode: Option<&str>) -> Result<TraceMode, AppError> {
+    match mode.unwrap_or("deep").trim().to_ascii_lowercase().as_str() {
+        "fast" => Ok(TraceMode::Fast),
+        "focused" => Ok(TraceMode::Focused),
+        "deep" => Ok(TraceMode::Deep),
+        "none" => Ok(TraceMode::None),
+        other => Err(AppError::BadRequest(format!(
+            "unsupported surface context mode: {other}"
+        ))),
+    }
+}
+
+fn deterministic_trace_runtime(_preference: Option<RuntimePreference>) -> TraceRuntime {
+    TraceRuntime::Deterministic
+}
+
+fn deterministic_consolidation_summary(input_trace_count: usize) -> String {
+    if input_trace_count == 0 {
+        "No Trace evidence found in the selected window".to_string()
+    } else {
+        format!("Selected {input_trace_count} Trace records for deterministic consolidation")
+    }
+}
+
+fn map_sleep_cycle_create_error(error: Error) -> AppError {
+    if matches!(error, Error::RowNotFound) {
+        AppError::Unauthorized
+    } else {
+        AppError::Database(error)
+    }
 }
 
 async fn require_space_writer(
@@ -516,5 +727,34 @@ mod tests {
             trace_runtime(Some(RuntimePreference::Local)),
             TraceRuntime::Local
         );
+    }
+
+    #[test]
+    fn deterministic_summary_handles_empty_evidence_window() {
+        assert_eq!(
+            deterministic_consolidation_summary(0),
+            "No Trace evidence found in the selected window"
+        );
+    }
+
+    #[test]
+    fn manual_consolidation_defaults_to_deep_deterministic_trace() {
+        assert_eq!(manual_trace_mode(None).unwrap(), TraceMode::Deep);
+        assert_eq!(
+            deterministic_trace_runtime(None),
+            TraceRuntime::Deterministic
+        );
+        assert_eq!(
+            deterministic_trace_runtime(Some(RuntimePreference::Cloud)),
+            TraceRuntime::Deterministic
+        );
+    }
+
+    #[test]
+    fn cross_space_link_validation_error_is_rejected() {
+        assert!(matches!(
+            map_sleep_cycle_create_error(Error::RowNotFound),
+            AppError::Unauthorized
+        ));
     }
 }

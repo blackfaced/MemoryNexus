@@ -26,6 +26,7 @@ pub enum SurfaceAction {
     ReviewEvidence,
     GenerateNextTask,
     GetStateSummary,
+    RequestConsolidation,
 }
 
 impl SurfaceAction {
@@ -35,7 +36,7 @@ impl SurfaceAction {
             Self::SubmitAttempt => Surface::Performance,
             Self::ReviewEvidence => Surface::Reflection,
             Self::GenerateNextTask => Surface::Planning,
-            Self::GetStateSummary => Surface::Observation,
+            Self::GetStateSummary | Self::RequestConsolidation => Surface::Observation,
         }
     }
 }
