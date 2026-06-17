@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
+use crate::db::feedback_loop::{CreateFeedbackLoop, FeedbackLoopDb, PatchFeedbackLoop};
 use crate::db::memory::{CreateMemory, MemoryType};
 use crate::db::space::SpaceMemberRole;
 use crate::db::trace::{
@@ -30,6 +31,15 @@ struct CapturePayload {
     metadata: Value,
 }
 
+#[derive(Debug, Deserialize)]
+struct SubmitAttemptPayload {
+    space_id: Uuid,
+    feedback_loop_id: Option<Uuid>,
+    goal: Option<String>,
+    task: Option<String>,
+    attempt: Value,
+}
+
 pub async fn handle(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
@@ -46,6 +56,9 @@ pub async fn handle(
     match (request.surface, request.action) {
         (Surface::Capture, SurfaceAction::CaptureObservation) => {
             capture_observation(&state, auth_user.user_id, request).await
+        }
+        (Surface::Performance, SurfaceAction::SubmitAttempt) => {
+            submit_attempt(&state, auth_user.user_id, request).await
         }
         _ => Err(AppError::NotImplemented(format!(
             "{:?} {:?} is not implemented yet",
@@ -176,6 +189,157 @@ async fn capture_observation(
     Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
 }
 
+async fn submit_attempt(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let started_at = Utc::now();
+    let payload: SubmitAttemptPayload = serde_json::from_value(request.payload.clone())
+        .map_err(|error| AppError::BadRequest(format!("invalid submitAttempt payload: {error}")))?;
+
+    require_space_writer(state, payload.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+
+    let attempt = attempt_summary(&payload.attempt);
+    let feedback_loop = match payload.feedback_loop_id {
+        Some(feedback_loop_id) => {
+            let existing = state
+                .repositories
+                .feedback_loops
+                .find_for_user(feedback_loop_id, user_id)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or(AppError::Unauthorized)?;
+            if existing.space_id != payload.space_id || existing.namespace_id != namespace.id {
+                return Err(AppError::BadRequest(
+                    "FeedbackLoop must belong to the requested Space and Namespace".to_string(),
+                ));
+            }
+            patch_feedback_loop_attempt(state, feedback_loop_id, attempt).await?
+        }
+        None => {
+            let task = payload
+                .task
+                .or_else(|| task_from_attempt(&payload.attempt))
+                .ok_or_else(|| {
+                    AppError::BadRequest(
+                        "submitAttempt requires task when feedback_loop_id is omitted".to_string(),
+                    )
+                })?;
+            let goal = payload
+                .goal
+                .unwrap_or_else(|| format!("Practice {}", request.namespace));
+            state
+                .repositories
+                .feedback_loops
+                .create(CreateFeedbackLoop {
+                    space_id: payload.space_id,
+                    namespace_id: namespace.id,
+                    goal,
+                    task,
+                    attempt: Some(attempt),
+                    evaluation: None,
+                    feedback: None,
+                    adjustment: None,
+                    next_task: None,
+                    status: "active".to_string(),
+                    created_by: user_id,
+                })
+                .await
+                .map_err(AppError::Database)?
+        }
+    };
+
+    let evaluation = deterministic_evaluation(&payload.attempt);
+    let completed_at = Utc::now();
+    let trace = state
+        .repositories
+        .traces
+        .create_completed(CreateCompletedTrace {
+            space_id: payload.space_id,
+            namespace_id: Some(namespace.id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Practice,
+            mode: trace_mode(request.context.mode.as_deref())?,
+            runtime: trace_runtime(request.context.runtime_preference),
+            input_summary: Some(format!(
+                "Performance submitAttempt in namespace {}",
+                request.namespace
+            )),
+            output_summary: Some(format!(
+                "Attempt recorded for FeedbackLoop {}",
+                feedback_loop.id
+            )),
+            started_at,
+            completed_at,
+            latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: vec![feedback_loop.id],
+            user_feedback: Some(json!({"attempt": payload.attempt})),
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "surface": request.surface,
+                "action": request.action,
+                "adapter": request.adapter,
+                "deep_consolidation": false,
+            }),
+        })
+        .await
+        .map_err(AppError::Database)?;
+
+    let response = SurfaceResponse::new(
+        Surface::Performance,
+        SurfaceAction::SubmitAttempt,
+        json!({
+            "status": "attempt_recorded",
+            "feedback_loop_id": feedback_loop.id,
+            "namespace_id": namespace.id,
+            "evaluation": evaluation,
+            "deep_consolidation": false,
+        }),
+        trace.id,
+        vec!["Review this attempt later for recurring mistake patterns".to_string()],
+        SurfaceVisibility::User,
+    );
+
+    Ok((StatusCode::OK, Json(ApiResponse::success(response))))
+}
+
+async fn patch_feedback_loop_attempt(
+    state: &AppState,
+    feedback_loop_id: Uuid,
+    attempt: String,
+) -> Result<FeedbackLoopDb, AppError> {
+    state
+        .repositories
+        .feedback_loops
+        .patch(
+            feedback_loop_id,
+            PatchFeedbackLoop {
+                attempt: Some(attempt),
+                evaluation: None,
+                feedback: None,
+                adjustment: None,
+                next_task: None,
+                status: None,
+            },
+        )
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("FeedbackLoop not found".to_string()))
+}
+
 async fn require_space_writer(
     state: &AppState,
     space_id: Uuid,
@@ -193,6 +357,44 @@ async fn require_space_writer(
         Ok(())
     } else {
         Err(AppError::Unauthorized)
+    }
+}
+
+fn attempt_summary(attempt: &Value) -> String {
+    match attempt {
+        Value::String(value) => value.trim().to_string(),
+        Value::Object(object) => {
+            let target = object.get("target").and_then(Value::as_str);
+            let submitted = object.get("submitted").and_then(Value::as_str);
+            match (target, submitted) {
+                (Some(target), Some(submitted)) => {
+                    format!("Target: {target}\nSubmitted: {submitted}")
+                }
+                _ => attempt.to_string(),
+            }
+        }
+        _ => attempt.to_string(),
+    }
+}
+
+fn task_from_attempt(attempt: &Value) -> Option<String> {
+    attempt
+        .get("target")
+        .and_then(Value::as_str)
+        .map(|target| format!("Attempt target: {target}"))
+}
+
+fn deterministic_evaluation(attempt: &Value) -> &'static str {
+    let Some(target) = attempt.get("target").and_then(Value::as_str) else {
+        return "recorded";
+    };
+    let Some(submitted) = attempt.get("submitted").and_then(Value::as_str) else {
+        return "recorded";
+    };
+    if target.trim() == submitted.trim() {
+        "correct"
+    } else {
+        "needs_review"
     }
 }
 
@@ -264,5 +466,55 @@ fn redacted_summary(content: &str) -> String {
             "{}...",
             compact.chars().take(MAX_SUMMARY_CHARS).collect::<String>()
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attempt_summary_keeps_target_and_submitted_text() {
+        let attempt = json!({
+            "target": "because",
+            "submitted": "becuase"
+        });
+
+        let summary = attempt_summary(&attempt);
+
+        assert!(summary.contains("Target: because"));
+        assert!(summary.contains("Submitted: becuase"));
+    }
+
+    #[test]
+    fn deterministic_evaluation_compares_target_and_submitted_text() {
+        assert_eq!(
+            deterministic_evaluation(&json!({
+                "target": "because",
+                "submitted": "because"
+            })),
+            "correct"
+        );
+        assert_eq!(
+            deterministic_evaluation(&json!({
+                "target": "because",
+                "submitted": "becuase"
+            })),
+            "needs_review"
+        );
+    }
+
+    #[test]
+    fn submit_attempt_trace_defaults_to_fast_deterministic_runtime() {
+        assert_eq!(trace_mode(Some("deep")).unwrap(), TraceMode::Deep);
+        assert_eq!(trace_mode(None).unwrap(), TraceMode::Fast);
+        assert_eq!(
+            trace_runtime(Some(RuntimePreference::Auto)),
+            TraceRuntime::Deterministic
+        );
+        assert_eq!(
+            trace_runtime(Some(RuntimePreference::Local)),
+            TraceRuntime::Local
+        );
     }
 }

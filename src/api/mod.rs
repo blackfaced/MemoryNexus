@@ -42,6 +42,8 @@ pub fn routes() -> Router<AppState> {
             "/api/v1/agent/route",
             axum::routing::post(agent_router::route),
         )
+        // Surface Gateway
+        .route("/api/v1/surfaces", axum::routing::post(surfaces::handle))
         // Cognitive Space
         .route("/api/v1/spaces", axum::routing::get(spaces::list))
         .route("/api/v1/spaces", axum::routing::post(spaces::create))
