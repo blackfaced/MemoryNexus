@@ -58,6 +58,22 @@ SurfaceRequest {
 | `context.device` | Optional device/channel hint. |
 | `context.runtime_preference` | deterministic, local, cloud, hybrid, or auto preference. |
 
+### MVP Action Vocabulary
+
+The first contract keeps actions narrow so adapters can share one request shape
+without exposing Engine internals:
+
+| Surface | Initial action |
+| --- | --- |
+| `capture` | `capture_observation` |
+| `performance` | `submit_attempt` |
+| `reflection` | `review_evidence` |
+| `planning` | `generate_next_task` |
+| `observation` | `get_state_summary` |
+
+Requests must use an action that belongs to the selected surface. For example,
+`submit_attempt` is valid for `performance` and invalid for `capture`.
+
 ## SurfaceResponse
 
 Conceptual shape:
@@ -83,6 +99,10 @@ SurfaceResponse {
 | `generated_trace_id` | Trace ID for provenance and later feedback effectiveness. |
 | `follow_up_suggestions` | Optional next actions; may come from Planning Surface or deterministic defaults. |
 | `visibility` | Intended visibility: user, coach, debug, internal, or adapter-specific. |
+
+The response `result` is intentionally shaped for the adapter. Raw Engine
+objects such as `MemoryAtom`, `CognitiveScene`, `GrowthModel`, or
+`PracticePlan` should not be returned by default.
 
 ## Sync vs Async
 

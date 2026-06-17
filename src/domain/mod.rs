@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub mod growth_model;
+pub mod surface;
 pub mod trace;
 
 pub type SpaceId = Uuid;
