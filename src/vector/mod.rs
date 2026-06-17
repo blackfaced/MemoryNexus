@@ -26,6 +26,7 @@ pub struct MemoryVectorPayload {
     pub memory_id: Uuid,
     pub user_id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
     pub source_type: String,
     pub created_at: String,
     pub visibility: String,
@@ -456,6 +457,7 @@ mod tests {
             memory_id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: Some(Uuid::new_v4()),
             source_type: "memory".to_string(),
             created_at: "2026-05-20T00:00:00Z".to_string(),
             visibility: "private".to_string(),
@@ -466,6 +468,7 @@ mod tests {
         let json = serde_json::to_value(payload).unwrap();
 
         assert_eq!(json["source_type"], "memory");
+        assert!(json["namespace_id"].is_string());
         assert_eq!(json["created_at"], "2026-05-20T00:00:00Z");
         assert_eq!(json["visibility"], "private");
     }

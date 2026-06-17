@@ -1,388 +1,305 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-12
-> Source of truth for executable tasks: GitHub Issues.
+> Last updated: 2026-06-15
+> Source of truth for executable task definitions in this branch:
+> [docs/issues.md](issues.md). GitHub Issues should be created or updated from
+> that file after this architecture refresh is accepted.
 
-This file is now a roadmap summary. Do not maintain detailed task status in
-Markdown. Create or update GitHub Issues instead, and keep long-term architecture
-decisions in `decisions/` as ADRs.
+## Current Direction
 
-## Tracking
+MemoryNexus is a local-first, namespace-based long-term feedback engine for
+personal cognition and skill acquisition.
 
-- [All open issues](https://github.com/blackfaced/MemoryNexus/issues)
-- [Phase 2 Cognitive Lens MVP](https://github.com/blackfaced/MemoryNexus/milestone/3)
-- [Phase 3 Personal Cognitive Features](https://github.com/blackfaced/MemoryNexus/milestone/1)
-- [Phase 4 User Interface](https://github.com/blackfaced/MemoryNexus/milestone/2)
-- [Phase 5 Namespace Memory Lifecycle and Feedback Loops](https://github.com/blackfaced/MemoryNexus/milestone/4)
-
-Recommended labels:
-
-- `phase:2`, `phase:3`, `phase:4`, `phase:5`
-- `area:lens`, `area:ai`, `area:cli`, `area:frontend`, `area:cognition`
-- `priority:p0`, `priority:p1`, `priority:p2`
-- `type:feature`, `type:docs`
-
-## Completed Baseline
-
-The current baseline is the Rust-first Cognitive Lens MVP foundation:
-
-- Rust + Axum backend is the main backend path.
-- Memory belongs to `CognitiveSpace`, not Agent.
-- Space-scoped memory CRUD, keyword search, semantic search, and Qdrant indexing
-  are implemented.
-- `memorynexus-cli` supports auth, spaces, memories, search, lenses, Lens Run,
-  Lens Run history, Lens templates, reminders, and runtime config inspection.
-- Lens Run stores traceable output with matched memory IDs, summary provenance,
-  structured key points, open questions, next actions, and citations.
-- OpenAI-compatible summary providers are supported, including OpenRouter via
-  `OPENROUTER_API_KEY`.
-- Phase 2 Cognitive Lens MVP is complete and the GitHub milestone is closed.
-- Phase 4 has a Rust-served Thought Review MVP at `/` and `/app`.
-- ADR-014 extends the long-term direction toward Namespace, MemoryAtom,
-  CognitiveScene, Lens-based CognitiveProjection, and FeedbackLoop as a feedback
-  substrate, while keeping CognitiveSpace as the ownership boundary. Thought
-  Review is the reflective demo; STEM Learning Feedback is the first product MVP
-  candidate, represented by `learning.stem`.
-- ADR-015 records Supabase as a deployment compatibility path: first as managed
-  PostgreSQL, with Auth / Storage / Realtime only as later adapters.
-- ADR-016 introduces Trace as local-first runtime and feedback evidence.
-- ADR-017 introduces Wake / Sleep / Dreaming as the delayed consolidation model:
-  Wake captures Trace, Sleep consolidates offline, and Dreaming generates
-  candidate next practices or review prompts.
-
-## Phase 2: Cognitive Lens MVP
-
-Goal: make Lens a reliable runnable interpretation strategy over a Cognitive
-Space.
-
-Status:
-
-Completed. The GitHub milestone has 0 open issues. The implemented MVP includes
-Lens CRUD, Lens templates, Lens Run execution/history, lens-scoped search and
-summaries, deterministic/provider-backed summaries, smart tag suggestions, local
-evaluation fixtures, MCP access, and optional service-backed acceptance CI.
-
-## Phase 3: Personal Cognitive Features
-
-Goal: extend MemoryNexus from project memory to personal and family cognitive
-workflows while keeping Cognitive Space as the ownership boundary.
-
-Current open work:
-
-No current Phase 3 issues remain open. The Phase 3 milestone is closed.
-
-Recently completed:
-
-- [#6 Family member and shared Cognitive Space model](https://github.com/blackfaced/MemoryNexus/issues/6):
-  shared `CognitiveSpace` roles, invite codes, member listing, role updates, and
-  role-gated memory writes.
-- Personal agent integration guide and templates for Claw/Hermes-style MCP
-  clients.
-- [#41 Agent-ready MCP bootstrap tools](https://github.com/blackfaced/MemoryNexus/issues/41):
-  MCP `create_space` / `create_lens`, default-space `get_profile`, and an
-  agent self-install guide so another agent can connect itself.
-- [#33 Persist personal agent profile and cognitive state projection](https://github.com/blackfaced/MemoryNexus/issues/33):
-  profile snapshot API, persisted provenance, and MCP `get_profile`.
-- [#34 Add personal agent write policy and cognitive router](https://github.com/blackfaced/MemoryNexus/issues/34):
-  deterministic agent router API and MCP `route_agent_context`.
-- [#7 Reminder and scheduled recall system](https://github.com/blackfaced/MemoryNexus/issues/7):
-  Space-scoped reminder storage, API, CLI, and MCP tools for poll-based
-  scheduled recall.
-- [#20 Periodic cognitive review reports](https://github.com/blackfaced/MemoryNexus/issues/20):
-  manual API/CLI review report generation over a Lens and time window with
-  source memory citations and summary provenance.
-- [#16 CLI commands for family spaces and reminders](https://github.com/blackfaced/MemoryNexus/issues/16):
-  `family` CLI for shared Cognitive Space create/list/members/invite/accept/role
-  plus `remind` alias for reminder commands.
-- [#8 Voice capture with Whisper transcription](https://github.com/blackfaced/MemoryNexus/issues/8):
-  voice upload and transcription API are implemented.
-- [#35 Reminder notification delivery channels](https://github.com/blackfaced/MemoryNexus/issues/35):
-  reminder delivery channel tracking is implemented.
-- [#36 Advanced reminder recurrence and rule engine](https://github.com/blackfaced/MemoryNexus/issues/36):
-  advanced recurrence handling is implemented.
-
-## Phase 4: User Interface
-
-Goal: build the first user-facing UI around Thought Review: capture one messy
-thought, interpret it through multiple perspectives, save the review with
-provenance, and summarize recurring weekly themes.
-
-Current open work:
-
-No current Phase 4 UI issues are required for the next MVP direction. Thought
-Review remains available as a reflective demo and presentation entry point. The
-Phase 4 milestone is closed.
-
-Recently completed:
-
-- [#24 Choose UI technology stack and scope](https://github.com/blackfaced/MemoryNexus/issues/24):
-  Phase 4 starts with a Rust-served static Thought Review UI, documented in
-  [ADR-013](../decisions/ADR-013-thought-review-ui-mvp.md).
-- [#42 Thought Review MVP: first user-facing experience](https://github.com/blackfaced/MemoryNexus/issues/42):
-  static first UI served by the Rust API at `/` and `/app`.
-- [#45 First action: capture the thought occupying the user mind](https://github.com/blackfaced/MemoryNexus/issues/45):
-  first screen asks for the thought currently taking up the most mental space.
-- [#48 Instant multi-lens interpretation for a single thought](https://github.com/blackfaced/MemoryNexus/issues/48):
-  Engineering, Detective, and Narrative perspectives run over one thought.
-- [#43 Save a thought review with user-facing language and provenance](https://github.com/blackfaced/MemoryNexus/issues/43):
-  thought review saves Memory and Lens Run provenance while using product language.
-- [#47 Weekly cognitive review: recurring themes and inner tensions](https://github.com/blackfaced/MemoryNexus/issues/47):
-  weekly reports expose recurring themes, inner tensions, forming direction, and
-  next step.
-- [#49 Reframe public positioning around AI thought review](https://github.com/blackfaced/MemoryNexus/issues/49):
-  README now leads with AI thought organizer positioning.
-- [#46 User-facing terminology map for Thought Review UI](https://github.com/blackfaced/MemoryNexus/issues/46):
-  UI and docs separate user-facing language from backend model terms.
-- [#25 Cognitive Space list and switch UI](https://github.com/blackfaced/MemoryNexus/issues/25):
-  Thought Review lists accessible spaces, persists the active space, routes
-  Memory/Lens/Lens Run/Search/Review work to it, and shows visible space errors.
-- [#22 Lens Run result UI](https://github.com/blackfaced/MemoryNexus/issues/22):
-  Thought Review can run a selected Lens and inspect traceable Lens Run output.
-- [#23 Semantic search UI](https://github.com/blackfaced/MemoryNexus/issues/23):
-  Thought Review exposes space-scoped keyword and semantic search with provider
-  error handling.
-- [#12 Memory detail and delete flow](https://github.com/blackfaced/MemoryNexus/issues/12):
-  saved thoughts can be opened, edited with tags, and deleted from the static UI.
-- [#10 Login and registration UI](https://github.com/blackfaced/MemoryNexus/issues/10):
-  original MVP auth form and JWT persistence scope is covered.
-- [#11 Memory create, list, and detail UI](https://github.com/blackfaced/MemoryNexus/issues/11):
-  broad MVP memory UI scope is covered.
-
-## Phase 5: Namespace Memory Lifecycle and Feedback Loops
-
-Goal: extend the cognitive memory foundation into a namespace-based long-term
-feedback substrate with an explicit memory lifecycle. Thought Review remains the
-reflective demo; STEM Learning Feedback is the first product MVP candidate.
-
-Direction:
-
-- `CognitiveSpace` remains the ownership and permission boundary.
-- `Namespace` partitions a Space into long-running domains such as
-  `personal.thoughts`, `learning.stem`, `music.piano`, or `chess.tactics`.
-- `FeedbackLoop` captures goal, task, attempt, evaluation, feedback, adjustment,
-  and next task.
-- `MemoryAtom` captures the smallest traceable cognitive signal extracted from a
-  Memory.
-- `CognitiveScene` consolidates related atoms, reflections, concepts, beliefs,
-  and contradictions into a long-running theme or practice field.
-- `CognitiveProjection` is the Lens-specific reconstructed context for the
-  current query; it is not plain top-k retrieval.
-- Observe modes split projection cost into `fast`, `focused`, and `deep`, so
-  ordinary interaction stays low-latency while explicit review can go deep.
-- Reflective namespaces focus on meaning, belief, contradiction, identity, and
-  direction.
-- Skill namespaces focus on practice, error pattern, progress, feedback, and
-  next practice.
-- The first product MVP candidate is STEM Learning Feedback in `learning.stem`.
-  The first validation task is parent-assisted elementary fraction word
-  problems, but the product direction is broader STEM practice feedback.
-- EverMemOS is a useful reference for memory lifecycle ideas, but MemoryNexus
-  keeps a different product boundary: user-owned cognitive perspective and
-  feedback loops, not agent memory for reasoning.
-- Trace is the evidence layer for local-first runtime metrics, generated object
-  links, and feedback effectiveness.
-- Sleep Engine is the offline evolution layer. It should consolidate Trace /
-  Memory / FeedbackLoop evidence after interaction, not during every foreground
-  request.
-- Dreaming produces `DreamCandidate` records: candidate practice, review,
-  scenario, contradiction exploration, or planning prompts. The first
-  implementation path should be deterministic and local-first.
-
-Lifecycle:
+It should not be framed as a generic AI memory app, second brain, agent memory
+store, connector platform, RAG profile service, or local AI runtime. Its core
+question is:
 
 ```text
-Experience / Thought / Practice
-→ Memory
-→ MemoryAtom
-→ CognitiveScene
-→ Lens-based CognitiveProjection
-→ Reflection / Belief / Next Action
-→ FeedbackLoop
+How can a system use long-term traces to generate better feedback and next
+actions over time?
 ```
 
-Runtime policy:
+The target loop is:
 
 ```text
-Every input -> fast response + optional async processing
-Important input -> focused projection
-Scheduled review / explicit request -> deep consolidation and projection
+Trace -> FeedbackLoop -> GrowthModel -> PracticePlan -> next Trace
 ```
 
-Wake / Sleep / Dreaming policy:
+## Current Understanding
+
+The repository already has strong foundations:
+
+- Rust + Axum is the main backend.
+- Memory belongs to `CognitiveSpace`, not to agents or apps.
+- Namespace and FeedbackLoop foundations exist.
+- Trace and SleepCycle contracts exist.
+- Thought Review demonstrates reflective memory and Lens-based interpretation.
+- The `learning.stem` slice validates practice sessions, feedback capture,
+  weekly review, MCP flow, and a simple Rust-served UI.
+- Binary-first install, Local One-click packaging, Production Profile, and
+  Supabase Postgres compatibility have documentation and implementation tracks.
+
+## Gap Against The New Direction
+
+The project still needs to close these gaps:
+
+- Older docs and compatibility paths still contain mixed positioning: AI thought
+  organizer, cognitive lens memory, STEM Learning Feedback, and long-term
+  feedback engine.
+- Architecture docs do not yet make Engine / Surfaces / Adapters / Surface
+  Gateway the primary model.
+- Existing APIs expose object-level operations before a Surface Gateway exists.
+- GrowthModel and PracticePlan are not yet first-class domain objects.
+- Event-driven backend boundaries are not explicit in implementation.
+- `learning.stem` is a useful prior slice, but the next upstream product should
+  be Dictation Coach.
+- Evaluation should measure growth and feedback usefulness, not just retrieval
+  accuracy.
+
+## Architecture Spine
 
 ```text
-Wake -> low-latency response + Trace
-Sleep -> offline consolidation into stable patterns / growth signals
-Dreaming -> candidate next practice / review prompt / scenario
-Next Wake -> new Trace evaluates whether the candidate helped
+Adapters
+  Chat Agent / MCP / CLI / Web / Mobile / Dashboard / Voice
+      |
+      v
+Surface Gateway
+  Auth / Namespace routing / Surface routing / ACL / validation
+  Response shaping / Trace writing / sync-async dispatch / events
+      |
+      v
+Surfaces
+  Capture | Performance | Reflection | Planning | Observation
+      |
+      v
+Engine
+  Namespace | Trace | MemoryAtom | CognitiveScene | FeedbackLoop
+  GrowthModel | SleepCycle | PracticePlan / DreamCandidate | Lens
 ```
 
-Recently completed:
+Principle:
 
-- [#52 Define Namespace and FeedbackLoop foundation](https://github.com/blackfaced/MemoryNexus/issues/52):
-  minimal Namespace and FeedbackLoop design documented in
-  [Namespace and Feedback Loop Minimal Design](namespace-feedback-loop-design.md),
-  with ADR-014 supplemented and implementation work split below.
-- [#56 Minimal Namespace database model and API](https://github.com/blackfaced/MemoryNexus/issues/56):
-  Namespace schema, repository, and API are now on main.
-- [#57 Minimal FeedbackLoop database model and API](https://github.com/blackfaced/MemoryNexus/issues/57):
-  FeedbackLoop schema, repository, and API are now on main.
-- [#59 STEM Learning Feedback MVP: parent-assisted practice loop](https://github.com/blackfaced/MemoryNexus/issues/59):
-  first product MVP PRD is scoped to `learning.stem`, with elementary fraction
-  word problems as the first validation task.
-- [#67 Add attempt patch support to FeedbackLoop](https://github.com/blackfaced/MemoryNexus/issues/67):
-  FeedbackLoop attempts can be patched after session creation.
-- [#68 Capture FeedbackLoop event as Memory](https://github.com/blackfaced/MemoryNexus/issues/68):
-  practice events can be preserved as Space-owned Memory with FeedbackLoop
-  provenance.
-- [#69 STEM learning practice session API](https://github.com/blackfaced/MemoryNexus/issues/69):
-  thin product API on top of Namespace and FeedbackLoop records practice answers
-  and feedback, and preserves optional Memory snapshots. The current first-slice
-  implementation may still expose `/learning/math` compatibility naming.
-- [#73 STEM learning MCP tools for practice sessions](https://github.com/blackfaced/MemoryNexus/issues/73):
-  current `learning_math_*` MCP tools expose the practice flow to agents.
-- [#87 Validate STEM learning MCP flow with an agent end-to-end demo](https://github.com/blackfaced/MemoryNexus/issues/87):
-  the canonical namespace-driven `learning.stem` MCP practice flow is validated
-  end to end, with Memory snapshot provenance.
-- [#89 Make learning practice API namespace-driven and add learning.stem aliases](https://github.com/blackfaced/MemoryNexus/issues/89):
-  practice sessions now use namespace-driven API and MCP surfaces while keeping
-  compatibility aliases during transition.
-- [#71 Weekly learning review report](https://github.com/blackfaced/MemoryNexus/issues/71):
-  weekly learning review reports summarize practiced topics, recurring mistake
-  patterns, improvement signals, and next practice with FeedbackLoop and Memory
-  provenance.
-- [#70 learning.stem parent/learner static UI slice](https://github.com/blackfaced/MemoryNexus/issues/70):
-  the Rust-served static UI slice supports parent-assisted STEM practice flow.
+```text
+Adapter = how interaction happens
+Surface = what intent is requested
+Engine  = how memory, feedback, growth, and planning evolve over time
+```
 
-Current open work:
+## Milestone 1: Architecture Refresh
 
-Trace learning runtime track:
+Goal: update documentation only; no business code changes.
+
+Status: in progress in this branch.
+
+Deliverables:
+
+- Update README positioning.
+- Add or update [Vision](vision.md).
+- Add [MemoryNexus Engine](architecture/memorynexus-engine.md).
+- Add [Surfaces and Adapters](architecture/surfaces-and-adapters.md).
+- Add [Surface Gateway](architecture/surface-gateway.md).
+- Add [Sleep-driven Feedback Loop](architecture/sleep-driven-feedback-loop.md).
+- Add ADR-018: MemoryNexus as Long-term Feedback Engine.
+- Add ADR-019: Surfaces vs Adapters vs Engine.
+- Keep ADR-017 as the Sleep-based Consolidation ADR.
+- Add ADR-020: Dictation Coach as First Upstream Product.
+- Add [Executable Issues](issues.md).
+
+## Milestone 2: Core Domain Model
+
+Goal: define core domain types and schema without LLM integration or complex UI.
 
 Recommended sequence:
 
-1. [#94 Local-first Trace Learning Runtime implementation track](https://github.com/blackfaced/MemoryNexus/issues/94):
-   umbrella for ADR-016 Trace implementation.
-2. [#99 Define Trace schema and repository foundation](https://github.com/blackfaced/MemoryNexus/issues/99):
-   persist the minimal Trace evidence layer.
-3. [#100 Capture lightweight Trace for Lens Run and MCP tool calls](https://github.com/blackfaced/MemoryNexus/issues/100):
-   capture first runtime/provenance surfaces.
-4. [#97 Add ObserveMode runtime metrics and local-first execution fields](https://github.com/blackfaced/MemoryNexus/issues/97):
-   expose mode/runtime/cost/latency fields.
-5. [#95 Define local/cloud routing policy for ObserveMode](https://github.com/blackfaced/MemoryNexus/issues/95):
-   document deterministic/local/cloud policy before runtime routing expands.
-6. [#101 Use Trace to evaluate STEM feedback effectiveness](https://github.com/blackfaced/MemoryNexus/issues/101):
-   connect feedback to later attempts and weekly review signals.
+1. Stabilize `Namespace` and existing `FeedbackLoop` contracts under the Engine
+   vocabulary.
+2. Define and persist `Trace`.
+3. Define `MemoryAtom` and `CognitiveScene`.
+4. Define `GrowthModel`.
+5. Define `SleepCycle`.
+6. Define `PracticePlan` / `DreamCandidate`.
+7. Define minimal Lens / Reflection structures for Surface use.
+8. Add serialization, repository, and same-Space validation tests.
 
-Foundation / lifecycle support track:
+Non-goals:
 
-- [#58 Namespace filters and FeedbackLoop provenance threading](https://github.com/blackfaced/MemoryNexus/issues/58)
-- [#65 Define dual-system observe modes](https://github.com/blackfaced/MemoryNexus/issues/65)
-- [#60 Define MemoryAtom and CognitiveScene lifecycle](https://github.com/blackfaced/MemoryNexus/issues/60)
-- [#61 Build MemoryNexus self-dataset atomization fixture](https://github.com/blackfaced/MemoryNexus/issues/61)
-- [#62 Define Lens-based CognitiveProjection contract](https://github.com/blackfaced/MemoryNexus/issues/62)
-- [#63 Prototype CognitiveScene consolidation](https://github.com/blackfaced/MemoryNexus/issues/63)
+- No OCR.
+- No cloud LLM dependency.
+- No complex UI.
+- No broad education platform.
 
-Sleep Engine / Dreaming track:
+## Milestone 3: Surface Gateway MVP
+
+Goal: build the unified Engine entry point.
 
 Recommended sequence:
 
-1. [#116 Sleep Engine and offline memory consolidation track](https://github.com/blackfaced/MemoryNexus/issues/116):
-   umbrella for ADR-017 implementation.
-2. [#119 Define SleepCycle, ConsolidationResult, and DreamCandidate contract](https://github.com/blackfaced/MemoryNexus/issues/119):
-   define contracts before schema or API work.
-3. [#117 Prototype deterministic daily sleep consolidation over Trace fixtures](https://github.com/blackfaced/MemoryNexus/issues/117):
-   prove local-first consolidation over learning.stem evidence.
-4. [#123 Generate deterministic DreamCandidates for learning.stem](https://github.com/blackfaced/MemoryNexus/issues/123):
-   generate candidate next fraction practice and review prompts.
-5. [#120 Add manual SleepCycle API, CLI, and MCP trigger](https://github.com/blackfaced/MemoryNexus/issues/120):
-   expose explicit/manual execution before scheduler automation.
-6. [#124 Define Dreaming runtime routing for deterministic, local, and cloud execution](https://github.com/blackfaced/MemoryNexus/issues/124):
-   define Trial / Local One-click / Production policy before provider work.
-7. [#125 Evaluate DreamCandidate effectiveness and prune low-value plans](https://github.com/blackfaced/MemoryNexus/issues/125):
-   close the loop with future Trace and FeedbackLoop evidence.
+1. Define `SurfaceRequest` and `SurfaceResponse`.
+2. Implement Capture Surface minimum path.
+3. Implement Performance Surface minimum path.
+4. Add Reflection Surface mock.
+5. Add Planning Surface mock.
+6. Add Observation Surface mock.
+7. Ensure every Surface call writes Trace.
+8. Add visibility / permission fields, initially with simple policy.
+9. Add tests for routing, validation, response shaping, and Trace creation.
 
-Candidate follow-up work:
+Non-goals:
 
-- Add end-to-end acceptance tests for Space -> Namespace -> FeedbackLoop ->
-  Memory -> Lens Run -> Review Report/Profile.
-- Add prototype tests for Memory -> MemoryAtom -> CognitiveScene ->
-  CognitiveProjection over a small MemoryNexus project-note fixture.
-- Add latency and behavior acceptance criteria proving `fast` mode does not run
-  the full deep cognitive pipeline.
-- Keep product entry points narrow; do not expose every possible namespace in
-  the first UI.
-- Add automated daily / weekly Sleep scheduler only after manual SleepCycle and
-  deterministic DreamCandidate generation are validated.
+- Do not replace all existing REST/MCP routes in one migration.
+- Do not expose Engine internals as Surface responses.
 
-## Distribution and Agent Install
+## Milestone 4: Event + Sleep Engine MVP
 
-Goal: make MemoryNexus installable by agents and non-developer users without
-requiring a local Rust toolchain. PostgreSQL and Qdrant may still run through
-Docker.
+Goal: make foreground paths fast and background paths deep.
 
-Current baseline:
+Recommended sequence:
 
-- Tagged GitHub releases publish stable binary archives for `memorynexus`,
-  `memorynexus-cli`, and `memorynexus-mcp`.
-- Initial release targets are `aarch64-apple-darwin`,
-  `x86_64-apple-darwin`, and `x86_64-unknown-linux-gnu`.
-- Each archive has a matching `.sha256` checksum file for install automation.
-- The artifact layout is shared by Trial Profile, Local One-click Profile, and
-  Production Profile.
-- Source-build Developer Profile remains available.
+1. Define basic Engine Event model.
+2. Publish `ObservationCaptured` after Capture Surface calls.
+3. Publish `AttemptSubmitted` after Performance Surface calls.
+4. Implement manual SleepCycle trigger.
+5. Aggregate Trace evidence in SleepCycle.
+6. Generate a simple GrowthModel update.
+7. Generate a simple next PracticePlan.
+8. Record SleepCycle status and Trace.
+9. Add tests.
 
-Recently completed:
+Non-goals:
 
-- [#85 Build and publish release binaries for MemoryNexus](https://github.com/blackfaced/MemoryNexus/issues/85):
-  release workflow foundation for prebuilt `memorynexus`, `memorynexus-cli`,
-  and `memorynexus-mcp` artifacts.
-- [#82 Add binary-first mode to agent self-install](https://github.com/blackfaced/MemoryNexus/issues/82):
-  CLI and MCP install helpers now distinguish Trial, Local One-click,
-  Production, and Developer profiles, prefer release-binary plans for
-  non-developer installs, and keep source-build fallback explicit.
-- [#86 Document Trial, Local One-click, and Production install profiles](https://github.com/blackfaced/MemoryNexus/issues/86):
-  README, CLI, MCP, and agent self-install docs now present Trial, Local
-  One-click, Production, and Developer Profile as separate paths, clarify Docker
-  requirements, and keep source build as Developer-only.
-- [#83 Add Docker runtime compose bundle for Local One-click Profile](https://github.com/blackfaced/MemoryNexus/issues/83):
-  Local One-click runtime compose and env files now provide PostgreSQL and
-  Qdrant services for release-binary installs.
-- [#84 Create Local One-click offline install bundle for agents](https://github.com/blackfaced/MemoryNexus/issues/84):
-  release packaging now emits a Local One-click archive with `bin/` binaries,
-  runtime compose/env files, `install.sh`, local install README, checksums, and
-  manifest metadata.
+- No scheduler before manual SleepCycle works.
+- No distributed queue before in-process / stored events prove the shape.
+- No cloud generation in the first path.
 
-- [#81 Binary-first and offline agent installation](https://github.com/blackfaced/MemoryNexus/issues/81):
-  umbrella issue for the install/distribution track.
+## Milestone 5: Dictation Coach Demo
 
-## Deployment Compatibility
+Goal: validate the full loop with a daily dictation product scenario.
 
-Supabase is a supported future deployment target, but not a replacement backend
-line. Follow [ADR-015](../decisions/ADR-015-supabase-integration.md):
+Initial namespaces:
 
-Recently completed:
+- `child.chinese.dictation`
+- `child.english.spelling`
+- `child.english.sentence-dictation`
 
-- [#92 Define hosted Production Profile without local Docker](https://github.com/blackfaced/MemoryNexus/issues/92):
-  hosted Production Profile docs define managed PostgreSQL, Qdrant Cloud,
-  required environment variables, operational checks, and `QDRANT_API_KEY`
-  support without replacing the Rust API or local Docker paths.
-- [#66 Validate Supabase Postgres compatibility](https://github.com/blackfaced/MemoryNexus/issues/66):
-  Supabase is documented as a managed PostgreSQL target through `DATABASE_URL`,
-  with direct/session pooler recommendations, SSL requirements, migration
-  validation steps, and a Rust API smoke checklist.
+Recommended sequence:
 
-Open work:
+1. Capture today's word, phrase, or sentence list.
+2. Submit manual dictation / spelling result.
+3. Classify mistakes deterministically.
+4. Generate tomorrow's 10-minute practice.
+5. Show simple 7-day trends.
+6. Run manual SleepCycle over dictation traces.
+7. Generate weekly review.
+8. Expose through one minimal adapter: CLI, MCP/chat, or simple Rust-served Web
+   UI.
 
-1. Keep Rust + Axum as the only main backend.
-2. Keep `CognitiveSpace` membership and permissions in MemoryNexus.
-3. Treat Supabase Auth, Storage, and Realtime as optional later adapters.
+Chinese mistake taxonomy:
+
+- wrong character;
+- visually similar character;
+- homophone;
+- missing stroke;
+- extra stroke;
+- stroke-order issue;
+- component placement issue.
+
+English mistake taxonomy:
+
+- missing letter;
+- extra letter;
+- letter order error;
+- double-letter error;
+- sound-spelling mapping error;
+- capitalization error;
+- missing word in sentence dictation.
+
+Non-goals:
+
+- No OCR.
+- No handwriting recognition.
+- No multi-child management.
+- No full curriculum.
+- No broad multi-subject learning platform.
+
+## Milestone 6: Adapters
+
+Goal: validate one Engine through multiple interaction channels.
+
+Recommended adapter sequence:
+
+1. Chat / Agent Adapter: can access Capture, Performance, Reflection, Planning,
+   and Observation through Surface Gateway.
+2. Simple Practice App Adapter: can access Performance, Planning, and limited
+   Observation.
+3. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
+4. Define allowed surfaces per adapter.
+5. Ensure adapters do not directly access Engine internals.
+
+Non-goals:
+
+- No new frontend stack unless an ADR approves it.
+- No adapter-owned memory.
+- No adapter-specific database ownership model.
+
+## Milestone 7: Evaluation
+
+Goal: build MemoryNexus' GrowthBench / DictationBench.
+
+Recommended sequence:
+
+1. Define DictationBench fixtures.
+2. Evaluate recurring error detection.
+3. Evaluate next-practice generation.
+4. Evaluate multi-day error reduction.
+5. Record latency, cost, local ratio, and useful feedback rate.
+6. Report GrowthBench results.
+
+Non-goals:
+
+- Do not optimize only for retrieval accuracy.
+- Do not claim causality beyond available evidence.
+- Do not require external AI credentials for baseline evaluation.
+
+## Existing GitHub Issues To Reconcile
+
+Existing open issues should be mapped to the new milestones rather than blindly
+continued under the old Phase 5 wording.
+
+Likely mapping:
+
+- #58 Namespace filters and FeedbackLoop provenance threading -> Milestone 2.
+- #99 Trace schema and repository foundation -> Milestone 2.
+- #100 Trace for Lens Run and MCP calls -> Milestone 3 / compatibility bridge.
+- #97 ObserveMode runtime metrics -> Milestone 2 / 3.
+- #95 local/cloud routing policy -> Milestone 3 / 4.
+- #119 SleepCycle contract -> completed by `docs/sleep-cycle-contract.md`, verify
+  and close if accepted.
+- #117 deterministic daily sleep consolidation -> Milestone 4.
+- #123 deterministic DreamCandidates for `learning.stem` -> adapt or supersede
+  with PracticePlan / Dictation Coach issue.
+- #120 manual SleepCycle API / CLI / MCP trigger -> Milestone 4.
+- #125 DreamCandidate effectiveness -> Milestone 7.
+- #61 / #62 / #63 lifecycle fixtures -> Milestone 2 / 7 prototype work.
+- #128 / #129 / #130 install and deployment issues -> supporting distribution
+  track, not core Engine roadmap.
+
+## Supporting Distribution Track
+
+These are important but not on the core Engine critical path:
+
+- #128 Publish first Local One-click offline release bundle.
+- #129 Make Trial Profile plug-and-play for agent demos.
+- #130 Stand up a real Production Profile deployment and smoke test.
+
+They support external usage once the Engine and Surface Gateway are useful.
 
 ## Issue Hygiene
 
-When adding future work:
+When creating or updating GitHub Issues from [docs/issues.md](issues.md):
 
-1. Create a GitHub Issue with concrete acceptance criteria.
-2. Add a milestone when the work belongs to a phase.
-3. Add `phase:*`, `area:*`, `priority:*`, and `type:*` labels.
-4. Add or update an ADR in `decisions/` for long-term architecture decisions.
-5. Update this roadmap only when phase-level direction changes.
+1. Use the milestone names from this roadmap.
+2. Keep acceptance criteria concrete.
+3. Include non-goals.
+4. Name likely files.
+5. Preserve Rust-first and CognitiveSpace ownership boundaries.
+6. Do not mix multiple milestones into one worker task.

@@ -22,6 +22,8 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 pub struct CreateProfileRequest {
     pub space_id: Option<Uuid>,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub lens_id: Option<Uuid>,
     #[serde(default = "default_target")]
     pub target: String,
@@ -47,6 +49,17 @@ pub async fn create(
     let limit = req.limit.unwrap_or(12).clamp(1, 30);
 
     let (space, lens) = resolve_profile_context(&state, &req, auth_user.user_id).await?;
+    let provenance = validate_provenance(
+        &state,
+        auth_user.user_id,
+        space.id,
+        resolve_lens_namespace(
+            lens.as_ref().and_then(|lens| lens.namespace_id),
+            req.namespace_id,
+        )?,
+        req.feedback_loop_id,
+    )
+    .await?;
 
     let memories = state
         .repositories
@@ -56,7 +69,10 @@ pub async fn create(
             space.id,
             limit,
             0,
-            crate::db::memory::MemoryListFilter::default(),
+            crate::db::memory::MemoryListFilter {
+                namespace_id: provenance.namespace_id,
+                ..crate::db::memory::MemoryListFilter::default()
+            },
         )
         .await
         .map_err(AppError::Database)?;
@@ -68,6 +84,7 @@ pub async fn create(
             LensRunListFilter {
                 lens_id: req.lens_id,
                 space_id: Some(space.id),
+                namespace_id: provenance.namespace_id,
                 limit: limit.min(10),
             },
             auth_user.user_id,
@@ -75,7 +92,15 @@ pub async fn create(
         .await
         .map_err(AppError::Database)?;
 
-    let profile = build_profile_json(&space, lens.as_ref(), &target, &memories, &lens_runs);
+    let profile = build_profile_json(
+        &space,
+        lens.as_ref(),
+        provenance.namespace_id,
+        provenance.feedback_loop_id,
+        &target,
+        &memories,
+        &lens_runs,
+    );
     let source_memory_ids = memories.iter().map(|memory| memory.id).collect::<Vec<_>>();
     let source_lens_run_ids = lens_runs.iter().map(|run| run.id).collect::<Vec<_>>();
 
@@ -84,6 +109,8 @@ pub async fn create(
         .profiles
         .create(CreateCognitiveProfileSnapshot {
             space_id: space.id,
+            namespace_id: provenance.namespace_id,
+            feedback_loop_id: provenance.feedback_loop_id,
             lens_id: req.lens_id,
             target,
             profile,
@@ -154,6 +181,93 @@ async fn resolve_profile_context(
     Ok((space, None))
 }
 
+struct ProvenanceScope {
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
+}
+
+async fn validate_provenance(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
+) -> Result<ProvenanceScope, AppError> {
+    let namespace_id = validate_namespace(state, user_id, space_id, namespace_id).await?;
+    let Some(feedback_loop_id) = feedback_loop_id else {
+        return Ok(ProvenanceScope {
+            namespace_id,
+            feedback_loop_id: None,
+        });
+    };
+
+    let feedback_loop = state
+        .repositories
+        .feedback_loops
+        .find_for_user(feedback_loop_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if feedback_loop.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "feedback_loop_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    if let Some(namespace_id) = namespace_id {
+        if feedback_loop.namespace_id != namespace_id {
+            return Err(AppError::BadRequest(
+                "feedback_loop_id must belong to namespace_id".to_string(),
+            ));
+        }
+    }
+
+    Ok(ProvenanceScope {
+        namespace_id: Some(feedback_loop.namespace_id),
+        feedback_loop_id: Some(feedback_loop_id),
+    })
+}
+
+fn resolve_lens_namespace(
+    lens_namespace_id: Option<Uuid>,
+    requested_namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    match (lens_namespace_id, requested_namespace_id) {
+        (Some(lens_namespace_id), Some(requested_namespace_id))
+            if lens_namespace_id != requested_namespace_id =>
+        {
+            Err(AppError::BadRequest(
+                "namespace_id must match the Lens namespace".to_string(),
+            ))
+        }
+        (Some(lens_namespace_id), _) => Ok(Some(lens_namespace_id)),
+        (None, requested_namespace_id) => Ok(requested_namespace_id),
+    }
+}
+
+async fn validate_namespace(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    let Some(namespace_id) = namespace_id else {
+        return Ok(None);
+    };
+    let namespace = state
+        .repositories
+        .namespaces
+        .find_for_user(namespace_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if namespace.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "namespace_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    Ok(Some(namespace_id))
+}
+
 /// GET /api/v1/profiles/:id - Fetch a persisted profile snapshot.
 pub async fn get(
     State(state): State<AppState>,
@@ -185,6 +299,8 @@ fn normalize_target(target: &str) -> Result<String, AppError> {
 fn build_profile_json(
     space: &CognitiveSpaceDb,
     lens: Option<&LensDb>,
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
     target: &str,
     memories: &[MemoryDb],
     lens_runs: &[LensRunDb],
@@ -216,6 +332,11 @@ fn build_profile_json(
             "retrieval_mode": lens.retrieval_mode,
         })),
         "target": target,
+        "provenance": {
+            "space_id": space.id,
+            "namespace_id": namespace_id,
+            "feedback_loop_id": feedback_loop_id,
+        },
         "version": 1,
         "projected_at": Utc::now(),
         "summary": profile_summary(space, memories, lens_runs),
@@ -354,6 +475,8 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
+            feedback_loop_id: None,
             title: Some(title.to_string()),
             content: content.to_string(),
             memory_type: "text".to_string(),
@@ -384,9 +507,24 @@ mod tests {
             memory("Project", "The MemoryNexus project is in Phase 3."),
             memory("Decision", "Decision: use CognitiveSpace as the boundary."),
         ];
-        let profile = build_profile_json(&space, None, "personal_context", &memories, &[]);
+        let namespace_id = Uuid::new_v4();
+        let feedback_loop_id = Uuid::new_v4();
+        let profile = build_profile_json(
+            &space,
+            None,
+            Some(namespace_id),
+            Some(feedback_loop_id),
+            "personal_context",
+            &memories,
+            &[],
+        );
 
         assert_eq!(profile["target"], "personal_context");
+        assert_eq!(profile["provenance"]["namespace_id"], json!(namespace_id));
+        assert_eq!(
+            profile["provenance"]["feedback_loop_id"],
+            json!(feedback_loop_id)
+        );
         assert_eq!(profile["stable_preferences"].as_array().unwrap().len(), 1);
         assert_eq!(profile["active_projects"].as_array().unwrap().len(), 1);
         assert_eq!(profile["decision_history"].as_array().unwrap().len(), 1);
@@ -400,11 +538,29 @@ mod tests {
     }
 
     #[test]
+    fn profile_rejects_namespace_that_conflicts_with_lens_namespace() {
+        let error = resolve_lens_namespace(Some(Uuid::new_v4()), Some(Uuid::new_v4())).unwrap_err();
+
+        assert!(
+            matches!(error, AppError::BadRequest(message) if message.contains("Lens namespace"))
+        );
+    }
+
+    #[test]
     fn create_profile_request_allows_default_space() {
-        let req: CreateProfileRequest =
-            serde_json::from_str(r#"{"target":"personal_context","limit":8}"#).unwrap();
+        let namespace_id = Uuid::new_v4();
+        let feedback_loop_id = Uuid::new_v4();
+        let req: CreateProfileRequest = serde_json::from_value(serde_json::json!({
+            "target": "personal_context",
+            "namespace_id": namespace_id,
+            "feedback_loop_id": feedback_loop_id,
+            "limit": 8
+        }))
+        .unwrap();
 
         assert_eq!(req.space_id, None);
+        assert_eq!(req.namespace_id, Some(namespace_id));
+        assert_eq!(req.feedback_loop_id, Some(feedback_loop_id));
         assert_eq!(req.target, "personal_context");
         assert_eq!(req.limit, Some(8));
     }

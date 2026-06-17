@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
+use crate::db::feedback_loop::FeedbackLoopDb;
 use crate::db::memory::{
     CreateMemory, MemoryDb, MemoryListFilter, MemoryListSort, MemoryType, UpdateMemory,
 };
@@ -58,6 +59,8 @@ impl From<MemoryType> for ApiMemoryType {
 #[derive(Debug, Deserialize)]
 pub struct CreateMemoryRequest {
     pub space_id: Option<Uuid>,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     #[serde(default)]
@@ -85,6 +88,7 @@ pub struct UpdateMemoryRequest {
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
     pub space_id: Option<Uuid>,
+    pub namespace_id: Option<Uuid>,
     #[serde(default = "default_limit")]
     pub limit: i64,
     #[serde(default)]
@@ -114,6 +118,8 @@ pub struct MemoryListItem {
     pub id: Uuid,
     pub user_id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     pub snippet: String,
@@ -134,6 +140,8 @@ pub struct MemoryDetailResponse {
     pub id: Uuid,
     pub user_id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     pub memory_type: String,
@@ -153,6 +161,8 @@ impl MemoryDetailResponse {
             id: memory.id,
             user_id: memory.user_id,
             space_id: memory.space_id,
+            namespace_id: memory.namespace_id,
+            feedback_loop_id: memory.feedback_loop_id,
             title: memory.title,
             content: memory.content,
             memory_type: memory.memory_type,
@@ -175,6 +185,8 @@ impl MemoryListItem {
             id: memory.id,
             user_id: memory.user_id,
             space_id: memory.space_id,
+            namespace_id: memory.namespace_id,
+            feedback_loop_id: memory.feedback_loop_id,
             title: memory.title,
             content: memory.content,
             snippet,
@@ -214,6 +226,8 @@ pub async fn list(
     let limit = params.limit.clamp(1, 100);
     let offset = params.offset.max(0);
     let filter = MemoryListFilter {
+        namespace_id: validate_namespace(&state, auth_user.user_id, space.id, params.namespace_id)
+            .await?,
         tag: params.tag,
         memory_type: params.memory_type.map(Into::into),
         sort: params.sort,
@@ -263,10 +277,20 @@ pub async fn create(
     let memory_type: MemoryType = req.memory_type.into();
     let space = resolve_space(&state, auth_user.user_id, req.space_id).await?;
     require_space_writer(&state, space.id, auth_user.user_id).await?;
+    let provenance = validate_provenance(
+        &state,
+        auth_user.user_id,
+        space.id,
+        req.namespace_id,
+        req.feedback_loop_id,
+    )
+    .await?;
 
     let create_memory = CreateMemory {
         user_id: auth_user.user_id,
         space_id: space.id,
+        namespace_id: provenance.namespace_id,
+        feedback_loop_id: provenance.feedback_loop_id,
         title: title.clone(),
         content: content.clone(),
         memory_type,
@@ -348,6 +372,7 @@ pub(crate) async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) 
             memory_id: memory.id,
             user_id: memory.user_id,
             space_id: memory.space_id,
+            namespace_id: memory.namespace_id,
             source_type: "memory".to_string(),
             created_at: memory.created_at.to_rfc3339(),
             visibility: if memory.is_shared {
@@ -364,6 +389,85 @@ pub(crate) async fn index_memory_embedding(state: &AppState, memory: &MemoryDb) 
     if let Err(error) = vector_store.upsert_memory(point).await {
         tracing::warn!(?error, memory_id = %memory.id, "写入 Qdrant 失败");
     }
+}
+
+struct ProvenanceScope {
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
+}
+
+async fn validate_provenance(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+    feedback_loop_id: Option<Uuid>,
+) -> Result<ProvenanceScope, AppError> {
+    let namespace_id = validate_namespace(state, user_id, space_id, namespace_id).await?;
+    let Some(feedback_loop_id) = feedback_loop_id else {
+        return Ok(ProvenanceScope {
+            namespace_id,
+            feedback_loop_id: None,
+        });
+    };
+
+    let feedback_loop = state
+        .repositories
+        .feedback_loops
+        .find_for_user(feedback_loop_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    let namespace_id = validate_feedback_loop_scope(space_id, namespace_id, &feedback_loop)?;
+
+    Ok(ProvenanceScope {
+        namespace_id: Some(namespace_id),
+        feedback_loop_id: Some(feedback_loop_id),
+    })
+}
+
+fn validate_feedback_loop_scope(
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+    feedback_loop: &FeedbackLoopDb,
+) -> Result<Uuid, AppError> {
+    if feedback_loop.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "feedback_loop_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    if let Some(namespace_id) = namespace_id {
+        if feedback_loop.namespace_id != namespace_id {
+            return Err(AppError::BadRequest(
+                "feedback_loop_id must belong to namespace_id".to_string(),
+            ));
+        }
+    }
+    Ok(feedback_loop.namespace_id)
+}
+
+async fn validate_namespace(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    let Some(namespace_id) = namespace_id else {
+        return Ok(None);
+    };
+    let namespace = state
+        .repositories
+        .namespaces
+        .find_for_user(namespace_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+    if namespace.space_id != space_id {
+        return Err(AppError::BadRequest(
+            "namespace_id must belong to the requested Cognitive Space".to_string(),
+        ));
+    }
+    Ok(Some(namespace_id))
 }
 
 /// GET /api/v1/memories/:id - 获取单个记忆
@@ -550,6 +654,25 @@ async fn require_memory_writer(
 mod tests {
     use super::*;
 
+    fn feedback_loop(space_id: Uuid, namespace_id: Uuid) -> FeedbackLoopDb {
+        FeedbackLoopDb {
+            id: Uuid::new_v4(),
+            space_id,
+            namespace_id,
+            goal: "Improve fraction word problems".to_string(),
+            task: "Solve one practice problem".to_string(),
+            attempt: None,
+            evaluation: None,
+            feedback: None,
+            adjustment: None,
+            next_task: None,
+            status: "active".to_string(),
+            created_by: Uuid::new_v4(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
     #[test]
     fn test_api_memory_type_default() {
         assert_eq!(ApiMemoryType::default(), ApiMemoryType::Text);
@@ -573,6 +696,26 @@ mod tests {
     }
 
     #[test]
+    fn create_memory_request_accepts_namespace_and_feedback_loop_provenance() {
+        let space_id = Uuid::new_v4();
+        let namespace_id = Uuid::new_v4();
+        let feedback_loop_id = Uuid::new_v4();
+        let json = serde_json::json!({
+            "space_id": space_id,
+            "namespace_id": namespace_id,
+            "feedback_loop_id": feedback_loop_id,
+            "content": "Practice snapshot",
+            "memory_type": "text"
+        });
+
+        let req: CreateMemoryRequest = serde_json::from_value(json).unwrap();
+
+        assert_eq!(req.space_id, Some(space_id));
+        assert_eq!(req.namespace_id, Some(namespace_id));
+        assert_eq!(req.feedback_loop_id, Some(feedback_loop_id));
+    }
+
+    #[test]
     fn test_update_memory_request_serde() {
         let json = r#"{"title":"New Title"}"#;
         let req: UpdateMemoryRequest = serde_json::from_str(json).unwrap();
@@ -585,8 +728,62 @@ mod tests {
         let json = r#"{}"#;
         let query: ListQuery = serde_json::from_str(json).unwrap();
         assert_eq!(query.space_id, None);
+        assert_eq!(query.namespace_id, None);
         assert_eq!(query.limit, 20);
         assert_eq!(query.offset, 0);
+    }
+
+    #[test]
+    fn list_query_accepts_namespace_filter() {
+        let namespace_id = Uuid::new_v4();
+        let query: ListQuery = serde_json::from_value(serde_json::json!({
+            "namespace_id": namespace_id,
+            "limit": 10
+        }))
+        .unwrap();
+
+        assert_eq!(query.namespace_id, Some(namespace_id));
+        assert_eq!(query.limit, 10);
+    }
+
+    #[test]
+    fn feedback_loop_provenance_rejects_cross_space_loop() {
+        let space_id = Uuid::new_v4();
+        let namespace_id = Uuid::new_v4();
+        let loop_from_other_space = feedback_loop(Uuid::new_v4(), namespace_id);
+
+        let error =
+            validate_feedback_loop_scope(space_id, Some(namespace_id), &loop_from_other_space)
+                .unwrap_err();
+
+        assert!(
+            matches!(error, AppError::BadRequest(message) if message.contains("Cognitive Space"))
+        );
+    }
+
+    #[test]
+    fn feedback_loop_provenance_rejects_namespace_mismatch() {
+        let space_id = Uuid::new_v4();
+        let loop_namespace_id = Uuid::new_v4();
+        let requested_namespace_id = Uuid::new_v4();
+        let feedback_loop = feedback_loop(space_id, loop_namespace_id);
+
+        let error =
+            validate_feedback_loop_scope(space_id, Some(requested_namespace_id), &feedback_loop)
+                .unwrap_err();
+
+        assert!(matches!(error, AppError::BadRequest(message) if message.contains("namespace_id")));
+    }
+
+    #[test]
+    fn feedback_loop_provenance_infers_namespace_when_omitted() {
+        let space_id = Uuid::new_v4();
+        let namespace_id = Uuid::new_v4();
+        let feedback_loop = feedback_loop(space_id, namespace_id);
+
+        let inferred = validate_feedback_loop_scope(space_id, None, &feedback_loop).unwrap();
+
+        assert_eq!(inferred, namespace_id);
     }
 
     #[test]
@@ -605,6 +802,8 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
+            feedback_loop_id: None,
             title: Some("A saved thought".to_string()),
             content: "This thought has enough content to become a short snippet.".to_string(),
             memory_type: "text".to_string(),
@@ -634,6 +833,8 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             space_id: Uuid::new_v4(),
+            namespace_id: None,
+            feedback_loop_id: None,
             title: Some("Detail".to_string()),
             content: "Full saved thought".to_string(),
             memory_type: "text".to_string(),

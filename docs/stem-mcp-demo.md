@@ -1,5 +1,10 @@
 # STEM Learning MCP Demo
 
+Status update: this remains a canonical namespace-driven MCP compatibility demo
+and prior learning slice. The first upstream product direction is now
+[Dictation Coach](dictation-coach-mvp.md), and future MCP work should expose
+Surface Gateway actions rather than direct learning-specific Engine objects.
+
 This file keeps two validation records:
 
 - Issue #91 canonical namespace-driven MCP demo using `learning.stem`.

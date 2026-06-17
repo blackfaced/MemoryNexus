@@ -10,6 +10,8 @@ use uuid::Uuid;
 pub struct CognitiveProfileSnapshotDb {
     pub id: Uuid,
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub lens_id: Option<Uuid>,
     pub target: String,
     pub profile: Value,
@@ -22,6 +24,8 @@ pub struct CognitiveProfileSnapshotDb {
 #[derive(Debug, Clone)]
 pub struct CreateCognitiveProfileSnapshot {
     pub space_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub lens_id: Option<Uuid>,
     pub target: String,
     pub profile: Value,
@@ -63,6 +67,8 @@ impl CognitiveProfileRepository for PostgresCognitiveProfileRepository {
             r#"
             INSERT INTO cognitive_profile_snapshots (
                 space_id,
+                namespace_id,
+                feedback_loop_id,
                 lens_id,
                 target,
                 profile,
@@ -70,11 +76,13 @@ impl CognitiveProfileRepository for PostgresCognitiveProfileRepository {
                 source_lens_run_ids,
                 created_by
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
             "#,
         )
         .bind(snapshot.space_id)
+        .bind(snapshot.namespace_id)
+        .bind(snapshot.feedback_loop_id)
         .bind(snapshot.lens_id)
         .bind(&snapshot.target)
         .bind(&snapshot.profile)
@@ -117,6 +125,8 @@ mod tests {
         let run_id = Uuid::new_v4();
         let snapshot = CreateCognitiveProfileSnapshot {
             space_id,
+            namespace_id: Some(Uuid::new_v4()),
+            feedback_loop_id: Some(Uuid::new_v4()),
             lens_id: None,
             target: "llm_context".to_string(),
             profile: json!({"summary": "compact context"}),
@@ -126,6 +136,8 @@ mod tests {
         };
 
         assert_eq!(snapshot.space_id, space_id);
+        assert!(snapshot.namespace_id.is_some());
+        assert!(snapshot.feedback_loop_id.is_some());
         assert_eq!(snapshot.source_memory_ids, vec![memory_id]);
         assert_eq!(snapshot.source_lens_run_ids, vec![run_id]);
         assert_eq!(snapshot.profile["summary"], "compact context");

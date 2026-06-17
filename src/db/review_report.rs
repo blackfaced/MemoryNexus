@@ -11,6 +11,8 @@ pub struct CognitiveReviewReportDb {
     pub id: Uuid,
     pub space_id: Uuid,
     pub lens_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub report_type: String,
     pub window_start: DateTime<Utc>,
     pub window_end: DateTime<Utc>,
@@ -29,6 +31,8 @@ pub struct CognitiveReviewReportDb {
 pub struct CreateCognitiveReviewReport {
     pub space_id: Uuid,
     pub lens_id: Uuid,
+    pub namespace_id: Option<Uuid>,
+    pub feedback_loop_id: Option<Uuid>,
     pub report_type: String,
     pub window_start: DateTime<Utc>,
     pub window_end: DateTime<Utc>,
@@ -46,6 +50,7 @@ pub struct CreateCognitiveReviewReport {
 pub struct ReviewReportListFilter {
     pub space_id: Uuid,
     pub lens_id: Option<Uuid>,
+    pub namespace_id: Option<Uuid>,
     pub limit: i64,
 }
 
@@ -88,6 +93,8 @@ impl CognitiveReviewReportRepository for PostgresCognitiveReviewReportRepository
             INSERT INTO cognitive_review_reports (
                 space_id,
                 lens_id,
+                namespace_id,
+                feedback_loop_id,
                 report_type,
                 window_start,
                 window_end,
@@ -100,12 +107,14 @@ impl CognitiveReviewReportRepository for PostgresCognitiveReviewReportRepository
                 summary_fallback_reason,
                 created_by
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING *
             "#,
         )
         .bind(report.space_id)
         .bind(report.lens_id)
+        .bind(report.namespace_id)
+        .bind(report.feedback_loop_id)
         .bind(&report.report_type)
         .bind(report.window_start)
         .bind(report.window_end)
@@ -153,6 +162,7 @@ impl CognitiveReviewReportRepository for PostgresCognitiveReviewReportRepository
             WHERE m.user_id = $1
               AND r.space_id = $2
               AND ($3::uuid IS NULL OR r.lens_id = $3)
+              AND ($5::uuid IS NULL OR r.namespace_id = $5)
             ORDER BY r.created_at DESC
             LIMIT $4
             "#,
@@ -161,6 +171,7 @@ impl CognitiveReviewReportRepository for PostgresCognitiveReviewReportRepository
         .bind(filter.space_id)
         .bind(filter.lens_id)
         .bind(filter.limit)
+        .bind(filter.namespace_id)
         .fetch_all(&self.pool)
         .await
     }
@@ -177,6 +188,8 @@ mod tests {
         let report = CreateCognitiveReviewReport {
             space_id: Uuid::new_v4(),
             lens_id: Uuid::new_v4(),
+            namespace_id: Some(Uuid::new_v4()),
+            feedback_loop_id: Some(Uuid::new_v4()),
             report_type: "weekly_review".to_string(),
             window_start: Utc::now(),
             window_end: Utc::now(),
@@ -191,6 +204,8 @@ mod tests {
         };
 
         assert_eq!(report.source_memory_ids, vec![memory_id]);
+        assert!(report.namespace_id.is_some());
+        assert!(report.feedback_loop_id.is_some());
         assert_eq!(report.summary_provider, "deterministic");
         assert_eq!(report.report["summary"], "review");
     }

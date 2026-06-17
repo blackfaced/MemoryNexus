@@ -4,6 +4,11 @@
 adapter over the Rust API, not a second backend. Memory still belongs to
 `CognitiveSpace`; MCP clients only call tools that operate through the API.
 
+Current MCP tools are compatibility surfaces over existing object-level APIs.
+The refreshed architecture treats MCP as an Adapter. New capabilities should
+move toward Surface Gateway actions for Capture, Performance, Reflection,
+Planning, and Observation instead of giving agents direct Engine ownership.
+
 ## Configuration
 
 For ordinary agent installs, prefer a release `memorynexus-mcp` binary. Trial

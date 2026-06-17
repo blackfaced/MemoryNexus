@@ -4,14 +4,15 @@
 
 ## 总览
 
-这些概念可以分成六层：
+这些概念可以分成七层：
 
 1. **认知原材料**：Memory
 2. **认知生命周期结构**：MemoryAtom、CognitiveScene、CognitiveProjection
 3. **认知加工结果**：Reflection、Concept、Belief、Relation、Contradiction
-4. **长期反馈结构**：Namespace、FeedbackLoop
+4. **长期反馈结构**：Namespace、FeedbackLoop、GrowthModel
 5. **运行证据结构**：ObserveMode、Trace
-6. **离线演化结构**：SleepCycle、ConsolidationResult、DreamCandidate
+6. **离线演化结构**：SleepCycle、ConsolidationResult、DreamCandidate、PracticePlan
+7. **能力入口结构**：Surface、Adapter、SurfaceGateway
 
 `CognitiveProfile` 是 `CognitiveState` 的对外投影视图，用于 LLM、MCP 和 UI
 消费。它不是新的所有权边界。
@@ -62,7 +63,7 @@ FeedbackLoop
 → CognitiveScene
 → CognitiveProjection
 → Concept / Pattern / Belief
-→ CognitiveProfile / SkillProfile
+→ GrowthModel
 → Next FeedbackLoop
 ```
 
@@ -82,6 +83,7 @@ Trace / Memory / FeedbackLoop
 Dreaming:
 ConsolidationResult
 → DreamCandidate
+→ PracticePlan
 → next practice / review question / scenario / plan
 
 Next Wake:
@@ -105,11 +107,16 @@ Contradiction 是张力，
 CognitiveSpace 是容器，
 Namespace 是领域，
 FeedbackLoop 是练习 / 反馈闭环，
+GrowthModel 是领域成长画像，
 ObserveMode 是读取深度，
 Trace 是交互和运行时证据，
 SleepCycle 是离线整合周期，
 ConsolidationResult 是睡眠后的稳定化输出，
 DreamCandidate 是候选下一步，
+PracticePlan 是被选择后面向行动的计划，
+Surface 是能力意图，
+Adapter 是交互方式，
+SurfaceGateway 是外部请求进入 Engine 的边界，
 CognitiveEvent 是变化，
 CognitiveState 是变化后的整体状态。
 ```
@@ -400,6 +407,9 @@ Trace 回答的问题是：
 
 SleepCycle 是一次离线 consolidation 周期。
 
+字段级 contract 见 [Sleep Cycle Contract](sleep-cycle-contract.md)。后续
+Sleep / Dreaming schema、API、CLI 或 MCP 实现必须先对齐该 contract。
+
 它把一段时间内的 Trace、Memory、FeedbackLoop、ReviewReport 等证据拿出来整理，
 而不是在用户每次输入时同步运行完整 cognitive pipeline。
 
@@ -427,6 +437,8 @@ SleepCycle 回答的问题是：
 
 ConsolidationResult 是 SleepCycle 的稳定化输出。
 
+字段级 contract 见 [Sleep Cycle Contract](sleep-cycle-contract.md)。
+
 它不是用户原始输入，而是对一段时间窗口的概括和抽象。它可以包含：
 
 - new concepts
@@ -453,6 +465,8 @@ ConsolidationResult 回答的问题是：
 ## DreamCandidate
 
 DreamCandidate 是基于 ConsolidationResult 生成的候选下一步。
+
+字段级 contract 见 [Sleep Cycle Contract](sleep-cycle-contract.md)。
 
 它可以是：
 
@@ -706,14 +720,113 @@ FeedbackLoop 与现有认知对象的关系是：
 FeedbackLoop 产生 Memory
 Memory 产生 Reflection
 Reflection 形成 Concept / Pattern
-Concept / Pattern 更新 Profile
-Profile 影响下一轮 FeedbackLoop
+Concept / Pattern 更新 GrowthModel
+GrowthModel 影响下一轮 FeedbackLoop / PracticePlan
 ```
 
 FeedbackLoop 回答的问题是：
 
 ```text
 这个领域下一轮应该如何练习、复盘或调整？
+```
+
+## GrowthModel
+
+GrowthModel 是某个 Namespace 下的长期成长画像。
+
+它不是通用 user profile，也不是 agent memory profile。它只描述某个领域里的能力、
+表现、模式和下一步重点，并且必须能追溯到 Trace、FeedbackLoop、Memory 或
+ConsolidationResult 等证据。
+
+它可以包含：
+
+- strengths
+- weaknesses
+- recurring patterns
+- current stage
+- recommended focus
+- evidence IDs
+- confidence / evidence gaps
+
+例子：
+
+```text
+namespace: child.chinese.dictation
+weakness: visually similar characters
+recurring_pattern: component placement errors appear across three days
+recommended_focus: practice five similar-shape character pairs tomorrow
+```
+
+GrowthModel 回答的问题是：
+
+```text
+这个领域的长期状态正在怎样变化，下一步应该关注什么？
+```
+
+## PracticePlan
+
+PracticePlan 是面向下一步行动的计划。
+
+它可以来自 Planning Surface，也可以由 SleepCycle / DreamCandidate 生成。与
+DreamCandidate 的区别是：
+
+- DreamCandidate 是内部候选，需要被选择、执行和评估。
+- PracticePlan 是已经被选中、准备展示或执行的行动计划。
+
+例子：
+
+```text
+明天 10 分钟：
+1. 复习 5 个形近字。
+2. 每个字先说部件位置，再默写。
+3. 最后随机听写 3 个昨天错过的词。
+```
+
+PracticePlan 回答的问题是：
+
+```text
+基于当前 GrowthModel 和最近表现，下一轮具体做什么？
+```
+
+## Surface / Adapter / SurfaceGateway
+
+Surface 是能力意图，Adapter 是交互方式，SurfaceGateway 是外部请求进入 Engine 的
+边界。
+
+Surfaces：
+
+- Capture: 发生了什么？
+- Performance: 做得怎么样？
+- Reflection: 这说明了什么？
+- Planning: 下一步做什么？
+- Observation: 长期状态如何变化？
+
+Adapters：
+
+- Chat Agent
+- MCP Tool
+- CLI
+- Web App
+- Mobile App
+- Dashboard
+- Voice Assistant
+
+SurfaceGateway 负责：
+
+- auth
+- namespace routing
+- surface routing
+- ACL / permissions
+- request validation
+- response shaping
+- Trace writing
+- sync / async dispatch
+- event publishing
+
+SurfaceGateway 回答的问题是：
+
+```text
+这个外部请求应该以什么权限、什么 Surface、什么 Namespace 进入 Engine？
 ```
 
 ## Lens

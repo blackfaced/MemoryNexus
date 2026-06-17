@@ -106,6 +106,7 @@ impl VectorRepository for QdrantVectorRepository {
                 memory_id: vector.memory_id,
                 user_id: vector.user_id,
                 space_id: vector.space_id,
+                namespace_id: None,
                 source_type: "memory".to_string(),
                 created_at: vector
                     .payload

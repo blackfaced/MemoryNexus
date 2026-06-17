@@ -2,7 +2,12 @@
 
 ## Start Here
 
-- [Architecture](architecture.md)
+- [Vision](vision.md)
+- [Architecture](architecture/README.md)
+- [MemoryNexus Engine](architecture/memorynexus-engine.md)
+- [Surfaces and Adapters](architecture/surfaces-and-adapters.md)
+- [Surface Gateway](architecture/surface-gateway.md)
+- [Sleep-driven Feedback Loop](architecture/sleep-driven-feedback-loop.md)
 - [API](api.md)
 - [CLI](cli.md)
 - [MCP Server](mcp.md)
@@ -12,6 +17,8 @@
 - [Development](development.md)
 - [Deployment](deployment.md)
 - [TODO](TODO.md)
+- [Executable Issues](issues.md)
+- [Dictation Coach MVP](dictation-coach-mvp.md)
 
 ## Cognitive Foundation
 

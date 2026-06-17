@@ -70,7 +70,7 @@ Trace {
 | `id` | yes | Stable UUID. |
 | `space_id` | yes | The owning `CognitiveSpace`; permission checks remain Space-based. |
 | `namespace_id` | no | Domain partition when the interaction belongs to a namespace. |
-| `source_type` | yes | Origin surface: `http`, `cli`, `mcp`, `ui`, `background`, `test_fixture`. |
+| `source_type` | yes | Origin adapter/source: `http`, `cli`, `mcp`, `ui`, `background`, `test_fixture`. |
 | `task_type` | yes | Semantic task: `chat`, `search`, `lens_run`, `review`, `practice`, `feedback`, `planning`, `install`, `profile`, `routing`, `consolidation`, `dreaming`. |
 | `mode` | yes | Observe depth: `fast`, `focused`, `deep`, or `none` when not applicable. |
 | `runtime` | yes | Execution class: `local`, `cloud`, `hybrid`, `deterministic`, or `unknown`. |
@@ -184,6 +184,11 @@ All linked objects must belong to the same `CognitiveSpace`. If a Trace has
 `namespace_id`, linked namespace-scoped objects must either share that namespace
 or explicitly record why they are cross-namespace evidence.
 
+Sleep / Dreaming field-level relationships are defined in
+[Sleep Cycle Contract](sleep-cycle-contract.md). Implementations should align
+SleepCycle, ConsolidationResult, and DreamCandidate links with that contract
+before adding schema or API surfaces.
+
 ## Lifecycle
 
 Minimum lifecycle:
@@ -200,6 +205,38 @@ start trace
 The first implementation may create only completed traces if that is simpler.
 Long-running background work can later use `started` and `completed` states.
 
+## Current Implementation Status
+
+Issue #99 implements the first persistent foundation in
+`migrations/014_traces.sql` and `src/db/trace.rs`.
+
+The current repository API is completed-only:
+
+```text
+create_completed(trace)
+get trace for user by id
+list traces for user by space
+```
+
+The table still reserves the full lifecycle status set from this contract
+(`started`, `completed`, `failed`, `cancelled`, `skipped`) so later capture work
+can add explicit start/fail/complete repository methods without a status-value
+migration. For now, `create_completed` always stores `status = completed` and
+requires `completed_at`.
+
+Differences from the full conceptual contract:
+
+- No production surface captures Trace yet. Lens Run, MCP, FeedbackLoop, review
+  report, Sleep, and Dreaming capture are follow-up issues.
+- The repository does not yet expose a mutable started/completed lifecycle.
+- Generated object links are stored as UUID arrays for the first known object
+  families, including future Sleep and Dreaming IDs, but cross-object same-Space
+  validation is not yet enforced by the repository because those capture paths
+  do not exist in this issue.
+- Input and output fields are summary-only by convention. Callers must pass
+  already redacted summaries; raw provider payload redaction is outside this
+  foundation issue.
+
 ## Privacy And Retention
 
 Trace may contain sensitive input/output summaries. Implementations must:
@@ -211,7 +248,7 @@ Trace may contain sensitive input/output summaries. Implementations must:
 - Document any future retention or deletion policy before enabling broad trace
   capture.
 
-## First Capture Surfaces
+## First Trace Capture Sources
 
 Recommended order:
 
@@ -238,6 +275,8 @@ Recommended order:
    - `mode = deep`
    - `runtime = deterministic`, `local`, `cloud`, or `hybrid`
    - link generated DreamCandidate IDs when that contract is implemented
+   - follow [Sleep Cycle Contract](sleep-cycle-contract.md) for
+     DreamCandidate source and evaluation relationships
 
 ## Metrics
 

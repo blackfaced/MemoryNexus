@@ -1,43 +1,50 @@
 # MemoryNexus
 
-MemoryNexus is an AI thought organizer for saving messy ideas, reviewing them
-through different perspectives, and noticing what you keep returning to.
+MemoryNexus is a local-first, namespace-based long-term feedback engine for
+personal cognition and skill acquisition.
 
-一个属于你的 AI 思绪整理器。
+它不是普通 AI memory app、second brain、agent memory store，也不和
+Supermemory / Mem0 / OpenJarvis 直接竞争。MemoryNexus 的核心问题不是
+“AI 如何记住更多”，而是：
 
-Write down the thought currently taking up the most space in your mind.
-MemoryNexus can review it through several perspectives, preserve the original
-thought and interpretation trace, and later summarize recurring themes across
-your private thinking space.
+```text
+How can a system use long-term traces to generate better feedback and next
+actions over time?
+```
 
-面向普通用户，它是一个本地优先的私人思考空间：记录想法、复盘困惑、
-发现长期模式。
+中文理解：
 
-面向开发者，它仍然是一个 user-owned cognitive memory layer：one memory
-universe can be interpreted by many minds.
+```text
+MemoryNexus 把人的经验、表现、练习和对话转化为记忆、复盘、成长模型与下一步计划。
+```
 
-It is a Rust-first cognitive lens memory system, not an agent-owned memory
-plugin. Memories belong to a Cognitive Space, and agents or users interpret that
-space through Lens-style strategies.
+MemoryNexus sits above raw memory/runtime layers:
 
-Longer term, MemoryNexus is evolving toward a namespace-based long-term feedback
-substrate for personal cognition and skill acquisition. Its memory lifecycle is:
-raw Memory -> MemoryAtom -> CognitiveScene -> Lens-based CognitiveProjection ->
-Reflection / Belief / Next Action. Thought Review is the first reflective demo;
-STEM Learning Feedback is the first product MVP candidate, using
-`learning.stem` as the product namespace and elementary fraction word problems
-as the first validation task. Future skill namespaces can track practice,
-feedback, weak patterns, and next tasks for learning or craft domains.
+- OpenJarvis: local personal AI runtime.
+- Supermemory / Mem0: memory runtime, memory cloud, connectors, profile, and
+  RAG infrastructure.
+- MemoryNexus: memory evolution, feedback loops, growth models, sleep-based
+  consolidation, and next-action generation.
 
-MemoryNexus is also a long-term feedback engine: Thought Review demonstrates
-multi-perspective memory, while STEM Learning Feedback turns practice,
-feedback, and next exercise into the first product MVP.
+Memory belongs to a user-owned `CognitiveSpace`. Agents, apps, CLIs, dashboards,
+and voice assistants are only adapters. They access MemoryNexus through Surface
+Gateway capabilities such as Capture, Performance, Reflection, Planning, and
+Observation; they do not own memory or directly mutate Engine internals.
 
-That lifecycle is mode-aware: fast interactions should use recent context and
-compressed priors, while explicit reviews can run deeper Lens projection and
-consolidation.
+The first upstream product scenario is Dictation Coach: a daily dictation helper
+for Chinese native-language dictation and English spelling / sentence
+dictation. It validates the loop:
 
-## Try The Thought Review MVP
+```text
+Capture -> Performance -> Reflection -> Planning -> Observation -> SleepCycle
+```
+
+Thought Review remains a reflective demo and presentation entry point. Existing
+STEM practice work remains useful as a prior learning slice, but the next
+product roadmap focuses on dictation because it gives the feedback loop a
+clearer daily rhythm and easier mistake taxonomy.
+
+## Try The Current Thought Review Demo
 
 Start the API, then open `http://localhost:8080/` or `http://localhost:8080/app`.
 
@@ -59,7 +66,9 @@ Memory, Lens, Lens Run, Cognitive Space, and provenance model.
 - Vector search: Qdrant
 - Object storage abstraction: S3/MinIO compatible
 - CLI: `memorynexus-cli`
-- UI: static Thought Review MVP served by the Rust API at `/`
+- UI: static Thought Review demo and learning practice slice served by the Rust API
+- Surface direction: Capture, Performance, Reflection, Planning, Observation
+- First upstream product direction: Dictation Coach
 - Main crate: repository root
 
 The old Python/FastAPI and empty frontend skeletons have been removed. New
@@ -183,7 +192,7 @@ export MEMORYNEXUS_TOKEN=<token-from-auth-response>
 cargo run --bin memorynexus-cli -- space create --name "Project Space"
 export MEMORYNEXUS_SPACE_ID=<space-id-from-space-create>
 
-cargo run --bin memorynexus-cli -- memory add --space "$MEMORYNEXUS_SPACE_ID" --content "MemoryNexus is a Rust-first cognitive lens memory system."
+cargo run --bin memorynexus-cli -- memory add --space "$MEMORYNEXUS_SPACE_ID" --content "MemoryNexus is a Rust-first long-term feedback engine."
 cargo run --bin memorynexus-cli -- lens create --space "$MEMORYNEXUS_SPACE_ID" --name "Project Context" --strategy project_context
 cargo run --bin memorynexus-cli -- lens run <lens-id-from-lens-create> --query "Summarize the project direction"
 ```
@@ -205,7 +214,14 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
+- [Vision](docs/vision.md)
+- [Architecture](docs/architecture/README.md)
+- [MemoryNexus Engine](docs/architecture/memorynexus-engine.md)
+- [Surfaces and Adapters](docs/architecture/surfaces-and-adapters.md)
+- [Surface Gateway](docs/architecture/surface-gateway.md)
+- [Sleep-driven Feedback Loop](docs/architecture/sleep-driven-feedback-loop.md)
+- [Executable Issues](docs/issues.md)
+- [Dictation Coach MVP](docs/dictation-coach-mvp.md)
 - [API](docs/api.md)
 - [CLI](docs/cli.md)
 - [MCP Server](docs/mcp.md)
@@ -224,6 +240,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [STEM Learning Feedback MVP PRD](docs/stem-learning-mvp.md)
 - [STEM Learning MCP Demo](docs/stem-mcp-demo.md)
 - [Trace Contract](docs/trace-contract.md)
+- [Sleep Cycle Contract](docs/sleep-cycle-contract.md)
 - [Thought Review UI MVP ADR](decisions/ADR-013-thought-review-ui-mvp.md)
 - [Namespace and Feedback Loop ADR](decisions/ADR-014-namespace-feedback-loop.md)
 - [Local-first Trace Learning Runtime ADR](decisions/ADR-016-local-first-trace-learning-runtime.md)
