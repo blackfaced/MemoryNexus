@@ -2,6 +2,11 @@
 
 > MemoryNexus 的产品方向从普通 agent memory 调整为 cognitive lens memory。
 
+> Status update: this roadmap is historical. The current direction is
+> local-first, namespace-based long-term feedback engine; see
+> [Roadmap](TODO.md), [Vision](vision.md), and
+> [Architecture](architecture/README.md).
+
 ## Phase 0 TODO: 理论内核入仓
 
 目标：把 cognitive memory 的理论基础固化为项目文档，作为后续 Rust 重构的稳定依据。

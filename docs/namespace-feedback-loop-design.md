@@ -3,6 +3,10 @@
 > Scope: Phase 5 issue #52 first stage.
 > Status: design only. This document defines the smallest model and API plan; it
 > does not implement migrations, repositories, or product UI.
+> Product status update: this document predates ADR-018/ADR-020. Its
+> `learning.stem` section is now a prior learning slice. The current first
+> upstream product direction is Dictation Coach, but the Namespace and
+> FeedbackLoop model remains valid.
 
 ## Goals
 

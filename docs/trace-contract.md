@@ -70,7 +70,7 @@ Trace {
 | `id` | yes | Stable UUID. |
 | `space_id` | yes | The owning `CognitiveSpace`; permission checks remain Space-based. |
 | `namespace_id` | no | Domain partition when the interaction belongs to a namespace. |
-| `source_type` | yes | Origin surface: `http`, `cli`, `mcp`, `ui`, `background`, `test_fixture`. |
+| `source_type` | yes | Origin adapter/source: `http`, `cli`, `mcp`, `ui`, `background`, `test_fixture`. |
 | `task_type` | yes | Semantic task: `chat`, `search`, `lens_run`, `review`, `practice`, `feedback`, `planning`, `install`, `profile`, `routing`, `consolidation`, `dreaming`. |
 | `mode` | yes | Observe depth: `fast`, `focused`, `deep`, or `none` when not applicable. |
 | `runtime` | yes | Execution class: `local`, `cloud`, `hybrid`, `deterministic`, or `unknown`. |
@@ -248,7 +248,7 @@ Trace may contain sensitive input/output summaries. Implementations must:
 - Document any future retention or deletion policy before enabling broad trace
   capture.
 
-## First Capture Surfaces
+## First Trace Capture Sources
 
 Recommended order:
 

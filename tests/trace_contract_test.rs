@@ -20,11 +20,11 @@ fn trace_migration_scopes_rows_to_space_and_optional_namespace() {
     assert!(sql.contains("namespace_id UUID"));
     assert!(sql.contains("FOREIGN KEY (namespace_id, space_id)"));
     assert!(sql.contains("REFERENCES namespaces(id, space_id)"));
-    assert!(sql.contains("ON DELETE SET NULL (namespace_id)"));
+    assert!(sql.contains("ON DELETE CASCADE"));
 }
 
 #[test]
-fn trace_migration_defines_runtime_contract_and_indexes() {
+fn trace_base_migration_defines_foundational_runtime_contract() {
     let sql =
         fs::read_to_string("migrations/014_traces.sql").expect("trace migration should exist");
 
@@ -38,11 +38,12 @@ fn trace_migration_defines_runtime_contract_and_indexes() {
         "started_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
         "completed_at TIMESTAMPTZ",
         "latency_ms BIGINT",
-        "status VARCHAR(50) NOT NULL DEFAULT 'completed'",
+        "status VARCHAR(50) NOT NULL",
         "token_usage JSONB",
         "estimated_cost_usd DOUBLE PRECISION",
         "local_processing_ratio DOUBLE PRECISION",
         "metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
     ] {
         assert!(sql.contains(column), "missing trace column: {column}");
     }
@@ -53,29 +54,24 @@ fn trace_migration_defines_runtime_contract_and_indexes() {
         "traces_mode_check",
         "traces_runtime_check",
         "traces_status_check",
-        "traces_completed_status_check",
         "traces_latency_non_negative_check",
-        "traces_local_processing_ratio_check",
+        "traces_estimated_cost_non_negative_check",
+        "traces_local_processing_ratio_range_check",
     ] {
         assert!(sql.contains(check), "missing trace constraint: {check}");
     }
 
     for index in [
-        "idx_traces_space_id",
-        "idx_traces_namespace_id",
-        "idx_traces_task_type",
-        "idx_traces_mode",
-        "idx_traces_runtime",
-        "idx_traces_status",
-        "idx_traces_started_at",
-        "idx_traces_space_started_at",
+        "idx_traces_space_created",
+        "idx_traces_space_namespace_created",
+        "idx_traces_task_status",
     ] {
         assert!(sql.contains(index), "missing trace index: {index}");
     }
 }
 
 #[test]
-fn trace_migration_includes_first_phase_generated_object_links() {
+fn trace_base_migration_keeps_first_phase_generated_links() {
     let sql =
         fs::read_to_string("migrations/014_traces.sql").expect("trace migration should exist");
 
@@ -85,14 +81,10 @@ fn trace_migration_includes_first_phase_generated_object_links() {
         "generated_lens_run_ids UUID[] NOT NULL DEFAULT '{}'",
         "generated_review_report_ids UUID[] NOT NULL DEFAULT '{}'",
         "generated_feedback_loop_ids UUID[] NOT NULL DEFAULT '{}'",
-        "generated_reflection_ids UUID[] NOT NULL DEFAULT '{}'",
-        "generated_sleep_cycle_ids UUID[] NOT NULL DEFAULT '{}'",
-        "generated_consolidation_result_ids UUID[] NOT NULL DEFAULT '{}'",
-        "generated_dream_candidate_ids UUID[] NOT NULL DEFAULT '{}'",
     ] {
         assert!(
             sql.contains(column),
-            "missing generated link column: {column}"
+            "missing foundational generated link column: {column}"
         );
     }
 }
@@ -157,10 +149,6 @@ fn create_completed_trace_keeps_summaries_and_generated_links() {
         generated_lens_run_ids: vec![],
         generated_review_report_ids: vec![review_report_id],
         generated_feedback_loop_ids: vec![feedback_loop_id],
-        generated_reflection_ids: vec![],
-        generated_sleep_cycle_ids: vec![],
-        generated_consolidation_result_ids: vec![],
-        generated_dream_candidate_ids: vec![],
         user_feedback: None,
         error: None,
         metadata: json!({"redaction": "summary_only"}),

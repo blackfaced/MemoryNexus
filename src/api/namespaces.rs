@@ -215,6 +215,17 @@ mod tests {
     }
 
     #[test]
+    fn namespace_name_validation_accepts_dictation_engine_examples() {
+        for name in [
+            "child.chinese.dictation",
+            "child.english.spelling",
+            "child.english.sentence-dictation",
+        ] {
+            assert_eq!(normalize_namespace_name(name).unwrap(), name);
+        }
+    }
+
+    #[test]
     fn namespace_list_response_serializes_items_and_total() {
         let response = NamespaceListResponse {
             items: vec![],

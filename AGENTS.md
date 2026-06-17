@@ -4,7 +4,10 @@
 
 ## 项目主线
 
-- MemoryNexus 是 cognitive lens memory 系统，后端主线是 **Rust-first**。
+- MemoryNexus 是 local-first、namespace-based long-term feedback engine，
+  用于 personal cognition 和 skill acquisition；后端主线是 **Rust-first**。
+- 项目核心问题不是“AI 如何记住更多”，而是“如何基于长期 Trace 持续生成更好的反馈和
+  下一步行动”。
 - Rust + Axum crate 位于仓库根目录，是唯一继续演进的主后端。
 - 记忆归属于 `CognitiveSpace`，不归属于 Agent。
 - 历史 Python/FastAPI 和空前端骨架已移除；不要重新引入双后端主线。
@@ -12,6 +15,13 @@
   `web/thought_review.html`，路由在 `src/api/web.rs`。
 - 不要在没有 ADR 的情况下引入 React/Vite/Next、Node dev server、BFF 或第二套
   frontend/backend 主线。
+- 新方向见 ADR-018：MemoryNexus 不和 Supermemory / Mem0 / OpenJarvis 直接竞争。
+  OpenJarvis 偏 local personal AI runtime；Supermemory / Mem0 偏 memory runtime /
+  memory cloud；MemoryNexus 偏 Memory Evolution / Feedback / Growth Engine。
+- Surface / Adapter / Engine 分层见 ADR-019：Adapter 是怎么交互，Surface 是想做什么，
+  Engine 是长期如何记忆、反馈与演化。外部 App / Agent 应通过 Surface Gateway 访问
+  Capture / Performance / Reflection / Planning / Observation 能力，不要直接操作 Engine
+  内部对象。
 - 长期方向见 ADR-014：MemoryNexus 正在扩展为 namespace-based long-term
   feedback substrate，并引入 MemoryAtom / CognitiveScene / Lens-based
   CognitiveProjection 的 memory lifecycle；但 `CognitiveSpace` 仍然是 ownership /
@@ -27,6 +37,10 @@
   runtime，或每次输入都同步运行完整 cognitive pipeline。
 - Supabase 接入边界见 ADR-015：Supabase 首先是托管 PostgreSQL 兼容目标，不是新的
   backend 主线。Auth / Storage / Realtime 只能作为后续 adapter 单独推进。
+- Dictation Coach 首个上游产品见 ADR-020：第一产品方向从泛化 STEM/fraction slice
+  转为每日默写助手，用中文默写和英语 spelling / sentence dictation 验证
+  Trace -> FeedbackLoop -> GrowthModel -> PracticePlan 闭环。不要把家长/孩子角色写进
+  Engine；角色属于 Adapter。
 - EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
   agent memory retrieval 系统。当前边界是：EverMemOS 偏 memory for agent reasoning；
   MemoryNexus 偏 user-owned cognitive perspective and feedback loops。
@@ -43,6 +57,12 @@
   `decisions/ADR-016-local-first-trace-learning-runtime.md`。
 - Sleep-based Memory Consolidation 见
   `decisions/ADR-017-sleep-based-memory-consolidation.md`。
+- Long-term Feedback Engine 定位见
+  `decisions/ADR-018-long-term-feedback-engine.md`。
+- Surfaces / Adapters / Engine 分层见
+  `decisions/ADR-019-surfaces-adapters-engine.md`。
+- Dictation Coach 首个上游产品见
+  `decisions/ADR-020-dictation-coach-first-upstream-product.md`。
 
 ## 开发规则
 
@@ -60,6 +80,12 @@
 - `learning.stem` UI 文案优先使用家长和学习者能懂的语言：practice / answer /
   mistake pattern / feedback / next exercise / weekly learning review。不要把
   `MemoryAtom`、`CognitiveScene`、`CognitiveProjection` 暴露为主标签。
+- Dictation Coach 文案优先使用 daily dictation / word list / spelling attempt /
+  mistake type / tomorrow practice / 7-day trend。不要把 OCR、多孩子管理、完整教育平台
+  或全科目学习系统塞进第一版。
+- Dictation Coach 文案优先使用 daily dictation / word list / spelling attempt /
+  mistake type / tomorrow practice / 7-day trend。不要把 OCR、多孩子管理、完整教育平台
+  或全科目学习系统塞进第一版。
 - `Namespace` 只是 `CognitiveSpace` 内的领域分区，不是新的权限边界；不要把权限从
   Space membership 挪到 Namespace。
 - `FeedbackLoop` 是长期方向，落地时应从具体 namespace 的最小验收场景反推字段，
@@ -136,9 +162,14 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - Phase 4 UI issue 默认基于 Rust-served Thought Review UI 继续演进，不另建前端工程。
 - Phase 5 Namespace / FeedbackLoop issue 默认先做设计和最小模型/API 方案，不直接铺开
   多个垂直产品。
-- STEM Learning Feedback 是第一产品 MVP 候选，产品 namespace 为 `learning.stem`。
-  涉及产品入口的 Phase 5 issue 默认优先服务 parent-assisted STEM practice feedback
-  loop，并以 elementary fraction word problems 作为第一验证任务；不要回到泛化学习平台。
+- STEM Learning Feedback 是 prior learning slice，产品 namespace 为 `learning.stem`。
+  这条线已经验证 FeedbackLoop / practice session / weekly review 的一部分能力。
+  新的第一上游产品方向是 Dictation Coach，优先 namespace 如
+  `child.chinese.dictation`、`child.english.spelling`。涉及新产品入口的 issue 默认服务
+  Capture / Performance / Reflection / Planning / Observation 闭环，不要回到泛化学习平台。
+- Surface Gateway issue 必须把 Surface 和 Adapter 区分清楚：Capture / Performance /
+  Reflection / Planning / Observation 是能力面；Chat Agent / MCP / CLI / Web / Mobile /
+  Dashboard 是交互方式。Adapter 不直接访问 Engine 内部对象。
 - Phase 5 Memory Lifecycle issue 默认围绕 `Memory -> MemoryAtom -> CognitiveScene
   -> CognitiveProjection` 做小实验，不要把它实现成通用 agent retrieval engine。
 - 涉及 ObserveMode 的 issue 必须明确前台低延迟行为、后台异步处理和用户主动 deep
@@ -155,18 +186,22 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 
 ## P0 优先级
 
-1. Embedding -> Qdrant -> Rust search API 的语义检索闭环。
-2. 注册登录、创建记忆、搜索召回、摘要生成的端到端验收。
-3. Lens 最小模型：Lens 配置、Lens Run、可追溯输出。
-4. 文档口径统一：README、architecture、TODO 都应以 Rust 主线和 Cognitive Space 为准。
+1. Surface Gateway MVP：Capture / Performance / Reflection / Planning /
+   Observation 统一入口，自动写 Trace。
+2. Trace -> FeedbackLoop -> GrowthModel -> PracticePlan 闭环。
+3. Dictation Coach 最小闭环：录入词表、提交默写、错因归因、生成明日练习、7 天趋势。
+4. 文档口径统一：README、architecture、TODO 都应以 long-term feedback engine、
+   Rust 主线和 Cognitive Space 为准。
 
 ## 当前产品入口
 
 - Thought Review 是 reflective demo 和项目演讲入口：写下一条混乱想法，用多个
   perspective 展示 MemoryNexus 如何解释同一份 memory space。
-- 第一产品 MVP 候选是 STEM Learning Feedback，产品 namespace 为 `learning.stem`；
-  第一验证任务是 parent-assisted elementary fraction word problems feedback loop，
-  用练习、作答、错因、反馈、下一题和周学习报告验证长期反馈价值。
+- 第一上游产品方向是 Dictation Coach / 每日默写助手，建议 namespace 为
+  `child.chinese.dictation`、`child.english.spelling` 或
+  `child.english.sentence-dictation`；用录入词表、提交结果、错因归因、明日练习和
+  7 天趋势验证长期反馈价值。
+- `learning.stem` 是 prior learning slice，不是下一阶段唯一产品入口。
 - Thought Review 属于 reflective namespace，可视为 `personal.thoughts` 的 demo。
   `learning.stem` 属于 Skill Namespace，必须通过单独 issue/验收场景推进。
 
