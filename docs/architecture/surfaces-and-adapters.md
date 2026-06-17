@@ -127,6 +127,43 @@ Examples:
 - CLI: any surface needed for smoke tests and developer workflows.
 - MCP: agent access through Gateway, not direct Engine mutation.
 
+## Dictation Coach Surface Contract
+
+Dictation Coach is an upstream product scenario, not a new Engine role model.
+Its first namespaces are:
+
+```text
+child.chinese.dictation
+child.english.spelling
+child.english.sentence-dictation
+```
+
+These names partition domain evidence inside a `CognitiveSpace`; they do not
+create a new permission boundary. Adapter copy may describe a parent, learner,
+teacher, or coach, but Surface and Engine payloads stay role-neutral.
+
+Dictation Coach uses manual input only in the MVP:
+
+- Capture records typed or pasted characters, words, phrases, or sentences.
+- Performance submits typed or pasted attempts against a captured task.
+- Reflection explains deterministic mistake types and recurring patterns.
+- Planning generates a short next practice from evidence.
+- Observation summarizes 7-day trends, stability, current focus, and evidence.
+
+Conceptual mapping. Dictation-specific verbs belong in adapter copy or payload
+semantics; Gateway actions use the generic `SurfaceAction` vocabulary.
+
+| Surface | Gateway Action | Product / Payload Semantics | Trace Task Type | Output Shape |
+| --- | --- | --- | --- | --- |
+| Capture | `capture_observation` | Record today's dictation list. | `practice` | Manual task list plus Trace provenance. |
+| Performance | `submit_attempt` | Submit manual dictation result. | `practice` | Attempt, deterministic evaluation, and immediate feedback. |
+| Reflection | `review_evidence` | Explain current mistakes. | `feedback` | Mistake explanation, recurring patterns, and evidence IDs. |
+| Planning | `generate_next_task` | Generate tomorrow practice. | `planning` | 10-minute `PracticePlan` targeting one or two mistake patterns. |
+| Observation | `get_state_summary` | Show 7-day trend. | `review` | 7-day trend summary with recurring errors and evidence IDs. |
+
+The full product contract is in
+[Dictation Coach MVP](../dictation-coach-mvp.md).
+
 ## Adapter Rules
 
 - Adapters do not own memory.
