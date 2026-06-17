@@ -1,9 +1,8 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-15
-> Source of truth for executable task definitions in this branch:
-> [docs/issues.md](issues.md). GitHub Issues should be created or updated from
-> that file after this architecture refresh is accepted.
+> Last updated: 2026-06-17
+> Source of truth for executable task definitions: GitHub Issues, with
+> [docs/issues.md](issues.md) as the planning mirror for the milestone shape.
 
 ## Current Direction
 
@@ -32,27 +31,33 @@ The repository already has strong foundations:
 - Rust + Axum is the main backend.
 - Memory belongs to `CognitiveSpace`, not to agents or apps.
 - Namespace and FeedbackLoop foundations exist.
-- Trace and SleepCycle contracts exist.
+- Trace schema/repository and SleepCycle domain/persistence foundations exist.
 - Thought Review demonstrates reflective memory and Lens-based interpretation.
 - The `learning.stem` slice validates practice sessions, feedback capture,
   weekly review, MCP flow, and a simple Rust-served UI.
 - Binary-first install, Local One-click packaging, Production Profile, and
   Supabase Postgres compatibility have documentation and implementation tracks.
+- Surface Gateway has landed for Capture, Performance, and manual
+  consolidation; Reflection, Planning, Observation, adapter policy, and
+  dictation-specific flows remain open issues.
 
 ## Gap Against The New Direction
 
 The project still needs to close these gaps:
 
-- Older docs and compatibility paths still contain mixed positioning: AI thought
-  organizer, cognitive lens memory, STEM Learning Feedback, and long-term
-  feedback engine.
-- Architecture docs do not yet make Engine / Surfaces / Adapters / Surface
-  Gateway the primary model.
-- Existing APIs expose object-level operations before a Surface Gateway exists.
-- GrowthModel and PracticePlan are not yet first-class domain objects.
-- Event-driven backend boundaries are not explicit in implementation.
+- Compatibility paths still expose object-level APIs before all adapters move
+  through Surface Gateway.
+- MCP remains a compatibility adapter over object-level APIs; Surface Gateway
+  MCP/chat tools are still pending.
+- Event publishing is partial: Capture returns an `ObservationCaptured` event,
+  but `AttemptSubmitted` and stored/in-process event publication remain open.
+- GrowthModel and PracticePlan domain drafts exist, but SleepCycle does not yet
+  aggregate Trace into GrowthModel updates or generate next PracticePlans.
 - `learning.stem` is a useful prior slice, but the next upstream product should
-  be Dictation Coach.
+  be Dictation Coach; the dictation-specific capture, attempt, classification,
+  next-practice, observation, and adapter issues are still open.
+- No GitHub Release artifact is currently published, so Trial and Local
+  One-click binary-first profiles still need release validation.
 - Evaluation should measure growth and feedback usefulness, not just retrieval
   accuracy.
 
@@ -89,7 +94,7 @@ Engine  = how memory, feedback, growth, and planning evolve over time
 
 Goal: update documentation only; no business code changes.
 
-Status: in progress in this branch.
+Status: completed on `main`.
 
 Deliverables:
 
@@ -108,6 +113,9 @@ Deliverables:
 ## Milestone 2: Core Domain Model
 
 Goal: define core domain types and schema without LLM integration or complex UI.
+
+Status: mostly complete; remaining open issues are MemoryAtom draft,
+CognitiveScene draft, and minimal Lens / Reflection Surface structures.
 
 Recommended sequence:
 
@@ -132,6 +140,10 @@ Non-goals:
 
 Goal: build the unified Engine entry point.
 
+Status: partially complete. `SurfaceRequest` / `SurfaceResponse`, Capture,
+Performance, and manual consolidation are implemented; Reflection, Planning,
+and Observation mocks remain open.
+
 Recommended sequence:
 
 1. Define `SurfaceRequest` and `SurfaceResponse`.
@@ -152,6 +164,10 @@ Non-goals:
 ## Milestone 4: Event + Sleep Engine MVP
 
 Goal: make foreground paths fast and background paths deep.
+
+Status: partially complete. Engine Event types and manual SleepCycle trigger
+exist; event publication, GrowthModel aggregation, and PracticePlan generation
+remain open.
 
 Recommended sequence:
 
@@ -174,6 +190,9 @@ Non-goals:
 ## Milestone 5: Dictation Coach Demo
 
 Goal: validate the full loop with a daily dictation product scenario.
+
+Status: not yet usable as an app. The product contract exists, but the
+dictation-specific implementation path is still open.
 
 Initial namespaces:
 
@@ -224,6 +243,10 @@ Non-goals:
 ## Milestone 6: Adapters
 
 Goal: validate one Engine through multiple interaction channels.
+
+Status: pending. MCP has compatibility tools for memory, lenses, profiles,
+reminders, and namespace practice sessions, but it does not yet expose the new
+Surface Gateway dictation flow.
 
 Recommended adapter sequence:
 

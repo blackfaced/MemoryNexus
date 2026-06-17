@@ -1,7 +1,8 @@
 # MemoryNexus Executable Issues
 
-This file is the planning source for the next milestone set. Convert these into
-GitHub Issues after the architecture refresh is accepted.
+This file is the planning mirror for the current milestone set. GitHub Issues
+are the executable source of truth; keep this file aligned when milestone scope
+or acceptance criteria change.
 
 Each issue assumes:
 
