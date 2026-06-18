@@ -208,15 +208,23 @@ Initial namespaces:
 
 Execution dependency graph:
 
-| Prerequisites | Unlocks |
+| Depends On | Issue Unlocked |
 | --- | --- |
-| Foundation F1 | Issues 5.2 and 5.3 |
-| Issues 3.4, 3.5, 3.6, and Foundation F1 | Issue 6.2 generic MCP/chat Surface Adapter |
-| Issues 5.2 through 5.6 and Issue 6.2 | Issue 5.7 Dictation Agent demo |
+| Foundation F1 | Issue 5.2 |
+| Foundation F1 + Issue 5.2 | Issue 5.3 |
+| Issue 5.3 | Issues 5.4 and 5.6 |
+| Issue 5.4 | Issue 5.5 |
+| Issue 3.4 | Issue 3.5 |
+| Issue 3.5 | Issue 3.6 |
+| Foundation F1 + Issues 3.4, 3.5, and 3.6 | Issue 6.2 generic MCP/chat Surface Adapter |
+| Issues 5.2 through 5.6 + Issue 6.2 | Issue 5.7 Dictation Agent demo |
+| Issue 5.7 | Issue 6.3 Simple Practice App Adapter |
 
-These edges are acyclic: Foundation F1 and the three remaining generic Surface
-mocks feed Issue 6.2, while Issue 5.7 waits for both the dictation capabilities
-and the generic adapter. Live GitHub issue and Foundation F1 synchronization is
+These edges are acyclic. Issues 3.4 -> 3.5 -> 3.6 are serialized because they
+share Surface dispatcher ownership. Foundation F1 gates both the first
+dictation Surface and the generic adapter; Issue 5.7 waits for the complete
+dictation capability set and adapter. Issue 6.3 is deferred until the Issue 5.7
+Agent loop is accepted. Live GitHub issue and Foundation F1 synchronization is
 Task 5 after these documentation changes merge; do not update GitHub in this
 task.
 
@@ -230,21 +238,31 @@ Recommended sequence:
    redact only diagnostics and log messages, and never write rejected raw
    payloads or secrets to logs, Trace, metadata persistence, or any persistence.
    Keep references optional.
-2. Capture today's confirmed word, phrase, or sentence list.
-3. Submit confirmed dictation / spelling result.
-4. Classify mistakes deterministically from text.
-5. Generate tomorrow's 10-minute practice.
-6. Show simple 7-day trends.
-7. Run manual SleepCycle over dictation traces.
-8. Generate weekly review.
-9. After the generic MCP/chat Surface Adapter foundation in Issue 6.2 lands,
+2. Capture today's confirmed word, phrase, or sentence list as Issue 5.2.
+3. After F1 and Issue 5.2, submit confirmed dictation / spelling results as
+   Issue 5.3.
+4. After Issue 5.3, classify mistakes deterministically as Issue 5.4 and build
+   the 7-day summary as Issue 5.6.
+5. After Issue 5.4, generate tomorrow's 10-minute practice as Issue 5.5.
+6. Run manual SleepCycle over dictation traces.
+7. Generate weekly review.
+8. After the generic MCP/chat Surface Adapter foundation in Issue 6.2 lands,
    expose the first usable Dictation test through its generic Surface Gateway
    tools as Issue 5.7.
+9. Defer the Issue 6.3 Simple Practice App Adapter until the Issue 5.7 Agent
+   loop is accepted.
 
 The initial smoke uses one learner and manually entered or Agent-confirmed text.
 An Agent/App performs OCR or ASR when media is involved and must obtain explicit
 user acceptance or correction for every media-derived normalized payload before
 submission. The smoke has no dedicated Dictation Coach App dependency.
+
+Issue 6.2 owns the role-neutral `input_confirmation` request field and enforces
+it in MCP/chat before generic Surface calls. Issues 5.2 and 5.3 validate the
+same marker for media-derived input as defense in depth. Issue 5.7 owns only the
+product prompt/interaction that obtains acceptance or correction and maps it to
+`explicit_acceptance` or `explicit_correction`; no parent/child role enters the
+Engine.
 
 A future dedicated Dictation Coach App belongs in a separate repository only
 after the Agent loop works. It remains a Surface Gateway / MCP client and does
@@ -297,7 +315,8 @@ Recommended adapter sequence:
    Performance, Reflection, Planning, and Observation.
 3. Build the product-facing Dictation Agent orchestration in Issue 5.7 on that
    generic adapter; this remains the first user-facing usable flow.
-4. Simple Practice App Adapter: can access Performance, Planning, and limited
+4. Only after the Issue 5.7 Agent loop is accepted, implement the deferred
+   Issue 6.3 Simple Practice App Adapter for Performance, Planning, and limited
    Observation.
 5. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
 6. Ensure adapters do not directly access Engine internals.

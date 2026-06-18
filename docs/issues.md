@@ -475,7 +475,7 @@ plan.
 
 **Background:** Reflection answers "what does this mean?" but first version can be deterministic.
 
-**Unlocks:** Issue 6.2.
+**Unlocks:** Issue 3.5.
 
 **Scope:**
 
@@ -504,7 +504,9 @@ plan.
 
 **Background:** Planning answers "what should happen next?".
 
-**Unlocks:** Issue 6.2.
+**Depends On:** Issue 3.4.
+
+**Unlocks:** Issue 3.6.
 
 **Scope:**
 
@@ -531,6 +533,8 @@ plan.
 ### Issue 3.6: Implement Observation Surface Mock
 
 **Background:** Observation answers "how is long-term state changing?".
+
+**Depends On:** Issue 3.5.
 
 **Unlocks:** Issue 6.2.
 
@@ -698,6 +702,23 @@ blocking foreground responses.
 
 ## Milestone 5: Dictation Coach Demo
 
+Execution dependency graph:
+
+| Depends On | Issue Unlocked |
+| --- | --- |
+| Foundation F1 | Issue 5.2 |
+| Foundation F1 + Issue 5.2 | Issue 5.3 |
+| Issue 5.3 | Issues 5.4 and 5.6 |
+| Issue 5.4 | Issue 5.5 |
+| Issue 3.4 | Issue 3.5 |
+| Issue 3.5 | Issue 3.6 |
+| Foundation F1 + Issues 3.4, 3.5, and 3.6 | Issue 6.2 |
+| Issues 5.2 through 5.6 + Issue 6.2 | Issue 5.7 |
+| Issue 5.7 | Issue 6.3 |
+
+The graph is acyclic. Issues 3.4 -> 3.5 -> 3.6 are intentionally sequential
+because they share Surface dispatcher ownership.
+
 ### Issue 5.1: Define Dictation Coach Contract
 
 **Background:** Dictation Coach is the first upstream product, but Engine should not embed roles.
@@ -730,7 +751,8 @@ media, but ADR-021 and the media evidence contract currently define a docs-only
 contract. Descriptor validation must land before Dictation Capture accepts
 `EvidenceRefInput`.
 
-**Unlocks:** Issues 5.2, 5.3, and 6.2.
+**Unlocks:** Issue 5.2; contributes to Issues 5.3 and 6.2 with their other
+dependencies.
 
 **Scope:**
 
@@ -743,6 +765,29 @@ contract. Descriptor validation must land before Dictation Capture accepts
 - Reject an entire `EvidenceRefInput` as one invalid reference when its locator
   or metadata contains any secret, including credentials, tokens, mount secrets,
   and short-lived signed URLs.
+- Apply one deterministic, fixture-backed secret policy; do not claim perfect
+  secret discovery:
+  - Recursively inspect metadata keys case-insensitively at every object and
+    array depth. Normalize keys by lowercasing and comparing both their
+    underscore-normalized and separator-free forms, so variants such as
+    `client-secret`, `client_secret`, and `clientSecret` match the same deny
+    name.
+  - Deny at least `password`, `passwd`, `secret`, `client_secret`, `token`,
+    `access_token`, `refresh_token`, `api_key`, `apikey`, `authorization`,
+    `cookie`, `session`, `credential`, `private_key`, and `mount_secret`.
+  - Reject URI userinfo credentials in locators.
+  - Reject locator query names case-insensitively for at least
+    `x-amz-algorithm`, `x-amz-credential`, `x-amz-signature`,
+    `x-amz-security-token`, `x-goog-algorithm`, `x-goog-credential`,
+    `x-goog-signature`, `signature`, `sig`, `token`, `access_token`,
+    `credential`, and `expires`.
+  - Recursively reject obvious secret string forms in nested metadata values:
+    a string beginning with the ASCII case-insensitive `Bearer ` prefix, a
+    private-key PEM header, a JWT-like value consisting of exactly three
+    non-empty base64url segments, and the fixture-defined literal API-key
+    prefixes `sk-`, `AKIA`, `ASIA`, `ghp_`, and `github_pat_`.
+- Report only the offending field/path and a stable error code. Never include
+  the raw value in diagnostics or logs.
 - Redact only diagnostics and log messages. Never write rejected raw payloads or
   secrets to logs, Trace, metadata persistence, or any persistence.
 - Allow optional evidence references only on the two initial Surface actions.
@@ -765,6 +810,8 @@ contract. Descriptor validation must land before Dictation Capture accepts
 - Secret-bearing locator or metadata rejects the entire reference, diagnostics
   are redacted, and rejected raw payloads and secrets enter no log, Trace,
   metadata persistence, or other persistence.
+- Secret rejection is deterministic against the required fixture corpus and
+  returns only field/path plus error code, never a raw value.
 - `capture_observation` and `submit_attempt` can carry optional validated
   references.
 - Contract behavior matches ADR-021 and the media evidence contract without
@@ -780,8 +827,9 @@ contract. Descriptor validation must land before Dictation Capture accepts
   64-byte values versus a rejected 65-byte value.
 - `locator` tests cover non-empty input; accepted 4096 decoded UTF-8 bytes
   versus rejected 4097 bytes; accepted 8192 serialized JSON bytes versus
-  rejected 8193 bytes; control characters; and credentials, tokens, mount
-  secrets, signed-query forms, data URLs, and inline media bytes.
+  rejected 8193 bytes; control characters; URI userinfo credentials; all
+  required signed/auth query names with case variants; data URLs; and inline
+  media bytes.
 - `media_type` tests require normalized lowercase `type/subtype` syntax without
   parameters, with both tokens matching `[a-z0-9][a-z0-9!#$&^_.+-]*`, and a
   maximum of 255 ASCII bytes. Tests include an accepted canonical value and
@@ -799,14 +847,39 @@ contract. Descriptor validation must land before Dictation Capture accepts
   64-byte values versus rejected 65-byte values.
 - `metadata` tests require a JSON object; cover accepted 16384 serialized UTF-8
   bytes versus rejected 16385 bytes; count the root object as depth 1, accept
-  depth 4, and reject depth 5; and detect secrets at nested positions.
+  depth 4, and reject depth 5; recursively exercise every denied key in nested
+  objects/arrays with case and normalization variants; and reject nested values
+  containing the required Bearer, PEM, JWT-like, and API-key-prefix forms.
+- Positive false-positive-control fixtures accept ordinary non-secret metadata
+  and locators whose path text contains words such as `token`, for example
+  `s3://study/archive/token-guidelines.pdf`, when there is no credential-bearing
+  userinfo or denied query key.
 - Caller-supplied `id` and `space_id` ownership fields are rejected.
 - Any unsafe locator or metadata rejects the entire reference. Diagnostics are
-  redacted, with explicit assertions that rejected raw payloads and secrets are
-  absent from diagnostics and captured logs, no Trace write occurs, and no
-  persistence or repository call occurs. Because F1 is validation-only and no
-  evidence persistence exists, use fakes or spies to prove the absence of
-  downstream calls rather than adding persistence.
+  field/path plus error code only, with explicit assertions that rejected raw
+  payloads and secrets are absent from diagnostics and captured logs, no Trace
+  write occurs, and no persistence or repository call occurs. Because F1 is
+  validation-only and no evidence persistence exists, use fakes or spies to
+  prove the absence of downstream calls rather than adding persistence.
+
+**Required Secret Fixtures:**
+
+| Fixture | Expected result |
+| --- | --- |
+| `{"outer":[{"Client-Secret":"fixture-value"}]}` | Reject the entire reference with the nested field path and `secret_key_denied`. |
+| `https://user:fixture-password@example.test/media/1` | Reject with locator path and `locator_userinfo_denied`. |
+| `https://example.test/media/1?X-Amz-Signature=fixture` | Reject with query-field path and `locator_query_denied`. |
+| Nested strings beginning with `Bearer ` or a private-key PEM header | Reject with nested field path and `secret_value_pattern_denied`. |
+| JWT-like `eyJmaXh0dXJlIjoxfQ.cGF5bG9hZA.c2lnbmF0dXJl` | Reject with nested field path and `secret_value_pattern_denied`. |
+| Parameterized values beginning with `sk-`, `AKIA`, `ASIA`, `ghp_`, and `github_pat_` | Reject each with nested field path and `secret_value_pattern_denied`. |
+| `{"page":2,"label":"weekly review","source":"teacher notes"}` | Accept as ordinary non-secret metadata. |
+| `s3://study/archive/token-guidelines.pdf` | Accept because `token` appears only in path text. |
+| `https://example.test/access_token_notes.txt?version=3` | Accept because there is no userinfo or denied query name. |
+
+For every rejected fixture, assert that diagnostics contain only the stated
+field/path and error code, captured diagnostics/logs do not contain the raw
+fixture payload or value, and neither Trace nor repository/persistence fakes
+are called.
 
 **Required References:**
 
@@ -824,9 +897,9 @@ contract. Descriptor validation must land before Dictation Capture accepts
 
 **Background:** The daily loop begins by recording today's words, phrases, or sentences.
 
-**Dependencies:** Foundation F1.
+**Depends On:** Foundation F1.
 
-**Unlocks:** Issue 5.7.
+**Unlocks:** Issue 5.3.
 
 **Scope:**
 
@@ -835,6 +908,9 @@ contract. Descriptor validation must land before Dictation Capture accepts
 - Accept confirmed text with `typed`, `pasted`, `agent_ocr`,
   `agent_transcribed`, or `mixed` source provenance and optional validated
   `EvidenceRefInput` descriptors.
+- Validate the role-neutral `input_confirmation` marker defined by Issue 6.2
+  for `agent_ocr`, `agent_transcribed`, and `mixed` media-derived input as
+  defense in depth, even when an Adapter already enforced it.
 - Write Trace.
 
 **Non-Goals:**
@@ -848,6 +924,8 @@ contract. Descriptor validation must land before Dictation Capture accepts
 - User can capture typed or pasted text, or text prepared through Agent OCR/ASR.
 - Every media-derived normalized payload requires explicit user acceptance or
   correction before submission.
+- Surface tests reject missing or unconfirmed `input_confirmation` for every
+  media-derived source and accept the two confirmed methods.
 - Trace links namespace and source.
 - Tests cover empty and valid lists.
 
@@ -862,15 +940,18 @@ contract. Descriptor validation must land before Dictation Capture accepts
 **Background:** Dictation Coach needs a text-first attempt submission before
 automated evaluation.
 
-**Dependencies:** Foundation F1.
+**Depends On:** Foundation F1 and Issue 5.2.
 
-**Unlocks:** Issue 5.7.
+**Unlocks:** Issues 5.4 and 5.6.
 
 **Scope:**
 
 - Submit expected items and actual result.
 - Allow attempts to link optional validated `EvidenceRefInput` values for
   provenance.
+- Accept source provenance and validate the Issue 6.2 role-neutral
+  `input_confirmation` marker for `agent_ocr`, `agent_transcribed`, and `mixed`
+  media-derived input as defense in depth.
 - Record FeedbackLoop attempt.
 - Write Trace.
 
@@ -885,6 +966,8 @@ automated evaluation.
 - Attempt is Space-owned and namespace-scoped.
 - Deterministic evaluation uses confirmed text and does not require linked media
   to be available.
+- Surface tests reject missing or unconfirmed `input_confirmation` for every
+  media-derived source and accept the two confirmed methods.
 
 **Possible Files:**
 
@@ -896,7 +979,9 @@ automated evaluation.
 
 **Background:** First feedback should be deterministic before LLM/OCR.
 
-**Unlocks:** Issue 5.7.
+**Depends On:** Issue 5.3.
+
+**Unlocks:** Issue 5.5.
 
 **Scope:**
 
@@ -921,6 +1006,8 @@ automated evaluation.
 ### Issue 5.5: Generate Tomorrow 10-Minute Practice
 
 **Background:** Dictation Coach value is next action, not just diagnosis.
+
+**Depends On:** Issue 5.4.
 
 **Unlocks:** Issue 5.7.
 
@@ -951,6 +1038,8 @@ automated evaluation.
 
 **Background:** Observation Surface should show long-term change.
 
+**Depends On:** Issue 5.3.
+
 **Unlocks:** Issue 5.7.
 
 **Scope:**
@@ -980,14 +1069,17 @@ automated evaluation.
 Agent before a dedicated product App is built, reusing the generic MCP/chat
 Surface Adapter from Issue 6.2.
 
-**Dependencies:** Issues 5.2, 5.3, 5.4, 5.5, 5.6, and 6.2.
+**Depends On:** Issues 5.2, 5.3, 5.4, 5.5, 5.6, and 6.2.
+
+**Unlocks:** Issue 6.3.
 
 **Scope:**
 
 - Implement Dictation Agent orchestration and product-facing action mapping over
   the generic adapter.
-- Define Dictation-specific prompt and confirmation policy for manually entered
-  or Agent-prepared normalized text.
+- Own only the Dictation product prompt/interaction that obtains explicit
+  acceptance or correction for Agent-prepared normalized text, then map the
+  result to Issue 6.2's generic `input_confirmation` field.
 - Exercise one-learner Capture, Performance, Reflection, Planning, and
   Observation through the generic Surface Adapter.
 
@@ -1008,6 +1100,10 @@ Surface Adapter from Issue 6.2.
 - The flow covers all five Surfaces and writes Trace provenance where required.
 - Product-facing mappings and prompt/confirmation policy remain outside the
   generic adapter.
+- Prompt-flow tests demonstrate explicit acceptance and explicit correction,
+  then assert successful mapping to `explicit_acceptance` and
+  `explicit_correction` respectively.
+- No parent/child or other product role is added to Engine contracts.
 
 **Possible Files:**
 
@@ -1045,7 +1141,7 @@ Surface Adapter from Issue 6.2.
 **Background:** MCP/chat clients need generic transport and tool plumbing over
 Surface Gateway before product-specific Agent orchestration is added.
 
-**Dependencies:** Issues 3.4, 3.5, 3.6, and Foundation F1.
+**Depends On:** Foundation F1 and Issues 3.4, 3.5, and 3.6.
 
 **Unlocks:** Issue 5.7.
 
@@ -1055,14 +1151,26 @@ Surface Gateway before product-specific Agent orchestration is added.
   Surface Gateway.
 - Map generic actions and capabilities across Capture, Performance, Reflection,
   Planning, and Observation without product-specific Engine actions.
-- Define generic confirmation and Trace provenance policy for adapter requests
-  and responses.
+- Define the role-neutral adapter request field:
+
+  ```text
+  input_confirmation: {
+    status: "confirmed",
+    method: "explicit_acceptance" | "explicit_correction"
+  }
+  ```
+
+- Enforce `input_confirmation` in the MCP/chat Adapter for `agent_ocr`,
+  `agent_transcribed`, and `mixed` media-derived input before making a generic
+  Surface call.
 - Keep OCR, ASR, and media acquisition outside MemoryNexus, and require explicit
   user acceptance or correction before submitting any media-derived normalized
   payload.
 - Pass optional validated, opaque `EvidenceRefInput` descriptors through generic
-  calls and preserve generated Trace provenance. Generic calls do not resolve
-  evidence and do not require media, provider, or resolver availability.
+  calls. Return and preserve the generated Trace ID/provenance for the Surface
+  call, but do not claim media descriptors are persisted; descriptors remain
+  ephemeral in this slice. Generic calls do not resolve evidence and do not
+  require media, provider, or resolver availability.
 
 **Non-Goals:**
 
@@ -1078,7 +1186,10 @@ Surface Gateway before product-specific Agent orchestration is added.
 - Agent response includes trace provenance where appropriate.
 - Calls use generic Capture, Performance, Reflection, Planning, and Observation
   capabilities and actions.
-- Agent-mediated OCR/ASR text is explicitly confirmed before submission.
+- Adapter tests reject missing or unconfirmed `input_confirmation` for
+  `agent_ocr`, `agent_transcribed`, and `mixed` input before any generic Surface
+  call, and accept both `explicit_acceptance` and `explicit_correction` with
+  `status: "confirmed"`.
 - Confirmed-text processing succeeds when an optional opaque
   `EvidenceRefInput` passes Foundation F1 validation; the adapter makes no
   availability claim and performs no resolver call.
@@ -1092,6 +1203,10 @@ Surface Gateway before product-specific Agent orchestration is added.
 ### Issue 6.3: Simple Practice App Adapter
 
 **Background:** A practice adapter should use only the surfaces it needs.
+
+**Depends On:** Issue 5.7.
+
+**Status:** Deferred until the Issue 5.7 Agent loop is accepted.
 
 **Scope:**
 
