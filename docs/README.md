@@ -8,6 +8,7 @@
 - [Surfaces and Adapters](architecture/surfaces-and-adapters.md)
 - [Surface Gateway](architecture/surface-gateway.md)
 - [Sleep-driven Feedback Loop](architecture/sleep-driven-feedback-loop.md)
+- [Media Evidence Contract](media-evidence-contract.md)
 - [API](api.md)
 - [CLI](cli.md)
 - [MCP Server](mcp.md)
