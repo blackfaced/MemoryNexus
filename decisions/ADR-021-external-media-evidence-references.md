@@ -61,7 +61,8 @@ transcript 只用于 provenance，不能覆盖已确认文字。
 - locator 和 metadata 不得保存 credentials、API keys、mount secrets 或短期 signed URL
   query parameters。
 - resolver 必须在授权后工作，且不能绕过 Space membership 或把 provider 权限提升为
-  Engine 权限。
+  Engine 权限。resolver 还必须将访问限制在已配置的 provider roots / buckets / hosts，
+  不能成为任意本地文件或 URL 读取入口。
 - OCR / ASR 的不确定性由 Agent / App 与用户在提交前解决；MemoryNexus 不从不可检查的
   引用中推断文字。
 
@@ -78,7 +79,9 @@ transcript 只用于 provenance，不能覆盖已确认文字。
 
 - 外部引用可能移动、过期或暂时不可用，provenance inspection 不能保证始终成功。
 - provider-specific resolution 需要后续独立 integration 实现和授权策略。
-- 确认文字与原始媒体不一致时，需要显式报告 mismatch，而不能静默修正既有反馈。
+- `evidence_mismatch` 只表示解析出的内容无法通过 hash 或稳定身份验证为原始证据。
+  transcript 与确认后的 Surface text 不同属于 Adapter / 用户确认 provenance，不是
+  `evidence_mismatch`，也不要求 Engine 分析媒体或修正既有反馈。
 
 ## 非目标
 
@@ -88,6 +91,9 @@ transcript 只用于 provenance，不能覆盖已确认文字。
 - 不选择唯一媒体 provider，也不要求外部媒体复制到 S3/MinIO。
 - 不创建独立 Dictation Coach 仓库、产品 UI 或产品角色模型。
 - 不把 Namespace 改造成所有权或权限边界。
+
+本 ADR 和 Media Evidence Contract 只建立文档与未来验证契约，不引入当前可调用的
+Surface、持久化、resolver 或媒体处理能力。
 
 ## 相关决策
 
