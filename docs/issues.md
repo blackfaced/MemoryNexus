@@ -781,9 +781,11 @@ contract. Descriptor validation must land before Dictation Capture accepts
 - `locator` tests cover non-empty input; accepted 4096 decoded UTF-8 bytes
   versus rejected 4097 bytes; accepted 8192 serialized JSON bytes versus
   rejected 8193 bytes; control characters; and credentials, tokens, mount
-  secrets, and signed-query forms.
-- `media_type` tests cover normalized lowercase MIME syntax without parameters
-  and accepted 255 ASCII bytes versus rejected 256 bytes.
+  secrets, signed-query forms, data URLs, and inline media bytes.
+- `media_type` tests require normalized lowercase `type/subtype` syntax without
+  parameters, with both tokens matching `[a-z0-9][a-z0-9!#$&^_.+-]*`, and a
+  maximum of 255 ASCII bytes. Tests include an accepted canonical value and
+  rejected uppercase, parameterized, invalid-token, and 256-byte values.
 - `content_hash` tests cover exactly `sha256:` plus 64 lowercase hexadecimal
   characters and reject another algorithm, uppercase hexadecimal, and wrong
   lengths.
@@ -796,8 +798,8 @@ contract. Descriptor validation must land before Dictation Capture accepts
 - `transcript_source` tests cover the provider identifier syntax and accepted
   64-byte values versus rejected 65-byte values.
 - `metadata` tests require a JSON object; cover accepted 16384 serialized UTF-8
-  bytes versus rejected 16385 bytes; accept depth 4 and reject depth 5;
-  and detect secrets at nested positions.
+  bytes versus rejected 16385 bytes; count the root object as depth 1, accept
+  depth 4, and reject depth 5; and detect secrets at nested positions.
 - Caller-supplied `id` and `space_id` ownership fields are rejected.
 - Any unsafe locator or metadata rejects the entire reference. Diagnostics are
   redacted, with explicit assertions that rejected raw payloads and secrets are
