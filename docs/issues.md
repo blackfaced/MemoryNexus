@@ -475,6 +475,8 @@ plan.
 
 **Background:** Reflection answers "what does this mean?" but first version can be deterministic.
 
+**Unlocks:** Issue 6.2.
+
 **Scope:**
 
 - Add reflect/review/explain mock actions.
@@ -502,6 +504,8 @@ plan.
 
 **Background:** Planning answers "what should happen next?".
 
+**Unlocks:** Issue 6.2.
+
 **Scope:**
 
 - Add plan/generateNextTask/adjustPlan mock actions.
@@ -527,6 +531,8 @@ plan.
 ### Issue 3.6: Implement Observation Surface Mock
 
 **Background:** Observation answers "how is long-term state changing?".
+
+**Unlocks:** Issue 6.2.
 
 **Scope:**
 
@@ -724,6 +730,8 @@ media, but ADR-021 and the media evidence contract currently define a docs-only
 contract. Descriptor validation must land before Dictation Capture accepts
 `EvidenceRefInput`.
 
+**Unlocks:** Issues 5.2, 5.3, and 6.2.
+
 **Scope:**
 
 - Validate provider-neutral `EvidenceRefInput` descriptors at the Surface
@@ -759,12 +767,44 @@ contract. Descriptor validation must land before Dictation Capture accepts
   metadata persistence, or other persistence.
 - `capture_observation` and `submit_attempt` can carry optional validated
   references.
-- Tests cover omitted and empty refs; valid canonical provider, locator,
-  `media_type`, hash, timestamp, and bounds; invalid size, nesting, and encoding;
-  rejected caller ownership; and secret-bearing locator or metadata rejected
-  with redacted diagnostics.
 - Contract behavior matches ADR-021 and the media evidence contract without
   claiming persistence or resolver support.
+
+**Required Test Matrix:**
+
+- `evidence_refs` is optional; both an absent field and an empty array are
+  accepted.
+- Required-field tests cover presence of `provider`, `locator`, `media_type`,
+  and `metadata`.
+- `provider` tests cover `^[a-z][a-z0-9._-]{0,63}$` and accepted 1-byte and
+  64-byte values versus a rejected 65-byte value.
+- `locator` tests cover non-empty input; accepted 4096 decoded UTF-8 bytes
+  versus rejected 4097 bytes; accepted 8192 serialized JSON bytes versus
+  rejected 8193 bytes; control characters; and credentials, tokens, mount
+  secrets, and signed-query forms.
+- `media_type` tests cover normalized lowercase MIME syntax without parameters
+  and accepted 255 ASCII bytes versus rejected 256 bytes.
+- `content_hash` tests cover exactly `sha256:` plus 64 lowercase hexadecimal
+  characters and reject another algorithm, uppercase hexadecimal, and wrong
+  lengths.
+- `original_name` tests cover accepted 255 UTF-8 bytes versus rejected 256
+  bytes, control characters, and `/` or `\\` path separators.
+- `captured_at` tests accept canonical RFC 3339 UTC `Z` values and reject
+  numeric offsets and other noncanonical values.
+- `transcript` tests cover valid UTF-8 and accepted 65536 bytes versus rejected
+  65537 bytes.
+- `transcript_source` tests cover the provider identifier syntax and accepted
+  64-byte values versus rejected 65-byte values.
+- `metadata` tests require a JSON object; cover accepted 16384 serialized UTF-8
+  bytes versus rejected 16385 bytes; accept depth 4 and reject depth 5;
+  and detect secrets at nested positions.
+- Caller-supplied `id` and `space_id` ownership fields are rejected.
+- Any unsafe locator or metadata rejects the entire reference. Diagnostics are
+  redacted, with explicit assertions that rejected raw payloads and secrets are
+  absent from diagnostics and captured logs, no Trace write occurs, and no
+  persistence or repository call occurs. Because F1 is validation-only and no
+  evidence persistence exists, use fakes or spies to prove the absence of
+  downstream calls rather than adding persistence.
 
 **Required References:**
 
@@ -783,6 +823,8 @@ contract. Descriptor validation must land before Dictation Capture accepts
 **Background:** The daily loop begins by recording today's words, phrases, or sentences.
 
 **Dependencies:** Foundation F1.
+
+**Unlocks:** Issue 5.7.
 
 **Scope:**
 
@@ -820,6 +862,8 @@ automated evaluation.
 
 **Dependencies:** Foundation F1.
 
+**Unlocks:** Issue 5.7.
+
 **Scope:**
 
 - Submit expected items and actual result.
@@ -850,6 +894,8 @@ automated evaluation.
 
 **Background:** First feedback should be deterministic before LLM/OCR.
 
+**Unlocks:** Issue 5.7.
+
 **Scope:**
 
 - Classify Chinese and English mistake types from manual expected/actual input.
@@ -873,6 +919,8 @@ automated evaluation.
 ### Issue 5.5: Generate Tomorrow 10-Minute Practice
 
 **Background:** Dictation Coach value is next action, not just diagnosis.
+
+**Unlocks:** Issue 5.7.
 
 **Scope:**
 
@@ -901,6 +949,8 @@ automated evaluation.
 
 **Background:** Observation Surface should show long-term change.
 
+**Unlocks:** Issue 5.7.
+
 **Scope:**
 
 - Summarize last 7 days of attempts.
@@ -928,7 +978,7 @@ automated evaluation.
 Agent before a dedicated product App is built, reusing the generic MCP/chat
 Surface Adapter from Issue 6.2.
 
-**Dependencies:** Issue 6.2.
+**Dependencies:** Issues 5.2, 5.3, 5.4, 5.5, 5.6, and 6.2.
 
 **Scope:**
 
@@ -993,6 +1043,10 @@ Surface Adapter from Issue 6.2.
 **Background:** MCP/chat clients need generic transport and tool plumbing over
 Surface Gateway before product-specific Agent orchestration is added.
 
+**Dependencies:** Issues 3.4, 3.5, 3.6, and Foundation F1.
+
+**Unlocks:** Issue 5.7.
+
 **Scope:**
 
 - Implement MCP transport/tool handling and chat adapter integration over
@@ -1004,13 +1058,15 @@ Surface Gateway before product-specific Agent orchestration is added.
 - Keep OCR, ASR, and media acquisition outside MemoryNexus, and require explicit
   user acceptance or correction before submitting any media-derived normalized
   payload.
-- Attach optional validated evidence references and preserve generated Trace
-  provenance without requiring media availability.
+- Pass optional validated, opaque `EvidenceRefInput` descriptors through generic
+  calls and preserve generated Trace provenance. Generic calls do not resolve
+  evidence and do not require media, provider, or resolver availability.
 
 **Non-Goals:**
 
 - Do not make agent own memory.
-- Do not let unavailable evidence block confirmed-text feedback or planning.
+- Do not add evidence resolution, provider availability detection, or media
+  inspection; those behaviors belong to a future resolver issue.
 - Do not add Dictation orchestration, product-facing mappings, prompt policy, or
   Dictation-specific Engine actions.
 
@@ -1020,8 +1076,10 @@ Surface Gateway before product-specific Agent orchestration is added.
 - Agent response includes trace provenance where appropriate.
 - Calls use generic Capture, Performance, Reflection, Planning, and Observation
   capabilities and actions.
-- Agent-mediated OCR/ASR text is explicitly confirmed, and unavailable evidence
-  degrades only provenance inspection.
+- Agent-mediated OCR/ASR text is explicitly confirmed before submission.
+- Confirmed-text processing succeeds when an optional opaque
+  `EvidenceRefInput` passes Foundation F1 validation; the adapter makes no
+  availability claim and performs no resolver call.
 
 **Possible Files:**
 

@@ -206,6 +206,20 @@ Initial namespaces:
 - `child.english.spelling`
 - `child.english.sentence-dictation`
 
+Execution dependency graph:
+
+| Prerequisites | Unlocks |
+| --- | --- |
+| Foundation F1 | Issues 5.2 and 5.3 |
+| Issues 3.4, 3.5, 3.6, and Foundation F1 | Issue 6.2 generic MCP/chat Surface Adapter |
+| Issues 5.2 through 5.6 and Issue 6.2 | Issue 5.7 Dictation Agent demo |
+
+These edges are acyclic: Foundation F1 and the three remaining generic Surface
+mocks feed Issue 6.2, while Issue 5.7 waits for both the dictation capabilities
+and the generic adapter. Live GitHub issue and Foundation F1 synchronization is
+Task 5 after these documentation changes merge; do not update GitHub in this
+task.
+
 Recommended sequence:
 
 1. Land Foundation F1 to validate provider-neutral `EvidenceRefInput`
