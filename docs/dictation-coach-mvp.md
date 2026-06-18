@@ -21,14 +21,15 @@ schema, Rust implementation, UI specification, or OCR pipeline.
   mistake taxonomy for the first implementation issues.
 - Map product actions to Capture, Performance, Reflection, Planning, and
   Observation Surfaces.
-- Keep the first path manual, deterministic, local-first, and Trace-backed.
+- Keep the first path text-first, deterministic, local-first, and Trace-backed.
 - Preserve `CognitiveSpace` as the ownership and permission boundary.
 
 ## Non-Goals
 
-- No OCR.
-- No handwriting recognition.
-- No audio transcription.
+- MemoryNexus does not perform OCR, handwriting recognition, audio
+  transcription, or raw-media interpretation in this MVP.
+- An Agent/App Adapter may perform OCR or ASR, confirm normalized text with the
+  user, and submit it with optional media evidence references.
 - No multi-child management.
 - No broad education platform.
 - No full curriculum engine.
@@ -87,6 +88,7 @@ DictationTask {
   instructions?
   expected_duration_minutes?
   source
+  evidence_refs?
   created_at
   metadata
 }
@@ -101,10 +103,11 @@ Fields:
 | `namespace` | yes | One of the dictation namespaces above for MVP. |
 | `task_kind` | yes | `chinese_dictation`, `english_spelling`, or `english_sentence_dictation`. |
 | `title` | no | Human label such as `Monday words`; not used for permissions. |
-| `prompt_items` | yes | Ordered manual input items to practice. |
+| `prompt_items` | yes | Ordered confirmed text items to practice. |
 | `instructions` | no | Short adapter-facing guidance. |
 | `expected_duration_minutes` | no | MVP default is 10 when omitted. |
-| `source` | yes | Manual source: `typed`, `pasted`, `imported_text`, or `test_fixture`. |
+| `source` | yes | Text provenance: `typed`, `pasted`, `imported_text`, `agent_ocr`, `agent_transcribed`, or `test_fixture`. |
+| `evidence_refs` | no | Original-media provenance inputs governed by the [Media Evidence Contract](media-evidence-contract.md). |
 | `created_at` | yes | Capture timestamp. |
 | `metadata` | no | Small structured extension point; not a place for OCR blobs or raw files. |
 
@@ -135,11 +138,13 @@ english_phrase
 english_sentence
 ```
 
-Manual input rules:
+Text-first input rules:
 
-- `expected_text` is typed or pasted text.
-- The MVP does not accept image uploads, handwriting photos, audio files, or
-  worksheet scans as task input.
+- `expected_text` is confirmed normalized text, whether entered directly or
+  prepared by an Agent/App Adapter.
+- MemoryNexus does not upload or interpret image, handwriting, audio, video, or
+  worksheet media in this MVP. An Adapter may preprocess that media and attach
+  optional evidence references.
 - `display_text` may differ from `expected_text` only for adapter copy, such as
   showing a definition or masked prompt. The Engine compares against
   `expected_text`.
@@ -148,8 +153,8 @@ Manual input rules:
 
 ## Attempt Shape
 
-An attempt is the submitted result for one captured task. It is manual input
-only.
+An attempt is the submitted result for one captured task. Its canonical input
+is confirmed normalized text.
 
 ```text
 DictationAttempt {
@@ -162,6 +167,7 @@ DictationAttempt {
   started_at?
   submitted_at
   source
+  evidence_refs?
   metadata
 }
 ```
@@ -175,10 +181,11 @@ Fields:
 | `namespace` | yes | Must match the task namespace for MVP. |
 | `task_id` | yes | Source task. |
 | `task_kind` | yes | Copied from the task for deterministic routing. |
-| `submitted_items` | yes | Ordered manual answers aligned to task prompt items. |
+| `submitted_items` | yes | Ordered confirmed text answers aligned to task prompt items. |
 | `started_at` | no | Optional practice start time. |
 | `submitted_at` | yes | Submission time. |
-| `source` | yes | Manual source: `typed`, `pasted`, or `test_fixture`. |
+| `source` | yes | Text provenance: `typed`, `pasted`, `agent_ocr`, `agent_transcribed`, or `test_fixture`. |
+| `evidence_refs` | no | Original-media provenance inputs governed by the [Media Evidence Contract](media-evidence-contract.md). |
 | `metadata` | no | Small structured extension point. |
 
 ### Submitted Items
@@ -202,6 +209,18 @@ Rules:
   or a more specific English/Chinese error when deterministic rules allow it.
 - The first implementation should not infer handwriting, pronunciation, or
   speech intent from raw media.
+
+### Confirmed Text And Media Evidence
+
+- Feedback and deterministic classification use confirmed normalized text in
+  the Surface payload, never inaccessible media or an unconfirmed transcript.
+- Optional `evidence_refs` preserve original-media provenance and follow the
+  [Media Evidence Contract](media-evidence-contract.md); this document does not
+  duplicate its field or validation constraints.
+- OCR or ASR uncertainty remains Adapter context. The Agent/App Adapter must
+  confirm normalized text with the user before submission.
+- Media resolution or availability failure affects provenance inspection only;
+  it does not invalidate a completed text flow, Trace, or feedback result.
 
 ## Evaluation Shape
 
@@ -390,7 +409,7 @@ Gateway `SurfaceAction` enum.
 | Product / Payload Semantics | Surface | Gateway Action | Trace Task Type | Result |
 | --- | --- | --- | --- | --- |
 | Record today's dictation list | Capture | `capture_observation` | `practice` | `DictationTask` plus generated Trace. |
-| Submit manual dictation result | Performance | `submit_attempt` | `practice` | `DictationAttempt`, `DictationEvaluation`, immediate feedback, generated Trace. |
+| Submit confirmed dictation result | Performance | `submit_attempt` | `practice` | `DictationAttempt`, `DictationEvaluation`, immediate feedback, generated Trace. |
 | Explain current mistakes | Reflection | `review_evidence` | `feedback` | Item explanations and recurring pattern hints. |
 | Generate tomorrow practice | Planning | `generate_next_task` | `planning` | 10-minute `PracticePlan` linked to evidence IDs. |
 | Show 7-day trend | Observation | `get_state_summary` | `review` | Trend summary with recurring errors, stability, and evidence IDs. |
@@ -411,7 +430,8 @@ Minimum request payload:
   task_kind,
   prompt_items,
   expected_duration_minutes?,
-  source: "typed" | "pasted" | "imported_text" | "test_fixture"
+  source: "typed" | "pasted" | "imported_text" | "agent_ocr" | "agent_transcribed" | "test_fixture",
+  evidence_refs?: EvidenceRefInput[]
 }
 ```
 
@@ -443,7 +463,8 @@ Minimum request payload:
   namespace,
   task_id,
   submitted_items,
-  source: "typed" | "pasted" | "test_fixture"
+  source: "typed" | "pasted" | "agent_ocr" | "agent_transcribed" | "test_fixture",
+  evidence_refs?: EvidenceRefInput[]
 }
 ```
 
@@ -568,8 +589,10 @@ consolidation path.
 
 ## First End-To-End Flow
 
-1. Capture today's manual list under one dictation namespace.
-2. Submit manual answers for the captured task.
+1. Capture today's confirmed text list under one dictation namespace, with
+   optional original-media evidence references.
+2. Submit confirmed text answers for the captured task, with optional evidence
+   references when original inspection matters.
 3. Evaluate each item with deterministic rules.
 4. Return immediate feedback with mistake type, explanation, and evidence.
 5. Write Trace and FeedbackLoop evidence for the Capture and Performance calls.
