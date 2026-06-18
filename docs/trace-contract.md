@@ -72,7 +72,7 @@ Trace {
 | `space_id` | yes | The owning `CognitiveSpace`; permission checks remain Space-based. |
 | `namespace_id` | no | Domain partition when the interaction belongs to a namespace. |
 | `source_type` | yes | Origin adapter/source: `http`, `cli`, `mcp`, `ui`, `background`, `test_fixture`. |
-| `task_type` | yes | Semantic task: `chat`, `search`, `lens_run`, `review`, `practice`, `feedback`, `planning`, `install`, `profile`, `routing`, `consolidation`, `dreaming`. |
+| `task_type` | yes | Semantic task: `chat`, `capture`, `search`, `lens_run`, `review`, `practice`, `feedback`, `planning`, `install`, `profile`, `routing`, `consolidation`, `dreaming`. |
 | `mode` | yes | Observe depth: `fast`, `focused`, `deep`, or `none` when not applicable. |
 | `runtime` | yes | Execution class: `local`, `cloud`, `hybrid`, `deterministic`, or `unknown`. |
 | `input_summary` | no | Redacted or summarized input. Avoid raw secrets and oversized payloads. |
@@ -117,6 +117,7 @@ test_fixture
 
 ```text
 chat
+capture
 search
 lens_run
 review
@@ -215,8 +216,8 @@ start trace
 → optionally collect user feedback later
 ```
 
-The first implementation may create only completed traces if that is simpler.
-Long-running background work can later use `started` and `completed` states.
+The current implementation creates completed Trace records. Long-running
+background work can later use explicit `started` and `completed` states.
 
 ## Current Implementation Status
 
@@ -239,16 +240,22 @@ requires `completed_at`.
 
 Differences from the full conceptual contract:
 
-- `related_evidence_ref_ids` is conceptual and is not present in the current
-  persistent Trace foundation. There is no current media-reference schema,
-  persistence, or resolver capability.
-- No production surface captures Trace yet. Lens Run, MCP, FeedbackLoop, review
-  report, Sleep, and Dreaming capture are follow-up issues.
+- Surface Gateway currently persists completed traces for Capture
+  `capture_observation`, Performance `submit_attempt`, and manual Observation
+  `request_consolidation`. The manual consolidation Trace triggers a
+  `SleepCycle`; that cycle links selected evidence through
+  `SleepCycle.triggering_trace_id` and `SleepCycle.input_trace_ids`.
+- Trace capture for Reflection, Planning, scheduled Sleep, and Dreaming remains
+  pending.
 - The repository does not yet expose a mutable started/completed lifecycle.
-- Generated object links are stored as UUID arrays for the first known object
-  families, including future Sleep and Dreaming IDs, but cross-object same-Space
-  validation is not yet enforced by the repository because those capture paths
-  do not exist in this issue.
+- The persistent Trace schema stores UUID arrays only for generated Memory,
+  LensRun, ReviewReport, and FeedbackLoop IDs. Cross-object same-Space validation
+  is not yet enforced by the Trace repository.
+- `related_evidence_ref_ids`, `generated_reflection_ids`,
+  `generated_sleep_cycle_ids`, `generated_consolidation_result_ids`, and
+  `generated_dream_candidate_ids` remain conceptual and are absent from current
+  Trace persistence. There is no current media-reference schema, persistence,
+  or resolver capability.
 - Input and output fields are summary-only by convention. Callers must pass
   already redacted summaries; raw provider payload redaction is outside this
   foundation issue.
