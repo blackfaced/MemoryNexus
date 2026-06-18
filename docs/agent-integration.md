@@ -17,7 +17,10 @@ the target operating contract for issues #160 and #162, not a claim that those
 tools already exist:
 
 1. Extract text from images, handwriting, audio, or video outside MemoryNexus.
-2. Show or otherwise confirm uncertain OCR/ASR text with the user.
+2. Obtain explicit user acceptance or correction for every media-derived
+   normalized payload before submission. OCR/ASR confidence may guide which
+   text the Agent highlights or reviews, but it never substitutes for this
+   confirmation.
 3. Submit only confirmed normalized text through the future Surface Gateway MCP
    tools.
 4. Attach optional `EvidenceRefInput` only when inspection of the original
@@ -35,10 +38,11 @@ media -> Claw/Hermes OCR or ASR -> user-confirmed normalized text
 ```
 
 Confirmed Surface text is canonical for feedback and deterministic
-classification. OCR/ASR uncertainty remains Agent Adapter context; an evidence
-transcript preserves provenance and cannot replace confirmed text. Evidence
-references follow the [Media Evidence Contract](media-evidence-contract.md),
-and media failure must not invalidate completed text feedback.
+classification. OCR/ASR confidence remains Agent Adapter context; an evidence
+transcript preserves provenance and cannot replace explicitly confirmed text.
+Evidence references follow the
+[Media Evidence Contract](media-evidence-contract.md), and media failure must
+not invalidate completed text feedback.
 
 If you want another agent to install and connect MemoryNexus by itself, give it
 [Agent Self-Install Guide](agent-self-install.md). That file is written as an

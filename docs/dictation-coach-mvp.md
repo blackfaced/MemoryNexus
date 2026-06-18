@@ -28,8 +28,9 @@ schema, Rust implementation, UI specification, or OCR pipeline.
 
 - MemoryNexus does not perform OCR, handwriting recognition, audio
   transcription, or raw-media interpretation in this MVP.
-- An Agent/App Adapter may perform OCR or ASR, confirm normalized text with the
-  user, and submit it with optional media evidence references.
+- An Agent/App Adapter may perform OCR or ASR, obtain explicit user acceptance
+  or correction of the normalized text, and submit it with optional media
+  evidence references.
 - No multi-child management.
 - No broad education platform.
 - No full curriculum engine.
@@ -88,7 +89,7 @@ DictationTask {
   instructions?
   expected_duration_minutes?
   source
-  evidence_refs?
+  evidence_refs?: EvidenceRefInput[]
   created_at
   metadata
 }
@@ -106,7 +107,7 @@ Fields:
 | `prompt_items` | yes | Ordered confirmed text items to practice. |
 | `instructions` | no | Short adapter-facing guidance. |
 | `expected_duration_minutes` | no | MVP default is 10 when omitted. |
-| `source` | yes | Text provenance: `typed`, `pasted`, `imported_text`, `agent_ocr`, `agent_transcribed`, or `test_fixture`. |
+| `source` | yes | Acquisition path for canonical confirmed Surface text: `typed`, `pasted`, `imported_text`, `agent_ocr`, `agent_transcribed`, `mixed`, or `test_fixture`. |
 | `evidence_refs` | no | Original-media provenance inputs governed by the [Media Evidence Contract](media-evidence-contract.md). |
 | `created_at` | yes | Capture timestamp. |
 | `metadata` | no | Small structured extension point; not a place for OCR blobs or raw files. |
@@ -167,7 +168,7 @@ DictationAttempt {
   started_at?
   submitted_at
   source
-  evidence_refs?
+  evidence_refs?: EvidenceRefInput[]
   metadata
 }
 ```
@@ -184,7 +185,7 @@ Fields:
 | `submitted_items` | yes | Ordered confirmed text answers aligned to task prompt items. |
 | `started_at` | no | Optional practice start time. |
 | `submitted_at` | yes | Submission time. |
-| `source` | yes | Text provenance: `typed`, `pasted`, `agent_ocr`, `agent_transcribed`, or `test_fixture`. |
+| `source` | yes | Acquisition path for canonical confirmed Surface text: `typed`, `pasted`, `agent_ocr`, `agent_transcribed`, `mixed`, or `test_fixture`. |
 | `evidence_refs` | no | Original-media provenance inputs governed by the [Media Evidence Contract](media-evidence-contract.md). |
 | `metadata` | no | Small structured extension point. |
 
@@ -217,10 +218,28 @@ Rules:
 - Optional `evidence_refs` preserve original-media provenance and follow the
   [Media Evidence Contract](media-evidence-contract.md); this document does not
   duplicate its field or validation constraints.
-- OCR or ASR uncertainty remains Adapter context. The Agent/App Adapter must
-  confirm normalized text with the user before submission.
+- Every media-derived normalized payload requires explicit user acceptance or
+  correction before submission. OCR/ASR confidence may guide how the Adapter
+  highlights or reviews text, but it never substitutes for confirmation.
 - Media resolution or availability failure affects provenance inspection only;
   it does not invalidate a completed text flow, Trace, or feedback result.
+
+`source` describes how the canonical confirmed Surface text for the complete
+task or attempt was acquired. Use the specific source for a single-origin
+request and `mixed` when one request combines items acquired through multiple
+paths. `transcript_source` belongs to each `EvidenceRefInput` and describes that
+media reference's OCR/ASR provenance; its contract remains in the
+[Media Evidence Contract](media-evidence-contract.md).
+
+For this first request-level, docs-only slice, `evidence_refs` contains caller
+`EvidenceRefInput` values. No persistent `EvidenceRef` model exists yet. A
+future persisted task or attempt must link resolved `EvidenceRef` records or
+store `evidence_ref_ids`; it must not treat caller input as persisted identity.
+
+Terminology: `evidence_refs` / `EvidenceRefInput` are optional original-media
+provenance descriptors. Generic `evidence_ids` in Reflection, Planning, and
+Observation are Engine evidence links such as Trace, FeedbackLoop, or Memory
+identifiers, not media references.
 
 ## Evaluation Shape
 
@@ -430,7 +449,7 @@ Minimum request payload:
   task_kind,
   prompt_items,
   expected_duration_minutes?,
-  source: "typed" | "pasted" | "imported_text" | "agent_ocr" | "agent_transcribed" | "test_fixture",
+  source: "typed" | "pasted" | "imported_text" | "agent_ocr" | "agent_transcribed" | "mixed" | "test_fixture",
   evidence_refs?: EvidenceRefInput[]
 }
 ```
@@ -463,7 +482,7 @@ Minimum request payload:
   namespace,
   task_id,
   submitted_items,
-  source: "typed" | "pasted" | "agent_ocr" | "agent_transcribed" | "test_fixture",
+  source: "typed" | "pasted" | "agent_ocr" | "agent_transcribed" | "mixed" | "test_fixture",
   evidence_refs?: EvidenceRefInput[]
 }
 ```

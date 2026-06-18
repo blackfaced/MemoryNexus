@@ -161,9 +161,10 @@ media -> Agent/App OCR or ASR -> user-confirmed text
 - Observation summarizes 7-day trends, stability, current focus, and evidence.
 
 Confirmed Surface text is canonical for feedback and deterministic
-classification. OCR/ASR uncertainty belongs to the Adapter and must be
-confirmed with the user before submission. Optional evidence references
-preserve provenance under the
+classification. Every media-derived normalized payload requires explicit user
+acceptance or correction before submission. OCR/ASR confidence may guide how
+the Adapter highlights or reviews text, but it never substitutes for
+confirmation. Optional evidence references preserve provenance under the
 [Media Evidence Contract](../media-evidence-contract.md); media availability
 must not block or invalidate the completed text flow.
 
