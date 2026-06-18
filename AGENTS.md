@@ -93,6 +93,9 @@
   文字；每一份从媒体生成的 normalized payload 都必须由用户明确接受或修正后才能提交。
   Surface 可携带可选 `EvidenceRefInput` 保存原始媒体追溯描述符，但不得声称当前已有
   `EvidenceRef` runtime 或持久化。媒体不可用不得阻断已确认文字的 Trace、反馈或计划。
+- `EvidenceRefInput` 的 locator 或 metadata 任一位置包含 secret 时，必须把整条引用作为
+  invalid reference 拒绝；redaction 只用于 diagnostics / log message。被拒绝的原始 payload
+  和 secret 不得进入日志、Trace、metadata persistence 或任何其他持久化。
 - `Namespace` 只是 `CognitiveSpace` 内的领域分区，不是新的权限边界；不要把权限从
   Space membership 挪到 Namespace。
 - `FeedbackLoop` 是长期方向，落地时应从具体 namespace 的最小验收场景反推字段，

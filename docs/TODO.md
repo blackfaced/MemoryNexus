@@ -208,11 +208,14 @@ Initial namespaces:
 
 Recommended sequence:
 
-1. Validate provider-neutral `EvidenceRefInput` descriptors before Dictation
-   Capture can accept optional media references. Derive Space ownership from
-   the authorized Surface context rather than caller input, reject unsafe
-   secret-bearing locators, redact secret-bearing metadata from diagnostics,
-   and keep references optional.
+1. Land Foundation F1 to validate provider-neutral `EvidenceRefInput`
+   descriptors for only `capture_observation` and `submit_attempt` before
+   Dictation Capture can accept optional media references. Derive Space
+   ownership from the authorized Surface context rather than caller input.
+   Reject an entire reference when its locator or metadata contains any secret;
+   redact only diagnostics and log messages, and never write rejected raw
+   payloads or secrets to logs, Trace, metadata persistence, or any persistence.
+   Keep references optional.
 2. Capture today's confirmed word, phrase, or sentence list.
 3. Submit confirmed dictation / spelling result.
 4. Classify mistakes deterministically from text.
@@ -220,8 +223,9 @@ Recommended sequence:
 6. Show simple 7-day trends.
 7. Run manual SleepCycle over dictation traces.
 8. Generate weekly review.
-9. Expose the first usable test through an MCP/chat Agent exercising Surface
-   Gateway.
+9. After the generic MCP/chat Surface Adapter foundation in Issue 6.2 lands,
+   expose the first usable Dictation test through its generic Surface Gateway
+   tools as Issue 5.7.
 
 The initial smoke uses one learner and manually entered or Agent-confirmed text.
 An Agent/App performs OCR or ASR when media is involved and must obtain explicit
@@ -273,13 +277,16 @@ Surface Gateway dictation flow.
 
 Recommended adapter sequence:
 
-1. MCP/chat Agent Adapter: first usable adapter; can access Capture,
-   Performance, Reflection, Planning, and Observation through Surface Gateway.
-2. Simple Practice App Adapter: can access Performance, Planning, and limited
+1. Define allowed surfaces per adapter.
+2. Implement the generic MCP/chat Surface Adapter foundation in Issue 6.2,
+   including transport/tool plumbing and generic mappings for Capture,
+   Performance, Reflection, Planning, and Observation.
+3. Build the product-facing Dictation Agent orchestration in Issue 5.7 on that
+   generic adapter; this remains the first user-facing usable flow.
+4. Simple Practice App Adapter: can access Performance, Planning, and limited
    Observation.
-3. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
-4. Define allowed surfaces per adapter.
-5. Ensure adapters do not directly access Engine internals.
+5. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
+6. Ensure adapters do not directly access Engine internals.
 
 Non-goals:
 
