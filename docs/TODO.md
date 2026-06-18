@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-17
+> Last updated: 2026-06-18
 > Source of truth for executable task definitions: GitHub Issues, with
 > [docs/issues.md](issues.md) as the planning mirror for the milestone shape.
 
@@ -40,6 +40,9 @@ The repository already has strong foundations:
 - Surface Gateway has landed for Capture, Performance, and manual
   consolidation; Reflection, Planning, Observation, adapter policy, and
   dictation-specific flows remain open issues.
+- ADR-021 and the media evidence contract define provider-neutral
+  `EvidenceRefInput`, but no runtime validation, persistence, resolver, or media
+  handling implementation exists yet.
 
 ## Gap Against The New Direction
 
@@ -56,6 +59,9 @@ The project still needs to close these gaps:
 - `learning.stem` is a useful prior slice, but the next upstream product should
   be Dictation Coach; the dictation-specific capture, attempt, classification,
   next-practice, observation, and adapter issues are still open.
+- Dictation Capture still needs a prerequisite `EvidenceRefInput` validation
+  foundation before optional original-media provenance can enter Surface
+  requests safely.
 - No GitHub Release artifact is currently published, so Trial and Local
   One-click binary-first profiles still need release validation.
 - Evaluation should measure growth and feedback usefulness, not just retrieval
@@ -202,15 +208,29 @@ Initial namespaces:
 
 Recommended sequence:
 
-1. Capture today's word, phrase, or sentence list.
-2. Submit manual dictation / spelling result.
-3. Classify mistakes deterministically.
-4. Generate tomorrow's 10-minute practice.
-5. Show simple 7-day trends.
-6. Run manual SleepCycle over dictation traces.
-7. Generate weekly review.
-8. Expose through one minimal adapter: CLI, MCP/chat, or simple Rust-served Web
-   UI.
+1. Validate provider-neutral `EvidenceRefInput` descriptors before Dictation
+   Capture can accept optional media references. Derive Space ownership from
+   the authorized Surface context rather than caller input, reject unsafe
+   secret-bearing locators, redact secret-bearing metadata from diagnostics,
+   and keep references optional.
+2. Capture today's confirmed word, phrase, or sentence list.
+3. Submit confirmed dictation / spelling result.
+4. Classify mistakes deterministically from text.
+5. Generate tomorrow's 10-minute practice.
+6. Show simple 7-day trends.
+7. Run manual SleepCycle over dictation traces.
+8. Generate weekly review.
+9. Expose the first usable test through an MCP/chat Agent exercising Surface
+   Gateway.
+
+The initial smoke uses one learner and manually entered or Agent-confirmed text.
+An Agent/App performs OCR or ASR when media is involved and must obtain explicit
+user acceptance or correction for every media-derived normalized payload before
+submission. The smoke has no dedicated Dictation Coach App dependency.
+
+A future dedicated Dictation Coach App belongs in a separate repository only
+after the Agent loop works. It remains a Surface Gateway / MCP client and does
+not own memory or access Engine internals.
 
 Chinese mistake taxonomy:
 
@@ -234,8 +254,11 @@ English mistake taxonomy:
 
 Non-goals:
 
-- No OCR.
-- No handwriting recognition.
+- No `EvidenceRef` persistence, repository, or schema in the validation
+  foundation.
+- No resolver execution, upload/download, or media-byte handling.
+- No OCR, ASR, or handwriting recognition inside MemoryNexus.
+- No provider SDK.
 - No multi-child management.
 - No full curriculum.
 - No broad multi-subject learning platform.
@@ -250,8 +273,8 @@ Surface Gateway dictation flow.
 
 Recommended adapter sequence:
 
-1. Chat / Agent Adapter: can access Capture, Performance, Reflection, Planning,
-   and Observation through Surface Gateway.
+1. MCP/chat Agent Adapter: first usable adapter; can access Capture,
+   Performance, Reflection, Planning, and Observation through Surface Gateway.
 2. Simple Practice App Adapter: can access Performance, Planning, and limited
    Observation.
 3. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.

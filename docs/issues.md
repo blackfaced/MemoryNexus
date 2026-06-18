@@ -717,6 +717,55 @@ blocking foreground responses.
 - `docs/dictation-coach-mvp.md`
 - `docs/architecture/surfaces-and-adapters.md`
 
+### Foundation: Validate External Media Evidence References
+
+**Background:** Dictation Capture may preserve optional provenance to original
+media, but ADR-021 and the media evidence contract currently define a docs-only
+contract. Descriptor validation must land before Dictation Capture accepts
+`EvidenceRefInput`.
+
+**Scope:**
+
+- Validate provider-neutral `EvidenceRefInput` descriptors at the Surface
+  Gateway boundary.
+- Derive `CognitiveSpace` ownership from the authorized Surface context; callers
+  cannot provide or claim evidence ownership.
+- Reject secret-bearing locators and reject or redact secret-bearing metadata,
+  including credentials, tokens, mount secrets, and short-lived signed URLs.
+- Allow optional evidence references on relevant Surface requests.
+- Keep ADR-021 and `docs/media-evidence-contract.md` as the contract sources of
+  truth.
+
+**Non-Goals:**
+
+- No persistence, repository, or schema for `EvidenceRef`.
+- No resolver execution.
+- No upload, download, or media bytes.
+- No OCR or ASR.
+- No provider SDKs.
+
+**Acceptance Criteria:**
+
+- Valid provider-neutral `EvidenceRefInput` values pass descriptor validation.
+- Space ownership is derived only from authorized Surface context and cannot be
+  supplied by the caller.
+- Unsafe locator or metadata secrets are rejected and are not exposed in
+  validation diagnostics.
+- Relevant Surface request contracts can carry optional references without
+  requiring media availability.
+- Tests cover valid, invalid, and unavailable-reference metadata.
+- Contract behavior matches ADR-021 and the media evidence contract without
+  claiming persistence or resolver support.
+
+**Possible Files:**
+
+- `src/domain/evidence.rs`
+- `src/domain/surface.rs`
+- `src/api/surfaces.rs`
+- `tests/*evidence_ref*`
+- `decisions/ADR-021-external-media-evidence-references.md`
+- `docs/media-evidence-contract.md`
+
 ### Issue 5.2: Capture Dictation Word List
 
 **Background:** The daily loop begins by recording today's words, phrases, or sentences.
@@ -725,16 +774,22 @@ blocking foreground responses.
 
 - Add Capture Surface flow for dictation list.
 - Use namespace such as `child.chinese.dictation`.
+- Accept confirmed text with `typed`, `pasted`, `agent_ocr`,
+  `agent_transcribed`, or `mixed` source provenance and optional validated
+  `EvidenceRefInput` descriptors.
 - Write Trace.
 
 **Non-Goals:**
 
 - Do not upload images.
 - Do not OCR worksheets.
+- MemoryNexus does not perform OCR or ASR.
 
 **Acceptance Criteria:**
 
-- User can capture a list manually.
+- User can capture typed or pasted text, or text prepared through Agent OCR/ASR.
+- Every media-derived normalized payload requires explicit user acceptance or
+  correction before submission.
 - Trace links namespace and source.
 - Tests cover empty and valid lists.
 
@@ -746,11 +801,14 @@ blocking foreground responses.
 
 ### Issue 5.3: Submit Dictation Attempt
 
-**Background:** Dictation Coach needs a manual attempt submission before automated evaluation.
+**Background:** Dictation Coach needs a text-first attempt submission before
+automated evaluation.
 
 **Scope:**
 
 - Submit expected items and actual result.
+- Allow attempts to link optional validated media evidence references for
+  provenance.
 - Record FeedbackLoop attempt.
 - Write Trace.
 
@@ -763,6 +821,8 @@ blocking foreground responses.
 
 - Attempt submission works for Chinese words, English words, and English sentences.
 - Attempt is Space-owned and namespace-scoped.
+- Deterministic evaluation uses confirmed text and does not require linked media
+  to be available.
 
 **Possible Files:**
 
@@ -848,29 +908,33 @@ blocking foreground responses.
 
 ### Issue 5.7: Minimal Dictation Adapter
 
-**Background:** Demo needs one usable adapter.
+**Background:** The first usable test should run through the existing Agent
+interaction path before a dedicated product App is built.
 
 **Scope:**
 
-- Choose one: CLI, MCP/chat, or Rust-served static Web UI.
-- Exercise Capture, Performance, Planning, and Observation through Surface Gateway.
+- Use an MCP/chat Agent as the first adapter.
+- Exercise Capture, Performance, Reflection, Planning, and Observation through
+  Surface Gateway.
 
 **Non-Goals:**
 
 - No new frontend stack.
 - No multi-user product shell.
+- No dedicated Dictation Coach App dependency.
 
 **Acceptance Criteria:**
 
-- End-to-end manual dictation demo works.
+- End-to-end dictation demo works for one learner with manually entered or
+  Agent-confirmed text.
 - Adapter does not directly access Engine internals.
+- The flow covers all five Surfaces and writes Trace provenance where required.
 
 **Possible Files:**
 
-- `src/bin/memorynexus-cli.rs`
 - `src/bin/memorynexus-mcp.rs`
-- `web/*.html`
-- `src/api/web.rs`
+- `docs/mcp.md`
+- `docs/agent-integration.md`
 
 ## Milestone 6: Adapters
 
@@ -899,21 +963,34 @@ blocking foreground responses.
 
 ### Issue 6.2: Chat / Agent Adapter Surface Flow
 
-**Background:** Agents should access multiple Surfaces through Gateway.
+**Background:** Agents should access generic Surface capabilities through the
+Gateway while media acquisition remains an Adapter responsibility.
 
 **Scope:**
 
 - Add MCP or chat adapter flow over Surface Gateway.
 - Support capture, submit attempt, reflect, plan, observe.
+- Keep OCR, ASR, and media acquisition outside MemoryNexus, and require explicit
+  user acceptance or correction before submitting any media-derived normalized
+  payload.
+- Use generic Surface actions in Gateway calls; product tool names such as
+  "record today's dictation" remain Adapter-facing names.
+- Attach optional validated evidence references and preserve generated Trace
+  provenance without requiring media availability.
 
 **Non-Goals:**
 
 - Do not make agent own memory.
+- Do not let unavailable evidence block confirmed-text feedback or planning.
 
 **Acceptance Criteria:**
 
 - MCP smoke demonstrates multiple surfaces.
 - Agent response includes trace provenance where appropriate.
+- Calls use generic Capture, Performance, Reflection, Planning, and Observation
+  actions rather than dictation-specific Engine actions.
+- Agent-mediated OCR/ASR text is explicitly confirmed, and unavailable evidence
+  degrades only provenance inspection.
 
 **Possible Files:**
 

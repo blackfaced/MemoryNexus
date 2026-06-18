@@ -41,6 +41,10 @@
   转为每日默写助手，用中文默写和英语 spelling / sentence dictation 验证
   Trace -> FeedbackLoop -> GrowthModel -> PracticePlan 闭环。不要把家长/孩子角色写进
   Engine；角色属于 Adapter。
+- 外部媒体证据边界见 ADR-021：OCR、ASR、媒体采集和用户确认属于 Agent / App
+  Adapter；MemoryNexus 保持 text-first，只接收用户确认后的 normalized text，并允许
+  Surface 请求携带可选、provider-neutral 的 `EvidenceRefInput` 追溯原始媒体。第一版仅
+  建立描述符验证契约，不表示已有 `EvidenceRef` 持久化、resolver 或媒体处理能力。
 - EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
   agent memory retrieval 系统。当前边界是：EverMemOS 偏 memory for agent reasoning；
   MemoryNexus 偏 user-owned cognitive perspective and feedback loops。
@@ -63,6 +67,8 @@
   `decisions/ADR-019-surfaces-adapters-engine.md`。
 - Dictation Coach 首个上游产品见
   `decisions/ADR-020-dictation-coach-first-upstream-product.md`。
+- 外部媒体证据引用边界见
+  `decisions/ADR-021-external-media-evidence-references.md`。
 
 ## 开发规则
 
@@ -83,9 +89,10 @@
 - Dictation Coach 文案优先使用 daily dictation / word list / spelling attempt /
   mistake type / tomorrow practice / 7-day trend。不要把 OCR、多孩子管理、完整教育平台
   或全科目学习系统塞进第一版。
-- Dictation Coach 文案优先使用 daily dictation / word list / spelling attempt /
-  mistake type / tomorrow practice / 7-day trend。不要把 OCR、多孩子管理、完整教育平台
-  或全科目学习系统塞进第一版。
+- OCR、ASR 和媒体采集属于 Agent / App Adapter。MemoryNexus 第一版只处理用户确认后的
+  文字；每一份从媒体生成的 normalized payload 都必须由用户明确接受或修正后才能提交。
+  Surface 可携带可选 `EvidenceRefInput` 保存原始媒体追溯描述符，但不得声称当前已有
+  `EvidenceRef` runtime 或持久化。媒体不可用不得阻断已确认文字的 Trace、反馈或计划。
 - `Namespace` 只是 `CognitiveSpace` 内的领域分区，不是新的权限边界；不要把权限从
   Space membership 挪到 Namespace。
 - `FeedbackLoop` 是长期方向，落地时应从具体 namespace 的最小验收场景反推字段，
