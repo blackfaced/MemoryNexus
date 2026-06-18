@@ -39,6 +39,13 @@ dictation. It validates the loop:
 Capture -> Performance -> Reflection -> Planning -> Observation -> SleepCycle
 ```
 
+Under the [media evidence architecture contract](docs/media-evidence-contract.md),
+Agents and Apps may perform OCR or speech-to-text before calling MemoryNexus.
+The Engine works from user-confirmed text, and a future Surface request may
+retain provider-neutral media evidence references for later inspection without
+requiring media ingestion; reference persistence and resolution are not
+implemented today.
+
 Thought Review remains a reflective demo and presentation entry point. Existing
 STEM practice work remains useful as a prior learning slice, but the next
 product roadmap focuses on dictation because it gives the feedback loop a

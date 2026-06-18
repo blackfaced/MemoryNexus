@@ -34,9 +34,19 @@ MemoryNexus Engine
       +--> Qdrant
       |      memory embeddings scoped by space_id
       |
-      +--> S3 / MinIO compatible storage
-             media objects and thumbnails
+      +--> External media providers
+      |      local disk, removable drive, WebDAV, object storage
+      |      referenced through EvidenceRef
+      |
+      +--> Optional managed object storage
+             S3 / MinIO compatible provider when MemoryNexus owns bytes
 ```
+
+The external-provider branch is conceptual and pending. It defines future
+`EvidenceRef` provenance responsibility but does not imply current reference
+persistence or resolver capability. The existing `src/storage/` layout remains
+the real S3 and thumbnail helper implementation for optional managed object
+storage when MemoryNexus owns the bytes.
 
 ## Surface Model
 
