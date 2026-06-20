@@ -241,8 +241,13 @@ Recommended sequence:
    `EvidenceRefInput` descriptors for only `capture_observation` and
    `submit_attempt`. Use the closed V1 secret policy from the issue definition:
    metadata keys are ASCII-lowercased and stripped of `-`, `_`, and `.` without
-   percent decoding; locator userinfo is rejected, and query/fragment pairs are
-   percent-decoded exactly once before closed key and value-pattern checks.
+   percent decoding; every metadata string value is recursively inspected at
+   all depths without percent decoding against the same closed secret-value
+   patterns used for locator values; locator userinfo is rejected, and
+   query/fragment pairs are percent-decoded exactly once before closed key and
+   value-pattern checks. Any match rejects the entire reference, diagnostics
+   contain no raw value, and rejected values enter no logs, Trace, metadata
+   persistence, or other persistence.
    Policy extensions require a contract change, not ad hoc worker additions.
    Accepted descriptors remain ephemeral and are excluded from every existing
    Memory, FeedbackLoop, and Trace persistence argument, record, and summary.

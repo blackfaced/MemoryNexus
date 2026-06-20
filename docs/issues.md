@@ -809,6 +809,12 @@ must not concurrently edit the shared dispatcher.
     `password`, `passwd`, `secret`, `clientsecret`, `token`, `accesstoken`,
     `refreshtoken`, `apikey`, `authorization`, `cookie`, `session`,
     `credential`, `privatekey`, and `mountsecret`.
+  - Recursively inspect every string value in metadata at every object and array
+    depth, without percent decoding. Apply the same closed secret-value patterns
+    used for locator query and fragment values: an ASCII case-insensitive
+    `Bearer ` prefix, a PEM private-key header, a JWT-like value of exactly
+    three non-empty base64url segments, or fixture prefixes `sk-`, `AKIA`,
+    `AIza`, and `ghp_`. Reject the entire reference on any match.
   - Reject URI userinfo in locators.
   - Parse locator query and fragment key/value pairs. Percent-decode names and
     values exactly once as UTF-8 and reject invalid encoding; do not decode a
@@ -853,6 +859,8 @@ must not concurrently edit the shared dispatcher.
 - Secret-bearing locator or metadata rejects the entire reference, diagnostics
   are redacted, and rejected raw payloads and secrets enter no log, Trace,
   metadata persistence, or other persistence.
+- Metadata string values are recursively checked at every depth against the
+  same closed V1 secret-value patterns as locator query and fragment values.
 - Secret rejection is deterministic against the required fixture corpus and
   returns only field/path plus error code, never a raw value.
 - `capture_observation` and `submit_attempt` can carry optional validated
@@ -901,8 +909,10 @@ must not concurrently edit the shared dispatcher.
 - `metadata` tests require a JSON object; cover accepted 16384 serialized UTF-8
   bytes versus rejected 16385 bytes; count the root object as depth 1, accept
   depth 4, and reject depth 5; recursively exercise every denied key in nested
-  objects/arrays with ASCII case and `-`, `_`, `.` normalization variants; and
-  prove percent decoding does not apply to metadata keys.
+  objects/arrays with ASCII case and `-`, `_`, `.` normalization variants;
+  recursively exercise every closed secret-value pattern in string values at
+  all depths, including nested objects and arrays; and prove percent decoding
+  does not apply to metadata keys or values.
 - Positive false-positive-control fixtures accept ordinary non-secret metadata
   and locators whose plain path text contains words such as `token` or
   `api_key`, for example `s3://study/archive/token-guidelines.pdf`, when there
@@ -925,12 +935,17 @@ must not concurrently edit the shared dispatcher.
 | Fixture | Expected result |
 | --- | --- |
 | `{"outer":[{"Client-Secret":"fixture-value"}]}` | Reject the entire reference with the nested field path and `secret_key_denied`. |
+| `{"note":"Bearer secret"}` | Reject the entire reference with the metadata field path and `secret_value_pattern_denied`. |
+| `{"value":"sk-test"}` | Reject the entire reference with the metadata field path and `secret_value_pattern_denied`. |
+| `{"outer":[{"token_value":"eyJmaXh0dXJlIjoxfQ.cGF5bG9hZA.c2lnbmF0dXJl"}]}` | Reject the entire reference with the nested metadata field path and `secret_value_pattern_denied`. |
+| `{"outer":[{"key_material":"-----BEGIN PRIVATE KEY----- fixture"}]}` | Reject the entire reference with the nested metadata field path and `secret_value_pattern_denied`. |
 | `https://user:fixture-password@example.test/media/1` | Reject with locator path and `locator_userinfo_denied`. |
 | `https://example.test/media/1?X-Amz-Signature=fixture` | Reject with query-field path and `locator_query_denied`. |
 | Query/fragment values beginning with `Bearer ` or a private-key PEM header after one decode | Reject with field path and `secret_value_pattern_denied`. |
 | Query/fragment value `eyJmaXh0dXJlIjoxfQ.cGF5bG9hZA.c2lnbmF0dXJl` after one decode | Reject with field path and `secret_value_pattern_denied`. |
 | Query/fragment values beginning with `sk-`, `AKIA`, `AIza`, and `ghp_` after one decode | Reject each with field path and `secret_value_pattern_denied`. |
 | `{"page":2,"label":"weekly review","source":"teacher notes"}` | Accept as ordinary non-secret metadata. |
+| `{"note":"authorization awareness lesson","value":"sketch test","nested":{"summary":"safe string"}}` | Accept as ordinary safe metadata strings that do not match a closed V1 value pattern. |
 | `s3://study/archive/token-guidelines.pdf` | Accept because `token` appears only in path text. |
 | `https://example.test/api_key/access_token_notes.txt?version=3#page=2` | Accept because credential-like text appears only in plain path segments and there is no userinfo or denied query/fragment name. |
 
