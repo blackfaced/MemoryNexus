@@ -752,7 +752,8 @@ shared dispatcher. Redundant capability edges into Issue 6.2 remain explicit.
 
 **Non-Goals:**
 
-- No OCR.
+- The MemoryNexus contract and Engine perform no OCR or ASR. Agent / App
+  Adapters may prepare explicitly user-confirmed normalized text.
 - No multi-child management.
 
 **Acceptance Criteria:**
@@ -846,7 +847,8 @@ must not concurrently edit the shared dispatcher.
 - No persistence, repository, or schema for `EvidenceRef`.
 - No resolver execution.
 - No upload, download, or media bytes.
-- No OCR or ASR.
+- No OCR or ASR implementation in this validation foundation or elsewhere in
+  the MemoryNexus path. Agent / App Adapter preprocessing remains allowed.
 - No provider SDKs.
 
 **Acceptance Criteria:**
@@ -992,9 +994,8 @@ after Foundation F1 lands. Dictation-domain workers own
 
 **Non-Goals:**
 
-- Do not upload images.
-- Do not OCR worksheets.
-- MemoryNexus does not perform OCR or ASR.
+- MemoryNexus does not upload images or perform OCR / ASR on worksheets;
+  Agent-prepared, explicitly user-confirmed normalized text is accepted.
 
 **Acceptance Criteria:**
 
@@ -1044,8 +1045,8 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 **Non-Goals:**
 
-- No handwriting recognition.
-- No audio transcription.
+- MemoryNexus performs neither handwriting recognition nor audio transcription;
+  Adapter-prepared, explicitly user-confirmed normalized text is allowed.
 
 **Acceptance Criteria:**
 

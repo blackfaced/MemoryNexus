@@ -137,7 +137,8 @@ Recommended sequence:
 
 Non-goals:
 
-- No OCR.
+- No OCR or ASR inside the MemoryNexus Engine. Adapter-side preprocessing and
+  confirmed normalized text are allowed but are not part of this milestone.
 - No cloud LLM dependency.
 - No complex UI.
 - No broad education platform.
