@@ -210,34 +210,42 @@ Execution dependency graph:
 
 | Depends On | Issue Unlocked |
 | --- | --- |
+| Issue 3.4 | Issue 3.5 |
+| Issue 3.5 | Issue 3.6 |
+| Issue 3.6 | Foundation F1 |
 | Foundation F1 | Issue 5.2 |
 | Foundation F1 + Issue 5.2 | Issue 5.3 |
 | Issue 5.3 | Issues 5.4 and 5.6 |
 | Issue 5.4 | Issue 5.5 |
-| Issue 3.4 | Issue 3.5 |
-| Issue 3.5 | Issue 3.6 |
 | Foundation F1 + Issues 3.4, 3.5, and 3.6 | Issue 6.2 generic MCP/chat Surface Adapter |
 | Issues 5.2 through 5.6 + Issue 6.2 | Issue 5.7 Dictation Agent demo |
 | Issue 5.7 | Issue 6.3 Simple Practice App Adapter |
 
-These edges are acyclic. Issues 3.4 -> 3.5 -> 3.6 are serialized because they
-share Surface dispatcher ownership. Foundation F1 gates both the first
-dictation Surface and the generic adapter; Issue 5.7 waits for the complete
-dictation capability set and adapter. Issue 6.3 is deferred until the Issue 5.7
-Agent loop is accepted. Live GitHub issue and Foundation F1 synchronization is
-Task 5 after these documentation changes merge; do not update GitHub in this
-task.
+These edges are acyclic. The primary shared-dispatcher execution chain is
+Issue 3.4 -> Issue 3.5 -> Issue 3.6 -> Foundation F1 -> Issue 5.2 -> Issue 5.3.
+Every issue in this chain that edits `src/api/surfaces.rs` takes dispatcher
+integration ownership only after its predecessor lands; parallel workers own
+only their domain-specific modules. Issues 3.4, 3.5, and 3.6 are also listed as
+required capabilities for Issue 6.2 even though the chain already makes those
+edges transitive. Issue 5.7 waits for Issues 5.2-5.6 and Issue 6.2; Issue 6.3 is
+deferred until the Issue 5.7 Agent loop is accepted. Live GitHub issue and
+Foundation F1 synchronization is Task 5 after these documentation changes
+merge; do not update GitHub in this task.
 
 Recommended sequence:
 
-1. Land Foundation F1 to validate provider-neutral `EvidenceRefInput`
-   descriptors for only `capture_observation` and `submit_attempt` before
-   Dictation Capture can accept optional media references. Derive Space
-   ownership from the authorized Surface context rather than caller input.
-   Reject an entire reference when its locator or metadata contains any secret;
-   redact only diagnostics and log messages, and never write rejected raw
-   payloads or secrets to logs, Trace, metadata persistence, or any persistence.
-   Keep references optional.
+1. After Issue 3.6, land Foundation F1 to define the generic role-neutral
+   `input_confirmation: { status: "confirmed", method: "explicit_acceptance" |
+   "explicit_correction" }` field and validate it for `agent_ocr`,
+   `agent_transcribed`, and `mixed` input. F1 also validates provider-neutral
+   `EvidenceRefInput` descriptors for only `capture_observation` and
+   `submit_attempt`. Use the closed V1 secret policy from the issue definition:
+   metadata keys are ASCII-lowercased and stripped of `-`, `_`, and `.` without
+   percent decoding; locator userinfo is rejected, and query/fragment pairs are
+   percent-decoded exactly once before closed key and value-pattern checks.
+   Policy extensions require a contract change, not ad hoc worker additions.
+   Accepted descriptors remain ephemeral and are excluded from every existing
+   Memory, FeedbackLoop, and Trace persistence argument, record, and summary.
 2. Capture today's confirmed word, phrase, or sentence list as Issue 5.2.
 3. After F1 and Issue 5.2, submit confirmed dictation / spelling results as
    Issue 5.3.
@@ -257,12 +265,13 @@ An Agent/App performs OCR or ASR when media is involved and must obtain explicit
 user acceptance or correction for every media-derived normalized payload before
 submission. The smoke has no dedicated Dictation Coach App dependency.
 
-Issue 6.2 owns the role-neutral `input_confirmation` request field and enforces
-it in MCP/chat before generic Surface calls. Issues 5.2 and 5.3 validate the
-same marker for media-derived input as defense in depth. Issue 5.7 owns only the
-product prompt/interaction that obtains acceptance or correction and maps it to
-`explicit_acceptance` or `explicit_correction`; no parent/child role enters the
-Engine.
+Foundation F1 owns the generic role-neutral `input_confirmation` request field
+and validation, including negative tests for a missing field, unconfirmed
+status, and invalid method. Issues 5.2 and 5.3 depend on F1 and validate the
+field at the Surface boundary for media-derived input. Issue 6.2 only enforces
+and maps the already-defined field in MCP/chat before generic Surface calls.
+Issue 5.7 owns only the product prompt/interaction that obtains acceptance or
+correction; no parent/child role enters the Engine.
 
 A future dedicated Dictation Coach App belongs in a separate repository only
 after the Agent loop works. It remains a Surface Gateway / MCP client and does

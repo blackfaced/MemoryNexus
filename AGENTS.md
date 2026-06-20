@@ -92,8 +92,11 @@
 - OCR、ASR 和媒体采集属于 Agent / App Adapter。MemoryNexus 第一版只处理用户确认后的
   文字；每一份从媒体生成的 normalized payload 都必须由用户明确接受或修正后才能提交。
   Surface 可携带并校验可选 `EvidenceRefInput` 原始媒体追溯描述符，但不得声称当前已有
-  `EvidenceRef` runtime 或持久化；描述符在单独的持久化 issue 落地前保持 ephemeral。
-  媒体不可用不得阻断已确认文字的 Trace、反馈或计划。
+  `EvidenceRef` runtime 或持久化；描述符在单独的持久化 issue 落地前保持 ephemeral，
+  不得进入现有 Memory、FeedbackLoop 或 Trace 的持久化参数、记录或 summary。
+  Foundation F1 定义通用、role-neutral 的 `input_confirmation: { status: "confirmed",
+  method: "explicit_acceptance" | "explicit_correction" }` 字段及媒体来源校验；Adapter 只负责
+  获取并映射用户确认。媒体不可用不得阻断已确认文字的 Trace、反馈或计划。
 - `EvidenceRefInput` 的 locator 或 metadata 任一位置包含 secret 时，必须把整条引用作为
   invalid reference 拒绝；redaction 只用于 diagnostics / log message。被拒绝的原始 payload
   和 secret 不得进入日志、Trace、metadata persistence 或任何其他持久化。
