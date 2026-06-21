@@ -142,21 +142,45 @@ These names partition domain evidence inside a `CognitiveSpace`; they do not
 create a new permission boundary. Adapter copy may describe a parent, learner,
 teacher, or coach, but Surface and Engine payloads stay role-neutral.
 
-Dictation Coach uses manual input only in the MVP:
+Dictation Coach is text-first in the MVP. MemoryNexus feedback operates on
+confirmed normalized text; an Agent/App Adapter may prepare that text from
+media outside MemoryNexus:
 
-- Capture records typed or pasted characters, words, phrases, or sentences.
-- Performance submits typed or pasted attempts against a captured task.
+```text
+media -> Agent/App OCR or ASR -> user-confirmed text
+  -> Surface Gateway(text + optional EvidenceRefInput)
+  -> Engine feedback objects and Trace
+```
+
+- Capture records typed, pasted, imported, or Adapter-confirmed characters,
+  words, phrases, or sentences, with optional `evidence_refs`.
+- Performance submits typed, pasted, or Adapter-confirmed attempts against a
+  captured task, with optional `evidence_refs`.
 - Reflection explains deterministic mistake types and recurring patterns.
 - Planning generates a short next practice from evidence.
 - Observation summarizes 7-day trends, stability, current focus, and evidence.
+
+Confirmed Surface text is canonical for feedback and deterministic
+classification. Every media-derived normalized payload requires explicit user
+acceptance or correction before submission. OCR/ASR confidence may guide how
+the Adapter highlights or reviews text, but it never substitutes for
+confirmation. Optional evidence references preserve provenance under the
+[Media Evidence Contract](../media-evidence-contract.md); media availability
+must not block or invalidate the completed text flow.
+
+`EvidenceResolver` belongs to future optional integration/Adapter
+infrastructure; this contract does not claim current resolver execution. A
+future resolver may check availability or resolve authorized provider media,
+but it performs no OCR, ASR, classification, reflection, planning, or other
+cognitive analysis.
 
 Conceptual mapping. Dictation-specific verbs belong in adapter copy or payload
 semantics; Gateway actions use the generic `SurfaceAction` vocabulary.
 
 | Surface | Gateway Action | Product / Payload Semantics | Trace Task Type | Output Shape |
 | --- | --- | --- | --- | --- |
-| Capture | `capture_observation` | Record today's dictation list. | `practice` | Manual task list plus Trace provenance. |
-| Performance | `submit_attempt` | Submit manual dictation result. | `practice` | Attempt, deterministic evaluation, and immediate feedback. |
+| Capture | `capture_observation` | Record today's dictation list. | `practice` | Confirmed text task plus optional media provenance and Trace. |
+| Performance | `submit_attempt` | Submit confirmed dictation result. | `practice` | Confirmed text attempt, deterministic evaluation, optional media provenance, and immediate feedback. |
 | Reflection | `review_evidence` | Explain current mistakes. | `feedback` | Mistake explanation, recurring patterns, and evidence IDs. |
 | Planning | `generate_next_task` | Generate tomorrow practice. | `planning` | 10-minute `PracticePlan` targeting one or two mistake patterns. |
 | Observation | `get_state_summary` | Show 7-day trend. | `review` | 7-day trend summary with recurring errors and evidence IDs. |
@@ -171,6 +195,8 @@ The full product contract is in
 - Adapters should not directly mutate Engine internals.
 - Adapter permissions should be expressed as allowed surfaces and actions.
 - Adapter copy can be role-specific, but Engine and Surface names remain generic.
+- Agent-facing product-specific tools still map to generic Surface actions;
+  they do not create product-specific Engine entry points.
 
 ## Surface Rules
 

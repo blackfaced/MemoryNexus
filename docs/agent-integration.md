@@ -10,6 +10,40 @@ the agent own memory.
 > still pending, so this guide remains the compatibility path for Claw,
 > Hermes, and similar agents.
 
+## Claw/Hermes Dictation Media Contract
+
+The MCP/chat Surface Gateway tools described here are pending. The following is
+the target operating contract for issues #160 and #162, not a claim that those
+tools already exist:
+
+1. Extract text from images, handwriting, audio, or video outside MemoryNexus.
+2. Obtain explicit user acceptance or correction for every media-derived
+   normalized payload before submission. OCR/ASR confidence may guide which
+   text the Agent highlights or reviews, but it never substitutes for this
+   confirmation.
+3. Submit only confirmed normalized text through the future Surface Gateway MCP
+   tools.
+4. Attach optional `EvidenceRefInput` only when inspection of the original
+   media matters for provenance.
+5. Never persist tokens, credentials, mount secrets, or signed URLs in an
+   evidence locator or metadata.
+6. Continue the confirmed text loop when original media is unavailable.
+
+The target flow is:
+
+```text
+media -> Claw/Hermes OCR or ASR -> user-confirmed normalized text
+  -> Surface Gateway(text + optional EvidenceRefInput)
+  -> Engine feedback objects and Trace
+```
+
+Confirmed Surface text is canonical for feedback and deterministic
+classification. OCR/ASR confidence remains Agent Adapter context; an evidence
+transcript preserves provenance and cannot replace explicitly confirmed text.
+Evidence references follow the
+[Media Evidence Contract](media-evidence-contract.md), and media failure must
+not invalidate completed text feedback.
+
 If you want another agent to install and connect MemoryNexus by itself, give it
 [Agent Self-Install Guide](agent-self-install.md). That file is written as an
 agent-executable task brief with install-or-upgrade detection, commands, MCP

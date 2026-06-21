@@ -99,9 +99,9 @@ First Dictation Coach plans should be simple:
 - 5-10 items;
 - one focus pattern;
 - one short review prompt;
-- no OCR;
+- no OCR or ASR inside MemoryNexus; plans use manually entered or Agent-prepared,
+  user-confirmed normalized text;
 - no broad curriculum generation;
-- manual input only.
 
 ## Runtime Policy
 

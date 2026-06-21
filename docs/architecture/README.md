@@ -12,11 +12,18 @@ do not own memory and should not directly mutate Engine internals.
 ```text
 Adapters
   Chat Agent / MCP / CLI / Web / Mobile / Dashboard / Voice
+  Agent / App performs OCR or ASR and confirms normalized text
+      |
+      +--> EvidenceResolver (conceptual; pending)
+      |      optional authorized integration infrastructure
+      |      -> External media providers
+      |         local disk, removable drive, WebDAV, object storage
       |
       v
 Surface Gateway
   auth, namespace routing, surface routing, ACL, validation,
-  response shaping, Trace writing, sync/async dispatch, events
+  response shaping, Trace writing, dispatch, event contracts
+  media contract: confirmed text + EvidenceRef provenance only
       |
       v
 Surfaces
@@ -34,9 +41,17 @@ MemoryNexus Engine
       +--> Qdrant
       |      memory embeddings scoped by space_id
       |
-      +--> S3 / MinIO compatible storage
-             media objects and thumbnails
+      +--> Optional managed object storage
+             S3 / MinIO compatible provider when MemoryNexus owns bytes
 ```
+
+The external-provider and `EvidenceResolver` path is conceptual and pending.
+An Agent, App, or optional authorized integration would inspect external media;
+Surface Gateway and the Engine retain only `EvidenceRef` provenance. This does
+not imply current reference persistence or resolver capability. The existing
+`src/storage/` S3 and thumbnail helper modules support the separate optional
+managed-storage boundary when MemoryNexus owns bytes, but they are not currently
+exposed as an operational runtime media capability.
 
 ## Surface Model
 
@@ -44,11 +59,11 @@ Surfaces express intent, not UI or role.
 
 | Surface | Question | Example Actions |
 | --- | --- | --- |
-| Capture | What happened? | capture, captureObservation |
-| Performance | How did the attempt go? | submitAttempt, evaluateAttempt, getImmediateFeedback |
-| Reflection | What does this mean? | reflect, review, explain |
-| Planning | What should happen next? | plan, generateNextTask, adjustPlan |
-| Observation | How is long-term state changing? | observeState, getGrowthModel, getTrends, getTimeline |
+| Capture | What happened? | `capture_observation` |
+| Performance | How did the attempt go? | `submit_attempt` |
+| Reflection | What does this mean? | `review_evidence` (pending) |
+| Planning | What should happen next? | `generate_next_task` (pending) |
+| Observation | How is long-term state changing? | `request_consolidation`; `get_state_summary` (pending) |
 
 Adapters decide how people or agents interact. Surface Gateway decides how a
 request becomes an Engine operation.
@@ -117,26 +132,25 @@ GET /api/v1/search?q=...&space_id=...&semantic=true
   -> hydrate matching memories from PostgreSQL
 ```
 
-### Future Surface Gateway Request
+### Current Surface Gateway Subset
 
 ```text
-SurfaceRequest {
-  namespace: "child.chinese.dictation",
-  surface: "performance",
-  action: "submitAttempt",
-  actor: "...",
-  adapter: "mcp",
-  payload: { task, attempt },
-  context: { mode: "fast", runtime_preference: "deterministic" }
-}
+Capture / capture_observation
+  -> persist Memory
+  -> persist completed Trace
 
--> validate actor and Space access
--> route namespace and surface
--> execute synchronous Performance action
--> write Trace
--> publish AttemptSubmitted event
--> return shaped SurfaceResponse
+Performance / submit_attempt
+  -> create or update FeedbackLoop attempt
+  -> persist completed Trace
+
+Observation / request_consolidation
+  -> persist completed triggering Trace
+  -> create manual SleepCycle linked by triggering_trace_id and input_trace_ids
 ```
+
+Reflection, Planning, `get_state_summary`, scheduled Sleep, and Dreaming actions
+remain pending. The current subset does not imply general event publishing or a
+mutable Trace lifecycle.
 
 ## Cognitive And Feedback Model
 

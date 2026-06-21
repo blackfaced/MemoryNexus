@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-17
+> Last updated: 2026-06-18
 > Source of truth for executable task definitions: GitHub Issues, with
 > [docs/issues.md](issues.md) as the planning mirror for the milestone shape.
 
@@ -40,6 +40,9 @@ The repository already has strong foundations:
 - Surface Gateway has landed for Capture, Performance, and manual
   consolidation; Reflection, Planning, Observation, adapter policy, and
   dictation-specific flows remain open issues.
+- ADR-021 and the media evidence contract define provider-neutral
+  `EvidenceRefInput`, but no runtime validation, persistence, resolver, or media
+  handling implementation exists yet.
 
 ## Gap Against The New Direction
 
@@ -56,6 +59,9 @@ The project still needs to close these gaps:
 - `learning.stem` is a useful prior slice, but the next upstream product should
   be Dictation Coach; the dictation-specific capture, attempt, classification,
   next-practice, observation, and adapter issues are still open.
+- Dictation Capture still needs a prerequisite `EvidenceRefInput` validation
+  foundation before optional original-media provenance can enter Surface
+  requests safely.
 - No GitHub Release artifact is currently published, so Trial and Local
   One-click binary-first profiles still need release validation.
 - Evaluation should measure growth and feedback usefulness, not just retrieval
@@ -131,7 +137,8 @@ Recommended sequence:
 
 Non-goals:
 
-- No OCR.
+- No OCR or ASR inside the MemoryNexus Engine. Adapter-side preprocessing and
+  confirmed normalized text are allowed but are not part of this milestone.
 - No cloud LLM dependency.
 - No complex UI.
 - No broad education platform.
@@ -200,17 +207,81 @@ Initial namespaces:
 - `child.english.spelling`
 - `child.english.sentence-dictation`
 
+Execution dependency graph:
+
+| Depends On | Issue Unlocked |
+| --- | --- |
+| Issue 3.4 | Issue 3.5 |
+| Issue 3.5 | Issue 3.6 |
+| Issue 3.6 | Foundation F1 |
+| Foundation F1 | Issue 5.2 |
+| Foundation F1 + Issue 5.2 | Issue 5.3 |
+| Issue 5.3 | Issues 5.4 and 5.6 |
+| Issue 5.4 | Issue 5.5 |
+| Foundation F1 + Issues 3.4, 3.5, and 3.6 | Issue 6.2 generic MCP/chat Surface Adapter |
+| Issues 5.2 through 5.6 + Issue 6.2 | Issue 5.7 Dictation Agent demo |
+| Issue 5.7 | Issue 6.3 Simple Practice App Adapter |
+
+These edges are acyclic. The primary shared-dispatcher execution chain is
+Issue 3.4 -> Issue 3.5 -> Issue 3.6 -> Foundation F1 -> Issue 5.2 -> Issue 5.3.
+Every issue in this chain that edits `src/api/surfaces.rs` takes dispatcher
+integration ownership only after its predecessor lands; parallel workers own
+only their domain-specific modules. Issues 3.4, 3.5, and 3.6 are also listed as
+required capabilities for Issue 6.2 even though the chain already makes those
+edges transitive. Issue 5.7 waits for Issues 5.2-5.6 and Issue 6.2; Issue 6.3 is
+deferred until the Issue 5.7 Agent loop is accepted. Live GitHub issue and
+Foundation F1 synchronization is Task 5 after these documentation changes
+merge; do not update GitHub in this task.
+
 Recommended sequence:
 
-1. Capture today's word, phrase, or sentence list.
-2. Submit manual dictation / spelling result.
-3. Classify mistakes deterministically.
-4. Generate tomorrow's 10-minute practice.
-5. Show simple 7-day trends.
+1. After Issue 3.6, land Foundation F1 to define the generic role-neutral
+   `input_confirmation: { status: "confirmed", method: "explicit_acceptance" |
+   "explicit_correction" }` field and validate it for `agent_ocr`,
+   `agent_transcribed`, and `mixed` input. F1 also validates provider-neutral
+   `EvidenceRefInput` descriptors for only `capture_observation` and
+   `submit_attempt`. Use the closed V1 secret policy from the issue definition:
+   metadata keys are ASCII-lowercased and stripped of `-`, `_`, and `.` without
+   percent decoding; every metadata string value is recursively inspected at
+   all depths without percent decoding against the same closed secret-value
+   patterns used for locator values; locator userinfo is rejected, and
+   query/fragment pairs are percent-decoded exactly once before closed key and
+   value-pattern checks. Any match rejects the entire reference, diagnostics
+   contain no raw value, and rejected values enter no logs, Trace, metadata
+   persistence, or other persistence.
+   Policy extensions require a contract change, not ad hoc worker additions.
+   Accepted descriptors remain ephemeral and are excluded from every existing
+   Memory, FeedbackLoop, and Trace persistence argument, record, and summary.
+2. Capture today's confirmed word, phrase, or sentence list as Issue 5.2.
+3. After F1 and Issue 5.2, submit confirmed dictation / spelling results as
+   Issue 5.3.
+4. After Issue 5.3, classify mistakes deterministically as Issue 5.4 and build
+   the 7-day summary as Issue 5.6.
+5. After Issue 5.4, generate tomorrow's 10-minute practice as Issue 5.5.
 6. Run manual SleepCycle over dictation traces.
 7. Generate weekly review.
-8. Expose through one minimal adapter: CLI, MCP/chat, or simple Rust-served Web
-   UI.
+8. After the generic MCP/chat Surface Adapter foundation in Issue 6.2 lands,
+   expose the first usable Dictation test through its generic Surface Gateway
+   tools as Issue 5.7.
+9. Defer the Issue 6.3 Simple Practice App Adapter until the Issue 5.7 Agent
+   loop is accepted.
+
+The initial smoke uses one learner and manually entered or Agent-confirmed text.
+An Agent/App performs OCR or ASR when media is involved and must obtain explicit
+user acceptance or correction for every media-derived normalized payload before
+submission. The smoke has no dedicated Dictation Coach App dependency.
+
+Foundation F1 owns the generic role-neutral `input_confirmation` request field
+and validation, including negative tests for a missing field, unconfirmed
+status, and invalid method. Issues 5.2 and 5.3 depend on F1 and validate the
+field at the Surface boundary for media-derived input. Issue 6.2 only enforces
+and maps the already-defined field in MCP/chat before generic Surface calls.
+Issue 5.7 owns only the product prompt/interaction that obtains acceptance or
+correction; no parent/child role enters the Engine.
+
+A future dedicated Dictation Coach App belongs in a separate repository only
+after the Agent loop works. It remains a Surface Gateway / MCP client and does
+not own memory or access Engine internals.
 
 Chinese mistake taxonomy:
 
@@ -234,8 +305,11 @@ English mistake taxonomy:
 
 Non-goals:
 
-- No OCR.
-- No handwriting recognition.
+- No `EvidenceRef` persistence, repository, or schema in the validation
+  foundation.
+- No resolver execution, upload/download, or media-byte handling.
+- No OCR, ASR, or handwriting recognition inside MemoryNexus.
+- No provider SDK.
 - No multi-child management.
 - No full curriculum.
 - No broad multi-subject learning platform.
@@ -250,13 +324,17 @@ Surface Gateway dictation flow.
 
 Recommended adapter sequence:
 
-1. Chat / Agent Adapter: can access Capture, Performance, Reflection, Planning,
-   and Observation through Surface Gateway.
-2. Simple Practice App Adapter: can access Performance, Planning, and limited
+1. Define allowed surfaces per adapter.
+2. Implement the generic MCP/chat Surface Adapter foundation in Issue 6.2,
+   including transport/tool plumbing and generic mappings for Capture,
+   Performance, Reflection, Planning, and Observation.
+3. Build the product-facing Dictation Agent orchestration in Issue 5.7 on that
+   generic adapter; this remains the first user-facing usable flow.
+4. Only after the Issue 5.7 Agent loop is accepted, implement the deferred
+   Issue 6.3 Simple Practice App Adapter for Performance, Planning, and limited
    Observation.
-3. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
-4. Define allowed surfaces per adapter.
-5. Ensure adapters do not directly access Engine internals.
+5. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
+6. Ensure adapters do not directly access Engine internals.
 
 Non-goals:
 

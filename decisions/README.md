@@ -26,7 +26,8 @@ decisions/
 ├── ADR-017-sleep-based-memory-consolidation.md ✅ Sleep-based Memory Consolidation
 ├── ADR-018-long-term-feedback-engine.md ✅ Long-term Feedback Engine 定位
 ├── ADR-019-surfaces-adapters-engine.md ✅ Surfaces / Adapters / Engine 分层
-└── ADR-020-dictation-coach-first-upstream-product.md ✅ Dictation Coach 首个上游产品
+├── ADR-020-dictation-coach-first-upstream-product.md ✅ Dictation Coach 首个上游产品
+└── ADR-021-external-media-evidence-references.md ✅ 外部媒体证据引用
 ```
 
 ## 📖 ADR 是什么？
