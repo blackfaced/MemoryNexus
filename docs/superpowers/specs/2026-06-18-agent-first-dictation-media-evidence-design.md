@@ -5,6 +5,9 @@
 Approved in conversation on 2026-06-18. This document defines the documentation
 and architecture changes that should precede implementation.
 
+ADR-021 and `docs/media-evidence-contract.md` are the canonical sources if this
+design wording ever differs from the approved media evidence contract.
+
 ## Goal
 
 Make Dictation Coach testable through a chat agent before building a dedicated
@@ -26,7 +29,7 @@ MemoryNexus Surfaces.
 Image / audio / video
   -> Agent or App OCR / ASR
   -> user-confirmed normalized text
-  -> Surface Gateway(text + optional EvidenceRef)
+  -> Surface Gateway(text + optional EvidenceRefInput)
   -> Trace / FeedbackLoop / GrowthModel / PracticePlan
 ```
 
@@ -96,12 +99,14 @@ Field rules:
 - `metadata` is small structured provenance and must not become an unbounded
   media manifest.
 
-The first implementation may accept an inline `EvidenceRefInput` in a Surface
-request before adding a separately persisted `EvidenceRef` model.
+The first implementation accepts an inline `EvidenceRefInput` in a Surface
+request. These descriptors remain ephemeral in this slice; there is no
+`EvidenceRef` persistence, repository, or schema.
 `EvidenceRefInput` omits `id` and `space_id`; Surface Gateway assigns ownership
-from the authorized request context. A schema or repository should only be
-added through a dedicated implementation issue with explicit lifecycle and
-permission acceptance criteria.
+from the authorized request context. Any future persisted `EvidenceRef` is
+governed by ADR-021 and `docs/media-evidence-contract.md` and requires a
+dedicated implementation issue with explicit lifecycle and permission
+acceptance criteria.
 
 ## Resolver Boundary
 
@@ -119,8 +124,8 @@ A resolver must not:
 - put provider credentials into Trace, Surface payloads, or `EvidenceRef`;
 - make media availability a prerequisite for text-based feedback.
 
-The first Dictation Coach slice records references but does not require
-MemoryNexus to resolve or read them.
+The first Dictation Coach slice validates ephemeral `EvidenceRefInput`
+descriptors but does not persist, resolve, or read them.
 
 ## Agent-First Surface Flow
 
@@ -139,9 +144,12 @@ The agent may accept text, images, audio, or video from its own environment. For
 non-text input it must:
 
 1. perform OCR or ASR outside MemoryNexus;
-2. present or otherwise confirm the normalized text with the user;
-3. send the confirmed text to the relevant Surface;
-4. include an `EvidenceRef` when the original media should remain traceable.
+2. require explicit user acceptance or correction of every media-derived
+   normalized payload; confidence or uncertainty scores do not substitute for
+   this confirmation;
+3. send only the explicitly accepted or corrected text to the relevant Surface;
+4. include an optional `EvidenceRefInput` when the original media should remain
+   traceable.
 
 Agent-facing tool names may be dictation-specific, but their implementation
 must call generic Surface actions instead of mutating Engine objects directly.
@@ -158,8 +166,13 @@ must call generic Surface actions instead of mutating Engine objects directly.
   locator.
 - OCR or ASR uncertainty is resolved by the Agent and user before submission.
   MemoryNexus must not invent text from a reference it cannot inspect.
-- Credentials, API keys, mount secrets, and signed query strings are rejected or
-  redacted before persistence.
+- Any credential, token, mount secret, signed authentication locator, or secret
+  in `locator` or `metadata` makes the whole `EvidenceRefInput` invalid and it
+  must be rejected.
+- Redaction applies only to diagnostics and logs. Diagnostics expose the
+  offending field or path and an error code, never the raw value.
+- Rejected raw payloads and secret values must not enter logs, Trace, or any
+  persistence.
 
 ## Documentation Changes
 
