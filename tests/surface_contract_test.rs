@@ -121,6 +121,17 @@ fn manual_consolidation_resolver_uses_only_active_namespaces() {
 }
 
 #[test]
+fn surface_gateway_route_is_registered_once() {
+    let source = fs::read_to_string("src/api/mod.rs").expect("api source should be readable");
+
+    assert_eq!(
+        source.matches("\"/api/v1/surfaces\"").count(),
+        1,
+        "duplicate Surface Gateway route registrations can panic at startup"
+    );
+}
+
+#[test]
 fn surface_result_stays_adapter_shaped_json() {
     let response = SurfaceResponse::new(
         Surface::Reflection,

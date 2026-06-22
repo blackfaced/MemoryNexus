@@ -64,8 +64,6 @@ pub fn routes() -> Router<AppState> {
             "/api/v1/spaces/invites/accept",
             axum::routing::post(spaces::accept_invite),
         )
-        // Surface Gateway
-        .route("/api/v1/surfaces", axum::routing::post(surfaces::handle))
         // Lens
         .route("/api/v1/lenses", axum::routing::get(lenses::list))
         .route("/api/v1/lenses", axum::routing::post(lenses::create))

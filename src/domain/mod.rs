@@ -8,6 +8,7 @@ pub mod dream_candidate;
 pub mod event;
 pub mod growth_model;
 pub mod practice_plan;
+pub mod reflection;
 pub mod surface;
 pub mod trace;
 
