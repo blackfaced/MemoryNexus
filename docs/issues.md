@@ -540,7 +540,8 @@ dispatcher.
 - Planning Surface can return a next task for a namespace.
 - Trace links generated PracticePlan when that model exists, or stores output summary.
 - PostgreSQL integration tests verify Planning routing, Trace provenance, and
-  same-Space behavior through the shared dispatcher after Issue 3.4 lands.
+  same-Space behavior through the shared dispatcher after Issue 3.4 / GitHub
+  #146 lands.
 
 **Possible Files:**
 
@@ -579,7 +580,8 @@ dispatcher.
 - Observation Surface can return namespace state.
 - Response is adapter-shaped, not raw DB rows.
 - PostgreSQL integration tests verify Observation routing, Trace provenance,
-  and same-Space behavior through the shared dispatcher after Issue 3.5 lands.
+  and same-Space behavior through the shared dispatcher after Issue 3.5 /
+  GitHub #147 lands.
 
 **Possible Files:**
 
