@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-18
+> Last updated: 2026-06-22
 > Source of truth for executable task definitions: GitHub Issues, with
 > [docs/issues.md](issues.md) as the planning mirror for the milestone shape.
 
@@ -38,8 +38,10 @@ The repository already has strong foundations:
 - Binary-first install, Local One-click packaging, Production Profile, and
   Supabase Postgres compatibility have documentation and implementation tracks.
 - Surface Gateway has landed for Capture, Performance, and manual
-  consolidation; Reflection, Planning, Observation, adapter policy, and
-  dictation-specific flows remain open issues.
+  consolidation. Reflection is implemented in PR #176 for issue #146 but is
+  still pending review, PostgreSQL integration verification, and merge;
+  Planning (#147), Observation (#148), adapter policy, and dictation-specific
+  flows remain open.
 - ADR-021 and the media evidence contract define provider-neutral
   `EvidenceRefInput`, but no runtime validation, persistence, resolver, or media
   handling implementation exists yet.
@@ -59,9 +61,10 @@ The project still needs to close these gaps:
 - `learning.stem` is a useful prior slice, but the next upstream product should
   be Dictation Coach; the dictation-specific capture, attempt, classification,
   next-practice, observation, and adapter issues are still open.
-- Dictation Capture still needs a prerequisite `EvidenceRefInput` validation
-  foundation before optional original-media provenance can enter Surface
-  requests safely.
+- Typed or pasted Dictation Capture can proceed once the generic Surfaces land.
+  Media-derived Capture still needs #175 before `agent_ocr`,
+  `agent_transcribed`, `mixed`, or optional original-media provenance can enter
+  Surface requests safely.
 - No GitHub Release artifact is currently published, so Trial and Local
   One-click binary-first profiles still need release validation.
 - Evaluation should measure growth and feedback usefulness, not just retrieval
@@ -120,8 +123,10 @@ Deliverables:
 
 Goal: define core domain types and schema without LLM integration or complex UI.
 
-Status: mostly complete; remaining open issues are MemoryAtom draft,
-CognitiveScene draft, and minimal Lens / Reflection Surface structures.
+Status: mostly complete; remaining open issues include the MemoryAtom and
+CognitiveScene drafts. Minimal Lens / Reflection Surface structures are
+implemented by #146 in PR #176 but remain pending review, PostgreSQL integration
+verification, and merge.
 
 Recommended sequence:
 
@@ -132,7 +137,8 @@ Recommended sequence:
 4. Define `GrowthModel`.
 5. Define `SleepCycle`.
 6. Define `PracticePlan` / `DreamCandidate`.
-7. Define minimal Lens / Reflection structures for Surface use.
+7. Accept the minimal Lens / Reflection structures through the #146 review and
+   PostgreSQL integration gate.
 8. Add serialization, repository, and same-Space validation tests.
 
 Non-goals:
@@ -148,20 +154,28 @@ Non-goals:
 Goal: build the unified Engine entry point.
 
 Status: partially complete. `SurfaceRequest` / `SurfaceResponse`, Capture,
-Performance, and manual consolidation are implemented; Reflection, Planning,
-and Observation mocks remain open.
+Performance, and manual consolidation are implemented. Reflection (#146) is
+implemented in PR #176 but remains pending review, PostgreSQL integration
+verification, and merge. Planning (#147) must not start until that verification
+passes and #146 lands; Observation (#148) follows #147.
 
 Recommended sequence:
 
 1. Define `SurfaceRequest` and `SurfaceResponse`.
 2. Implement Capture Surface minimum path.
 3. Implement Performance Surface minimum path.
-4. Add Reflection Surface mock.
-5. Add Planning Surface mock.
-6. Add Observation Surface mock.
+4. Review PR #176 for Reflection (#146), run its PostgreSQL integration test,
+   then merge and close #146.
+5. Add Planning Surface (#147) only after #146 lands.
+6. Add Observation Surface (#148) only after #147 lands.
 7. Ensure every Surface call writes Trace.
 8. Add visibility / permission fields, initially with simple policy.
 9. Add tests for routing, validation, response shaping, and Trace creation.
+
+In parallel with #147 and #148, add a required pull-request CI job for
+PostgreSQL-backed Surface integration tests. Pin service versions and report
+ignored integration tests explicitly. Network or external-provider checks stay
+manual or scheduled so they cannot make the deterministic merge gate flaky.
 
 Non-goals:
 
@@ -211,34 +225,44 @@ Execution dependency graph:
 
 | Depends On | Issue Unlocked |
 | --- | --- |
-| Issue 3.4 | Issue 3.5 |
-| Issue 3.5 | Issue 3.6 |
-| Issue 3.6 | Foundation F1 |
-| Foundation F1 | Issue 5.2 |
-| Foundation F1 + Issue 5.2 | Issue 5.3 |
-| Issue 5.3 | Issues 5.4 and 5.6 |
-| Issue 5.4 | Issue 5.5 |
-| Foundation F1 + Issues 3.4, 3.5, and 3.6 | Issue 6.2 generic MCP/chat Surface Adapter |
-| Issues 5.2 through 5.6 + Issue 6.2 | Issue 5.7 Dictation Agent demo |
-| Issue 5.7 | Issue 6.3 Simple Practice App Adapter |
+| #146 review, PostgreSQL verification, and merge | #147 Planning Surface |
+| #147 | #148 Observation Surface |
+| #148 | #155 typed/pasted word-list Capture |
+| #155 typed/pasted path | #156 typed/pasted attempt submission |
+| #156 typed/pasted path | #157 deterministic mistake classification |
+| #148 | #162 generic text Surface tools |
+| #148 | #175 media confirmation and evidence validation |
+| #175 | Media extensions in #155, #156, and #162 |
+| #157 | #152 Trace/FeedbackLoop aggregation into GrowthModel |
+| #152 | #153 PracticePlan generation from GrowthModel |
+| #153 | #158 tomorrow's focused ten-minute practice |
+| #155 through #158 + text-capable #162 | Initial #160 Agent smoke |
+| #159 deterministic multi-day summary | Extended seven-day Agent acceptance |
+| Initial #160 acceptance | #128, #129, and #130 distribution wave |
 
-These edges are acyclic. The primary shared-dispatcher execution chain is
-Issue 3.4 -> Issue 3.5 -> Issue 3.6 -> Foundation F1 -> Issue 5.2 -> Issue 5.3.
-Every issue in this chain that edits `src/api/surfaces.rs` takes dispatcher
-integration ownership only after its predecessor lands; parallel workers own
-only their domain-specific modules. Issues 3.4, 3.5, and 3.6 are also listed as
-required capabilities for Issue 6.2 even though the chain already makes those
-edges transitive. Issue 5.7 waits for Issues 5.2-5.6 and Issue 6.2; Issue 6.3 is
-deferred until the Issue 5.7 Agent loop is accepted. Live GitHub issue and
-Foundation F1 synchronization is Task 5 after these documentation changes
-merge; do not update GitHub in this task.
+These edges are acyclic. The serialized shared-dispatcher chain begins
+`#146 -> #147 -> #148`; any issue that edits `src/api/surfaces.rs` takes
+dispatcher integration ownership only after its predecessor lands. After #148,
+the typed/pasted product path and generic text-capable #162 tools may proceed
+without #175. In parallel, #175 opens only the media extensions. Domain-specific
+workers remain isolated from shared dispatcher ownership until their dependency
+lands.
 
 Recommended sequence:
 
-1. After Issue 3.6, land Foundation F1 to define the generic role-neutral
+1. Review and merge #146 only after its PostgreSQL integration verification,
+   then implement #147 and #148 in order. Run the required PostgreSQL Surface
+   integration CI work in parallel with #147/#148; keep external-provider
+   checks manual or scheduled.
+2. After #148, implement #155 typed/pasted word-list Capture, then #156
+   typed/pasted attempt submission. These text-first paths accept genuinely
+   typed or pasted text and are not blocked by #175.
+3. After #148, implement the text-capable portion of #162 as generic MCP/chat
+   tools for Capture, Performance, Reflection, Planning, and Observation.
+4. In parallel after #148, implement #175 to define the generic role-neutral
    `input_confirmation: { status: "confirmed", method: "explicit_acceptance" |
    "explicit_correction" }` field and validate it for `agent_ocr`,
-   `agent_transcribed`, and `mixed` input. F1 also validates provider-neutral
+   `agent_transcribed`, and `mixed` input. #175 also validates provider-neutral
    `EvidenceRefInput` descriptors for only `capture_observation` and
    `submit_attempt`. Use the closed V1 secret policy from the issue definition:
    metadata keys are ASCII-lowercased and stripped of `-`, `_`, and `.` without
@@ -252,32 +276,37 @@ Recommended sequence:
    Policy extensions require a contract change, not ad hoc worker additions.
    Accepted descriptors remain ephemeral and are excluded from every existing
    Memory, FeedbackLoop, and Trace persistence argument, record, and summary.
-2. Capture today's confirmed word, phrase, or sentence list as Issue 5.2.
-3. After F1 and Issue 5.2, submit confirmed dictation / spelling results as
-   Issue 5.3.
-4. After Issue 5.3, classify mistakes deterministically as Issue 5.4 and build
-   the 7-day summary as Issue 5.6.
-5. After Issue 5.4, generate tomorrow's 10-minute practice as Issue 5.5.
-6. Run manual SleepCycle over dictation traces.
-7. Generate weekly review.
-8. After the generic MCP/chat Surface Adapter foundation in Issue 6.2 lands,
-   expose the first usable Dictation test through its generic Surface Gateway
-   tools as Issue 5.7.
-9. Defer the Issue 6.3 Simple Practice App Adapter until the Issue 5.7 Agent
-   loop is accepted.
+5. Keep every `agent_ocr`, `agent_transcribed`, `mixed`, and `evidence_refs`
+   path in #155, #156, and #162 blocked until #175 lands. Typed/pasted delivery
+   must not relabel media-derived content to bypass confirmation.
+6. After #156, implement #157 deterministic mistake classification, then #152
+   Trace/FeedbackLoop aggregation into GrowthModel, #153 evidence-linked
+   PracticePlan generation, and #158 tomorrow's focused ten-minute practice.
+   #158 reuses #153 rather than creating a parallel planning model.
+7. Once #155 through #158 and the text-capable portion of #162 land, run the
+   initial #160 Agent smoke through generic Surface Gateway MCP tools. It covers
+   word-list Capture, attempt submission, Reflection, mistake analysis, next
+   practice, Observation, and Trace IDs without a web UI or dedicated App.
+8. Complete #159 with deterministic multi-day fixtures, then add its seven-day
+   trend to the extended Agent acceptance. #159 does not block initial #160.
+9. Develop #150 event publication in parallel; it does not block the first
+   manual Agent loop.
 
-The initial smoke uses one learner and manually entered or Agent-confirmed text.
-An Agent/App performs OCR or ASR when media is involved and must obtain explicit
-user acceptance or correction for every media-derived normalized payload before
-submission. The smoke has no dedicated Dictation Coach App dependency.
+The initial #160 smoke uses one learner and genuinely typed or pasted text.
+It does not require #175, OCR, ASR, evidence references, seven days of real
+history, a tagged release, or a dedicated Dictation Coach App. When media is
+involved, the Agent/App performs OCR or ASR and must obtain explicit user
+acceptance or correction before submission; all such media-derived paths remain
+blocked by #175. Media capture and confirmation stay in the Adapter, while the
+Engine remains text-first.
 
-Foundation F1 owns the generic role-neutral `input_confirmation` request field
-and validation, including negative tests for a missing field, unconfirmed
-status, and invalid method. Issues 5.2 and 5.3 depend on F1 and validate the
-field at the Surface boundary for media-derived input. Issue 6.2 only enforces
-and maps the already-defined field in MCP/chat before generic Surface calls.
-Issue 5.7 owns only the product prompt/interaction that obtains acceptance or
-correction; no parent/child role enters the Engine.
+#175 owns the generic role-neutral `input_confirmation` request field and
+validation, including negative tests for a missing field, unconfirmed status,
+and invalid method. #155 and #156 validate it at the Surface boundary only for
+media-derived input. #162 maps the already-defined field for its media extension
+without gaining Engine repository access. #160 owns only the product
+prompt/interaction that obtains acceptance or correction; no parent/child role
+enters the Engine.
 
 A future dedicated Dictation Coach App belongs in a separate repository only
 after the Agent loop works. It remains a Surface Gateway / MCP client and does
@@ -325,14 +354,15 @@ Surface Gateway dictation flow.
 Recommended adapter sequence:
 
 1. Define allowed surfaces per adapter.
-2. Implement the generic MCP/chat Surface Adapter foundation in Issue 6.2,
-   including transport/tool plumbing and generic mappings for Capture,
-   Performance, Reflection, Planning, and Observation.
-3. Build the product-facing Dictation Agent orchestration in Issue 5.7 on that
-   generic adapter; this remains the first user-facing usable flow.
-4. Only after the Issue 5.7 Agent loop is accepted, implement the deferred
-   Issue 6.3 Simple Practice App Adapter for Performance, Planning, and limited
-   Observation.
+2. Implement #162 generic MCP/chat Surface tools after #148, including
+   transport/tool plumbing and text mappings for Capture, Performance,
+   Reflection, Planning, and Observation. Add media confirmation and evidence
+   mapping only after #175.
+3. Build the product-facing #160 Dictation Agent orchestration on the
+   text-capable #162 tools; this remains the first user-facing usable flow.
+4. Only after the initial #160 Agent loop is accepted, implement the deferred
+   Simple Practice App Adapter for Performance, Planning, and limited
+   Observation in its separate repository.
 5. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
 6. Ensure adapters do not directly access Engine internals.
 
@@ -381,18 +411,21 @@ Likely mapping:
 - #120 manual SleepCycle API / CLI / MCP trigger -> Milestone 4.
 - #125 DreamCandidate effectiveness -> Milestone 7.
 - #61 / #62 / #63 lifecycle fixtures -> Milestone 2 / 7 prototype work.
-- #128 / #129 / #130 install and deployment issues -> supporting distribution
-  track, not core Engine roadmap.
+- #128 / #129 / #130 install and deployment issues -> post-#160 distribution
+  wave, not the initial Agent-smoke critical path.
 
 ## Supporting Distribution Track
 
-These are important but not on the core Engine critical path:
+These start only after the initial #160 Agent acceptance and are not on its
+critical path:
 
 - #128 Publish first Local One-click offline release bundle.
 - #129 Make Trial Profile plug-and-play for agent demos.
-- #130 Stand up a real Production Profile deployment and smoke test.
+- #130 (P1) stand up a versioned Mac mini or equivalent Production Profile
+  deployment with migration preflight, health smoke, and rollback.
 
-They support external usage once the Engine and Surface Gateway are useful.
+They distribute the already validated Agent loop; they do not delay the first
+typed/pasted Developer Profile smoke.
 
 ## Issue Hygiene
 
