@@ -38,10 +38,9 @@ The repository already has strong foundations:
 - Binary-first install, Local One-click packaging, Production Profile, and
   Supabase Postgres compatibility have documentation and implementation tracks.
 - Surface Gateway has landed for Capture, Performance, and manual
-  consolidation. Reflection is implemented in PR #176 for issue #146 but is
-  still pending review, PostgreSQL integration verification, and merge;
-  Planning (#147), Observation (#148), adapter policy, and dictation-specific
-  flows remain open.
+  consolidation. Reflection #146 is implemented in PR #176 but remains pending
+  acceptance and merge; Planning (#147), Observation (#148), adapter policy,
+  and dictation-specific flows remain open.
 - ADR-021 and the media evidence contract define provider-neutral
   `EvidenceRefInput`, but no runtime validation, persistence, resolver, or media
   handling implementation exists yet.
@@ -124,9 +123,7 @@ Deliverables:
 Goal: define core domain types and schema without LLM integration or complex UI.
 
 Status: mostly complete; remaining open issues include the MemoryAtom and
-CognitiveScene drafts. Minimal Lens / Reflection Surface structures are
-implemented by #146 in PR #176 but remain pending review, PostgreSQL integration
-verification, and merge.
+CognitiveScene drafts plus #142 Minimal Lens / Reflection Surface Structures.
 
 Recommended sequence:
 
@@ -137,8 +134,7 @@ Recommended sequence:
 4. Define `GrowthModel`.
 5. Define `SleepCycle`.
 6. Define `PracticePlan` / `DreamCandidate`.
-7. Accept the minimal Lens / Reflection structures through the #146 review and
-   PostgreSQL integration gate.
+7. Define minimal Lens / Reflection Surface structures in #142.
 8. Add serialization, repository, and same-Space validation tests.
 
 Non-goals:
@@ -238,6 +234,7 @@ Execution dependency graph:
 | #153 | #158 tomorrow's focused ten-minute practice |
 | #155 through #158 + text-capable #162 | Initial #160 Agent smoke |
 | #159 deterministic multi-day summary | Extended seven-day Agent acceptance |
+| Initial #160 acceptance | #163 Simple Practice App Adapter |
 | Initial #160 acceptance | #128, #129, and #130 distribution wave |
 
 These edges are acyclic. The serialized shared-dispatcher chain begins
@@ -264,18 +261,12 @@ Recommended sequence:
    "explicit_correction" }` field and validate it for `agent_ocr`,
    `agent_transcribed`, and `mixed` input. #175 also validates provider-neutral
    `EvidenceRefInput` descriptors for only `capture_observation` and
-   `submit_attempt`. Use the closed V1 secret policy from the issue definition:
-   metadata keys are ASCII-lowercased and stripped of `-`, `_`, and `.` without
-   percent decoding; every metadata string value is recursively inspected at
-   all depths without percent decoding against the same closed secret-value
-   patterns used for locator values; locator userinfo is rejected, and
-   query/fragment pairs are percent-decoded exactly once before closed key and
-   value-pattern checks. Any match rejects the entire reference, diagnostics
-   contain no raw value, and rejected values enter no logs, Trace, metadata
-   persistence, or other persistence.
-   Policy extensions require a contract change, not ad hoc worker additions.
-   Accepted descriptors remain ephemeral and are excluded from every existing
-   Memory, FeedbackLoop, and Trace persistence argument, record, and summary.
+   `submit_attempt`. Follow #175 and the
+   [media evidence contract](media-evidence-contract.md) for the exact closed V1
+   validation algorithm. An unsafe reference is rejected in full; diagnostics
+   are redacted, and rejected payloads or secrets enter no logs, Trace, metadata
+   persistence, or other persistence. Accepted descriptors remain ephemeral and
+   are excluded from existing Memory, FeedbackLoop, and Trace persistence.
 5. Keep every `agent_ocr`, `agent_transcribed`, `mixed`, and `evidence_refs`
    path in #155, #156, and #162 blocked until #175 lands. Typed/pasted delivery
    must not relabel media-derived content to bypass confirmation.
@@ -308,9 +299,10 @@ without gaining Engine repository access. #160 owns only the product
 prompt/interaction that obtains acceptance or correction; no parent/child role
 enters the Engine.
 
-A future dedicated Dictation Coach App belongs in a separate repository only
-after the Agent loop works. It remains a Surface Gateway / MCP client and does
-not own memory or access Engine internals.
+#163 is the deferred Simple Practice App Adapter. It belongs in a separate
+Dictation Coach App repository only after the initial #160 Agent loop is
+accepted. It remains a Surface Gateway / MCP client and does not own memory or
+access Engine internals.
 
 Chinese mistake taxonomy:
 
@@ -360,9 +352,9 @@ Recommended adapter sequence:
    mapping only after #175.
 3. Build the product-facing #160 Dictation Agent orchestration on the
    text-capable #162 tools; this remains the first user-facing usable flow.
-4. Only after the initial #160 Agent loop is accepted, implement the deferred
-   Simple Practice App Adapter for Performance, Planning, and limited
-   Observation in its separate repository.
+4. Only after the initial #160 Agent loop is accepted, implement #163, the
+   deferred Simple Practice App Adapter for Performance, Planning, and limited
+   Observation, in its separate repository.
 5. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
 6. Ensure adapters do not directly access Engine internals.
 
