@@ -475,6 +475,10 @@ plan.
 
 **Background:** Reflection answers "what does this mean?" but first version can be deterministic.
 
+**Status:** Implemented in PR #176; pending review, PostgreSQL integration
+verification, merge, and closure of GitHub issue #146. This status does not
+complete Issue 2.8 / GitHub issue #142.
+
 **Unlocks:** Issue 3.5.
 
 **Dispatcher Ownership:** This issue starts the serialized dispatcher sequence
@@ -498,6 +502,8 @@ from the completed Capture/Performance baseline. Reflection-domain workers own
 - Reflection Surface returns stable deterministic result.
 - Trace task type reflects review/reflection.
 - Tests pass without external credentials.
+- PostgreSQL integration tests verify Reflection routing, Trace provenance, and
+  same-Space behavior through the shared dispatcher.
 
 **Possible Files:**
 
@@ -533,6 +539,8 @@ dispatcher.
 
 - Planning Surface can return a next task for a namespace.
 - Trace links generated PracticePlan when that model exists, or stores output summary.
+- PostgreSQL integration tests verify Planning routing, Trace provenance, and
+  same-Space behavior through the shared dispatcher after Issue 3.4 lands.
 
 **Possible Files:**
 
@@ -546,7 +554,8 @@ dispatcher.
 
 **Depends On:** Issue 3.5.
 
-**Unlocks:** Foundation F1; provides a required capability for Issue 6.2.
+**Unlocks:** The typed/pasted path in Issue 5.2, the text-capable generic tools
+in Issue 6.2, and Foundation F1 for media validation.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
 after Issue 3.5 lands. Growth-model workers own
@@ -568,6 +577,8 @@ dispatcher.
 
 - Observation Surface can return namespace state.
 - Response is adapter-shaped, not raw DB rows.
+- PostgreSQL integration tests verify Observation routing, Trace provenance,
+  and same-Space behavior through the shared dispatcher after Issue 3.5 lands.
 
 **Possible Files:**
 
@@ -607,6 +618,9 @@ blocking foreground responses.
 ### Issue 4.2: Publish ObservationCaptured And AttemptSubmitted
 
 **Background:** Capture and Performance Surface calls should emit events.
+
+**Scheduling:** This issue may proceed in parallel with the Dictation critical
+path. It does not block the initial manual Agent smoke in Issue 5.7.
 
 **Scope:**
 
@@ -665,9 +679,17 @@ blocking foreground responses.
 
 **Background:** SleepCycle should produce a simple GrowthModel update.
 
+**Depends On:** For the selected Dictation critical path, Issue 5.4 / GitHub
+issue #157 provides the deterministic mistake evidence that this issue
+aggregates. Generic deterministic aggregation behavior remains reusable outside
+Dictation.
+
+**Unlocks:** Issue 4.5 / GitHub issue #153.
+
 **Scope:**
 
-- Read recent Trace / FeedbackLoop evidence.
+- Read recent Trace / FeedbackLoop evidence, including the deterministic
+  Dictation classifications produced by Issue 5.4.
 - Detect repeated patterns and evidence gaps deterministically.
 - Update or produce GrowthModel summary.
 
@@ -692,6 +714,10 @@ blocking foreground responses.
 ### Issue 4.5: Generate Simple PracticePlan
 
 **Background:** Planning should use GrowthModel evidence to suggest a next step.
+
+**Depends On:** Issue 4.4 / GitHub issue #152.
+
+**Unlocks:** Issue 5.5.
 
 **Scope:**
 
@@ -721,23 +747,28 @@ Execution dependency graph:
 
 | Depends On | Issue Unlocked |
 | --- | --- |
-| Issue 3.4 | Issue 3.5 |
+| Issue 3.4 review, PostgreSQL verification, and merge | Issue 3.5 |
 | Issue 3.5 | Issue 3.6 |
-| Issue 3.6 | Foundation F1 |
-| Foundation F1 | Issue 5.2 |
-| Foundation F1 + Issue 5.2 | Issue 5.3 |
-| Issue 5.3 | Issues 5.4 and 5.6 |
-| Issue 5.4 | Issue 5.5 |
-| Foundation F1 + Issues 3.4, 3.5, and 3.6 | Issue 6.2 |
-| Issues 5.2 through 5.6 + Issue 6.2 | Issue 5.7 |
-| Issue 5.7 | Issue 6.3 |
+| Issue 3.6 | Issue 5.2 typed/pasted path |
+| Issue 5.2 typed/pasted path | Issue 5.3 typed/pasted path |
+| Issue 5.3 typed/pasted path | Issue 5.4 |
+| Issue 3.6 | Issue 6.2 text-capable generic Surface tools |
+| Issue 3.6 | Foundation F1 / GitHub issue #175 |
+| Foundation F1 / GitHub issue #175 | Media extensions in Issues 5.2, 5.3, and 6.2 |
+| Issue 5.4 | Issue 4.4 |
+| Issue 4.4 | Issue 4.5 |
+| Issue 4.5 | Issue 5.5 |
+| Issues 5.2 through 5.5 + text-capable Issue 6.2 | Initial Issue 5.7 Agent smoke |
+| Issue 5.6 deterministic multi-day fixtures | Extended seven-day Issue 5.7 acceptance |
+| Initial Issue 5.7 acceptance | Issue 6.3 / GitHub issue #163 |
 
-The graph is acyclic. Its primary shared-dispatcher execution chain is Issue
-3.4 -> Issue 3.5 -> Issue 3.6 -> Foundation F1 -> Issue 5.2 -> Issue 5.3.
-Every affected issue that edits `src/api/surfaces.rs` takes dispatcher
-integration ownership only after its listed predecessor lands. Other workers
-own only their domain-specific modules and do not concurrently integrate the
-shared dispatcher. Redundant capability edges into Issue 6.2 remain explicit.
+The graph is acyclic. The serialized shared-dispatcher chain is Issue 3.4 ->
+Issue 3.5 -> Issue 3.6. After Issue 3.6, typed/pasted Dictation work and the
+text-capable generic MCP Surface tools can proceed without Foundation F1 / #175.
+Foundation F1 opens only the media-derived extensions. Every affected issue
+that edits `src/api/surfaces.rs` takes dispatcher integration ownership only
+after its listed predecessor lands. Adapter workers never own the shared
+dispatcher, and domain workers do not concurrently integrate it.
 
 ### Issue 5.1: Define Dictation Coach Contract
 
@@ -775,8 +806,8 @@ contract. Descriptor validation must land before Dictation Capture accepts
 
 **Depends On:** Issue 3.6.
 
-**Unlocks:** Issue 5.2; contributes to Issues 5.3 and 6.2 with their other
-dependencies.
+**Unlocks:** The media-derived extensions in Issues 5.2, 5.3, and 6.2. It does
+not block their typed/pasted or generic text-capable paths.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
 after Issue 3.6 lands. Evidence-domain workers own `src/domain/evidence.rs` and
@@ -972,36 +1003,50 @@ are called.
 
 **Background:** The daily loop begins by recording today's words, phrases, or sentences.
 
-**Depends On:** Foundation F1.
+**Depends On:** Issue 3.6 for the typed/pasted path. The media extension for
+`agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
+`evidence_refs` additionally depends on Foundation F1 / GitHub issue #175.
 
-**Unlocks:** Issue 5.3.
+**Unlocks:** The typed/pasted path unlocks the typed/pasted path in Issue 5.3;
+the media extension unlocks the corresponding media attempt path.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
-after Foundation F1 lands. Dictation-domain workers own
+after Issue 3.6 lands. Dictation-domain workers own
 `src/domain/dictation.rs` and must not concurrently edit the shared dispatcher.
 
 **Scope:**
 
 - Add Capture Surface flow for dictation list.
 - Use namespace such as `child.chinese.dictation`.
-- Accept confirmed text with `typed`, `pasted`, `agent_ocr`,
-  `agent_transcribed`, or `mixed` source provenance and optional validated
-  `EvidenceRefInput` descriptors.
-- Validate the role-neutral `input_confirmation` field defined by Foundation F1
-  for `agent_ocr`, `agent_transcribed`, and `mixed` media-derived input as
-  defense in depth, even when an Adapter already enforced it at transport.
+- First ship genuinely `typed` or `pasted` confirmed text without a media
+  dependency.
+- After Foundation F1 / #175 lands, extend the same Surface action with
+  `agent_ocr`, `agent_transcribed`, or `mixed` source provenance,
+  `input_confirmation`, and optional validated `EvidenceRefInput` descriptors.
+- In the media extension, validate the role-neutral `input_confirmation` field
+  defined by Foundation F1 for `agent_ocr`, `agent_transcribed`, and `mixed`
+  media-derived input as defense in depth, even when an Adapter already
+  enforced it at transport.
+- Reject attempts to relabel media-derived normalized text as `typed` or
+  `pasted` to bypass explicit confirmation.
 - Write Trace.
 
 **Non-Goals:**
 
 - MemoryNexus does not upload images or perform OCR / ASR on worksheets;
   Agent-prepared, explicitly user-confirmed normalized text is accepted.
+- No `EvidenceRef` persistence, repository, schema, or resolver.
 
 **Acceptance Criteria:**
 
-- User can capture typed or pasted text, or text prepared through Agent OCR/ASR.
+- User can capture genuinely typed or pasted text before the media extension
+  lands.
+- After Foundation F1 / #175, text prepared through Agent OCR/ASR can use the
+  media extension without changing the text-first business path.
 - Every media-derived normalized payload requires explicit user acceptance or
   correction before submission.
+- Tests reject media-derived input relabeled as `typed` or `pasted` to bypass
+  `input_confirmation`.
 - Surface tests reject missing, unconfirmed, or invalid-method
   `input_confirmation` for every media-derived source and accept the two
   confirmed methods.
@@ -1024,7 +1069,9 @@ after Foundation F1 lands. Dictation-domain workers own
 **Background:** Dictation Coach needs a text-first attempt submission before
 automated evaluation.
 
-**Depends On:** Foundation F1 and Issue 5.2.
+**Depends On:** Issue 5.2 for the typed/pasted path. The media extension for
+`agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
+`evidence_refs` additionally depends on Foundation F1 / GitHub issue #175.
 
 **Unlocks:** Issues 5.4 and 5.6.
 
@@ -1035,11 +1082,13 @@ after Issue 5.2 lands. Dictation-domain workers own
 **Scope:**
 
 - Submit expected items and actual result.
-- Allow attempts to link optional validated `EvidenceRefInput` values for
-  provenance.
-- Accept source provenance and validate the Foundation F1 role-neutral
-  `input_confirmation` field for `agent_ocr`, `agent_transcribed`, and `mixed`
-  media-derived input at the Surface boundary.
+- In the media extension, allow attempts to carry optional validated
+  `EvidenceRefInput` values for request-local provenance.
+- In the media extension, accept source provenance and validate the Foundation
+  F1 role-neutral `input_confirmation` field for `agent_ocr`,
+  `agent_transcribed`, and `mixed` media-derived input at the Surface boundary.
+- Reject attempts to relabel media-derived normalized text as `typed` or
+  `pasted` to bypass explicit confirmation.
 - Record FeedbackLoop attempt.
 - Write Trace.
 
@@ -1047,6 +1096,7 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 - MemoryNexus performs neither handwriting recognition nor audio transcription;
   Adapter-prepared, explicitly user-confirmed normalized text is allowed.
+- No `EvidenceRef` persistence, repository, schema, or resolver.
 
 **Acceptance Criteria:**
 
@@ -1054,7 +1104,10 @@ after Issue 5.2 lands. Dictation-domain workers own
 - Attempt is Space-owned and namespace-scoped.
 - Deterministic evaluation uses confirmed text and does not require linked media
   to be available.
-- Surface tests reject missing, unconfirmed, or invalid-method
+- The genuinely typed/pasted path works before Foundation F1 / #175 lands.
+- Tests reject media-derived input relabeled as `typed` or `pasted` to bypass
+  `input_confirmation`.
+- Media-extension Surface tests reject missing, unconfirmed, or invalid-method
   `input_confirmation` for every media-derived source and accept the two
   confirmed methods.
 - Positive-path fakes/spies prove accepted descriptor objects, raw locators,
@@ -1075,7 +1128,8 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 **Depends On:** Issue 5.3.
 
-**Unlocks:** Issue 5.5.
+**Unlocks:** Issue 4.4 / GitHub issue #152 on the selected Dictation Engine
+critical path.
 
 **Scope:**
 
@@ -1103,14 +1157,17 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 **Background:** Dictation Coach value is next action, not just diagnosis.
 
-**Depends On:** Issue 5.4.
+**Depends On:** Issue 4.5 / GitHub issue #153, and therefore transitively Issue
+4.4 / #152 and Issue 5.4 / #157.
 
-**Unlocks:** Issue 5.7.
+**Unlocks:** Initial Issue 5.7 Agent smoke.
 
 **Scope:**
 
-- Generate simple next practice from mistake patterns.
-- Produce PracticePlan.
+- Shape or reuse the evidence-linked PracticePlan generated by Issue 4.5 as
+  tomorrow's focused ten-minute Dictation practice.
+- Use the existing GrowthModel -> PracticePlan path; do not create a parallel
+  Dictation planning model or generation path.
 - Link source traces.
 
 **Non-Goals:**
@@ -1122,6 +1179,7 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 - Repeated pattern yields focused next practice.
 - Plan is short and actionable.
+- The returned exercise retains the PracticePlan evidence links from Issue 4.5.
 - Tests cover Chinese and English examples.
 
 **Possible Files:**
@@ -1136,7 +1194,8 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 **Depends On:** Issue 5.3.
 
-**Unlocks:** Issue 5.7.
+**Contribution:** Supplies deterministic multi-day fixtures and the extended
+seven-day acceptance for Issue 5.7. It does not block the initial Agent smoke.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
 after Issue 5.3 lands. Growth-model workers own
@@ -1171,18 +1230,23 @@ dispatcher.
 Agent before a dedicated product App is built, reusing the generic MCP/chat
 Surface Adapter from Issue 6.2.
 
-**Depends On:** Issues 5.2, 5.3, 5.4, 5.5, 5.6, and 6.2.
+**Depends On:** For the initial typed/pasted smoke, Issues 5.2 through 5.5 and
+the text-capable portion of Issue 6.2. Issue 5.6 contributes only the extended
+seven-day acceptance. Media prompt acceptance/correction is a later extension
+after Foundation F1 / #175 and the media-capable portion of Issue 6.2.
 
-**Unlocks:** Issue 6.3.
+**Unlocks:** Initial acceptance unlocks Issue 6.3.
 
 **Scope:**
 
 - Implement Dictation Agent orchestration and product-facing action mapping over
   the generic adapter.
-- Own only the Dictation product prompt/interaction that obtains explicit
-  acceptance or correction for Agent-prepared normalized text, then map the
-  result to Foundation F1's generic `input_confirmation` field through Issue
-  6.2's adapter mapping.
+- Run the initial loop entirely through typed/pasted generic Surface tools,
+  without a web UI.
+- In the media extension, own only the Dictation product prompt/interaction
+  that obtains explicit acceptance or correction for Agent-prepared normalized
+  text, then map the result to Foundation F1's generic `input_confirmation`
+  field through Issue 6.2's adapter mapping.
 - Exercise one-learner Capture, Performance, Reflection, Planning, and
   Observation through the generic Surface Adapter.
 
@@ -1196,16 +1260,21 @@ Surface Adapter from Issue 6.2.
 
 **Acceptance Criteria:**
 
-- End-to-end dictation demo works for one learner with manually entered or
-  Agent-confirmed text.
+- Initial end-to-end dictation demo works for one learner with genuinely typed
+  or pasted text.
 - Dictation orchestration uses Issue 6.2 generic tools and does not directly
   access Engine internals.
-- The flow covers all five Surfaces and writes Trace provenance where required.
+- Initial acceptance covers all five generic Surfaces and writes Trace
+  provenance where required, without a web UI.
+- Extended seven-day acceptance uses Issue 5.6 deterministic multi-day fixtures
+  but does not redefine the initial smoke gate.
+- After Foundation F1 / #175 and media-capable Issue 6.2, media prompt tests
+  demonstrate explicit acceptance and correction before Surface submission.
 - Product-facing mappings and prompt/confirmation policy remain outside the
   generic adapter.
-- Prompt-flow tests demonstrate explicit acceptance and explicit correction,
-  then assert successful mapping to `explicit_acceptance` and
-  `explicit_correction` respectively.
+- Media-extension prompt-flow tests demonstrate explicit acceptance and
+  explicit correction, then assert successful mapping to
+  `explicit_acceptance` and `explicit_correction` respectively.
 - No parent/child or other product role is added to Engine contracts.
 
 **Possible Files:**
@@ -1244,13 +1313,16 @@ Surface Adapter from Issue 6.2.
 **Background:** MCP/chat clients need generic transport and tool plumbing over
 Surface Gateway before product-specific Agent orchestration is added.
 
-**Depends On:** Foundation F1 and Issues 3.4, 3.5, and 3.6.
+**Depends On:** Issue 3.6 for text-capable generic Surface tools. Media mapping
+for `agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
+`evidence_refs` additionally depends on Foundation F1 / GitHub issue #175.
 
-**Unlocks:** Issue 5.7.
+**Unlocks:** The text-capable tools unlock the initial Issue 5.7 smoke; the
+media mapping contributes to its later media prompt extension.
 
-**Dispatcher Ownership:** This adapter issue does not edit
-`src/api/surfaces.rs`. It owns MCP/chat transport and mapping modules after the
-required Surface capabilities and F1 contract land.
+**Dispatcher Ownership:** This adapter issue never edits
+`src/api/surfaces.rs`. It owns only MCP/chat transport and mapping modules after
+the required Surface capabilities land.
 
 **Scope:**
 
@@ -1258,8 +1330,10 @@ required Surface capabilities and F1 contract land.
   Surface Gateway.
 - Map generic actions and capabilities across Capture, Performance, Reflection,
   Planning, and Observation without product-specific Engine actions.
-- Enforce and map the role-neutral adapter request field already defined by
-  Foundation F1:
+- Ship the text-capable generic Surface tools after Issue 3.6 without waiting
+  for Foundation F1 / #175.
+- In the media mapping, enforce and map the role-neutral adapter request field
+  already defined by Foundation F1:
 
   ```text
   input_confirmation: {
@@ -1268,30 +1342,36 @@ required Surface capabilities and F1 contract land.
   }
   ```
 
-- Enforce `input_confirmation` in the MCP/chat Adapter for `agent_ocr`,
+- In the media mapping, enforce `input_confirmation` in the MCP/chat Adapter for `agent_ocr`,
   `agent_transcribed`, and `mixed` media-derived input before making a generic
   Surface call.
+- Reject attempts to use the typed/pasted transport shape to disguise
+  media-derived normalized content and bypass confirmation.
 - Keep OCR, ASR, and media acquisition outside MemoryNexus, and require explicit
   user acceptance or correction before submitting any media-derived normalized
   payload.
-- Pass optional validated, opaque `EvidenceRefInput` descriptors through generic
-  calls. Return and preserve the generated Trace ID/provenance for the Surface
-  call, but do not return or claim persistence of media descriptors. Only the
-  generated Surface call Trace ID/provenance is returned; descriptors remain
-  ephemeral in this slice. Generic calls do not resolve evidence and do not
-  require media, provider, or resolver availability.
+- In the media mapping, pass optional validated, opaque `EvidenceRefInput`
+  descriptors through generic calls. Return and preserve the generated Trace
+  ID/provenance for the Surface call, but do not return or claim persistence of
+  media descriptors. Only the generated Surface call Trace ID/provenance is
+  returned; descriptors remain ephemeral in this slice. Generic calls do not
+  resolve evidence and do not require media, provider, or resolver availability.
 
 **Non-Goals:**
 
 - Do not make agent own memory.
+- Do not edit `src/api/surfaces.rs` or access Engine repositories directly.
 - Do not add evidence resolution, provider availability detection, or media
   inspection; those behaviors belong to a future resolver issue.
+- Do not add `EvidenceRef` persistence or claim that descriptors are persisted
+  or resolvable.
 - Do not add Dictation orchestration, product-facing mappings, prompt policy, or
   Dictation-specific Engine actions.
 
 **Acceptance Criteria:**
 
 - Generic MCP/chat smoke demonstrates all five Surfaces.
+- Text-capable tools work after Issue 3.6 without Foundation F1 / #175.
 - Agent response includes trace provenance where appropriate.
 - Calls use generic Capture, Performance, Reflection, Planning, and Observation
   capabilities and actions.
@@ -1299,6 +1379,8 @@ required Surface capabilities and F1 contract land.
   `agent_ocr`, `agent_transcribed`, and `mixed` input before any generic Surface
   call, reject an invalid method, and accept both `explicit_acceptance` and
   `explicit_correction` with `status: "confirmed"`.
+- Adapter tests reject media-derived content disguised as typed/pasted input
+  before making any generic Surface call.
 - Confirmed-text processing succeeds when an optional opaque
   `EvidenceRefInput` passes Foundation F1 validation; the adapter makes no
   availability or persistence claim and performs no resolver call. Its response
@@ -1315,9 +1397,9 @@ required Surface capabilities and F1 contract land.
 
 **Background:** A practice adapter should use only the surfaces it needs.
 
-**Depends On:** Issue 5.7.
+**Depends On:** Initial Issue 5.7 acceptance.
 
-**Status:** Deferred until the Issue 5.7 Agent loop is accepted.
+**Status:** Deferred until the initial Issue 5.7 Agent loop is accepted.
 
 **Scope:**
 
