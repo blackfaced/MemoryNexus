@@ -10,6 +10,71 @@ use super::SpaceId;
 
 pub type PracticePlanId = Uuid;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanningRequest {
+    pub space_id: SpaceId,
+    pub namespace_id: NamespaceId,
+    pub namespace: String,
+    pub objective: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NextTaskPlan {
+    pub status: String,
+    pub space_id: SpaceId,
+    pub namespace_id: NamespaceId,
+    pub namespace: String,
+    pub plan_kind: String,
+    pub persistence: String,
+    pub next_task: NextTask,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NextTask {
+    pub title: String,
+    pub prompt: String,
+    pub task_type: String,
+    pub duration_minutes: u16,
+    pub priority: String,
+    pub rationale: String,
+    pub runtime: String,
+}
+
+pub fn build_next_task_plan(request: &PlanningRequest) -> NextTaskPlan {
+    let namespace = compact_whitespace(&request.namespace);
+    let namespace = if namespace.is_empty() {
+        "active namespace".to_string()
+    } else {
+        namespace
+    };
+    let prompt = request
+        .objective
+        .as_deref()
+        .map(compact_whitespace)
+        .filter(|objective| !objective.is_empty())
+        .unwrap_or_else(|| format!("Continue focused work in {namespace}."));
+
+    NextTaskPlan {
+        status: "next_task_ready".to_string(),
+        space_id: request.space_id,
+        namespace_id: request.namespace_id,
+        namespace: namespace.clone(),
+        plan_kind: "response_only_draft".to_string(),
+        persistence: "not_persisted".to_string(),
+        next_task: NextTask {
+            title: format!("Next task for {namespace}"),
+            prompt,
+            task_type: "focused_next_action".to_string(),
+            duration_minutes: 10,
+            priority: "normal".to_string(),
+            rationale:
+                "Deterministic Planning uses the requested namespace and adapter-provided objective only."
+                    .to_string(),
+            runtime: "deterministic".to_string(),
+        },
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "id", rename_all = "snake_case")]
 pub enum PracticePlanSource {
@@ -134,4 +199,8 @@ impl PracticePlan {
             created_at: Utc::now(),
         }
     }
+}
+
+fn compact_whitespace(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
