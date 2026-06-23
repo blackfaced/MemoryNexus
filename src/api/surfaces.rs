@@ -18,6 +18,7 @@ use crate::db::trace::{
 use crate::domain::event::{
     EngineEvent, EngineEventEnvelope, EnginePayloadRef, EnginePayloadRefKind,
 };
+use crate::domain::evidence::{validate_evidence_request, InputConfirmation};
 use crate::domain::practice_plan::{build_next_task_plan, PlanningRequest};
 use crate::domain::reflection::{
     build_reflection_insight, EvidenceRef, EvidenceRefKind, ReflectionEvidence, ReflectionRequest,
@@ -34,6 +35,10 @@ use crate::state::AppState;
 struct CapturePayload {
     title: Option<String>,
     content: String,
+    input_source: Option<String>,
+    input_confirmation: Option<InputConfirmation>,
+    #[serde(default)]
+    evidence_refs: Vec<Value>,
     #[serde(default)]
     tags: Vec<String>,
     #[serde(default)]
@@ -47,6 +52,10 @@ struct SubmitAttemptPayload {
     goal: Option<String>,
     task: Option<String>,
     attempt: Value,
+    input_source: Option<String>,
+    input_confirmation: Option<InputConfirmation>,
+    #[serde(default)]
+    evidence_refs: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +92,7 @@ pub async fn handle(
     request
         .validate()
         .map_err(|error| AppError::BadRequest(error.to_string()))?;
+    validate_media_fields_allowed(request.action, &request.payload)?;
 
     if request.actor != auth_user.user_id {
         return Err(AppError::Unauthorized);
@@ -330,6 +340,11 @@ async fn capture_observation(
             "capture payload content cannot be empty".to_string(),
         ));
     }
+    validate_surface_evidence(
+        payload.input_source.as_deref(),
+        payload.input_confirmation.as_ref(),
+        &payload.evidence_refs,
+    )?;
 
     let space = state
         .repositories
@@ -445,6 +460,11 @@ async fn submit_attempt(
     let started_at = Utc::now();
     let payload: SubmitAttemptPayload = serde_json::from_value(request.payload.clone())
         .map_err(|error| AppError::BadRequest(format!("invalid submitAttempt payload: {error}")))?;
+    validate_surface_evidence(
+        payload.input_source.as_deref(),
+        payload.input_confirmation.as_ref(),
+        &payload.evidence_refs,
+    )?;
 
     require_space_writer(state, payload.space_id, user_id).await?;
     let namespace =
@@ -737,6 +757,41 @@ fn invalid_evidence_ref(source: &EvidenceRef) -> AppError {
 
 fn evidence_refs(evidence: &[ReflectionEvidence]) -> Vec<EvidenceRef> {
     evidence.iter().map(|item| item.source.clone()).collect()
+}
+
+fn validate_surface_evidence(
+    input_source: Option<&str>,
+    input_confirmation: Option<&InputConfirmation>,
+    evidence_refs: &[Value],
+) -> Result<(), AppError> {
+    let refs = if evidence_refs.is_empty() {
+        None
+    } else {
+        Some(evidence_refs)
+    };
+    validate_evidence_request(input_source, input_confirmation, refs)
+        .map_err(|error| AppError::BadRequest(error.to_string()))
+}
+
+fn validate_media_fields_allowed(action: SurfaceAction, payload: &Value) -> Result<(), AppError> {
+    if matches!(
+        action,
+        SurfaceAction::CaptureObservation | SurfaceAction::SubmitAttempt
+    ) {
+        return Ok(());
+    }
+
+    let Some(object) = payload.as_object() else {
+        return Ok(());
+    };
+    for field in ["evidence_refs", "input_confirmation", "input_source"] {
+        if object.contains_key(field) {
+            return Err(AppError::BadRequest(format!(
+                "media evidence field '{field}' is only supported for capture_observation and submit_attempt"
+            )));
+        }
+    }
+    Ok(())
 }
 
 async fn request_manual_consolidation(
@@ -1309,5 +1364,56 @@ mod tests {
             map_sleep_cycle_create_error(Error::RowNotFound),
             AppError::Unauthorized
         ));
+    }
+
+    #[test]
+    fn media_evidence_fields_are_rejected_on_unsupported_surface_actions() {
+        for action in [
+            SurfaceAction::ReviewEvidence,
+            SurfaceAction::GenerateNextTask,
+            SurfaceAction::GetStateSummary,
+            SurfaceAction::RequestConsolidation,
+        ] {
+            let err = validate_media_fields_allowed(
+                action,
+                &json!({
+                    "space_id": Uuid::new_v4(),
+                    "evidence_refs": []
+                }),
+            )
+            .unwrap_err();
+            assert!(matches!(err, AppError::BadRequest(_)));
+
+            let err = validate_media_fields_allowed(
+                action,
+                &json!({
+                    "space_id": Uuid::new_v4(),
+                    "input_confirmation": {
+                        "status": "confirmed",
+                        "method": "explicit_acceptance"
+                    }
+                }),
+            )
+            .unwrap_err();
+            assert!(matches!(err, AppError::BadRequest(_)));
+
+            let err = validate_media_fields_allowed(
+                action,
+                &json!({
+                    "space_id": Uuid::new_v4(),
+                    "input_source": "agent_ocr"
+                }),
+            )
+            .unwrap_err();
+            assert!(matches!(err, AppError::BadRequest(_)));
+        }
+
+        validate_media_fields_allowed(
+            SurfaceAction::CaptureObservation,
+            &json!({"evidence_refs": []}),
+        )
+        .unwrap();
+        validate_media_fields_allowed(SurfaceAction::SubmitAttempt, &json!({"evidence_refs": []}))
+            .unwrap();
     }
 }

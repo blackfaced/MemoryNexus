@@ -211,6 +211,161 @@ async fn performance_surface_rejects_archived_namespace() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn performance_surface_validates_evidence_refs_without_persisting_descriptors() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+
+    let response = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace": "child.english.spelling",
+            "surface": "performance",
+            "action": "submit_attempt",
+            "actor": fixture.owner_user_id,
+            "adapter": "mcp",
+            "payload": {
+                "space_id": fixture.space_id,
+                "feedback_loop_id": fixture.feedback_loop_id,
+                "attempt": {
+                    "target": "because",
+                    "submitted": "becuase"
+                },
+                "input_source": "mixed",
+                "input_confirmation": {
+                    "status": "confirmed",
+                    "method": "explicit_correction"
+                },
+                "evidence_refs": [{
+                    "provider": "agent_transcribed",
+                    "locator": "https://example.test/api_key/access_token_notes.txt?version=3#page=2",
+                    "media_type": "audio/mpeg",
+                    "metadata": {"page": 2, "label": "weekly review"}
+                }]
+            },
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("response should be json");
+    let trace_id = uuid_field(&body, "/data/generated_trace_id");
+
+    let feedback_loop: (String,) =
+        sqlx::query_as("SELECT attempt FROM feedback_loops WHERE id = $1")
+            .bind(fixture.feedback_loop_id)
+            .fetch_one(&pool)
+            .await
+            .expect("feedback loop should exist");
+    assert!(!feedback_loop.0.contains("evidence_refs"));
+    assert!(!feedback_loop.0.contains("access_token_notes"));
+
+    let trace: (Option<String>, Option<String>, Option<Value>, Value) = sqlx::query_as(
+        "SELECT input_summary, output_summary, user_feedback, metadata FROM traces WHERE id = $1",
+    )
+    .bind(trace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("performance trace should exist");
+    let trace_text = format!(
+        "{}{}{}{}",
+        trace.0.unwrap_or_default(),
+        trace.1.unwrap_or_default(),
+        trace.2.unwrap_or(Value::Null),
+        trace.3
+    );
+    assert!(!trace_text.contains("evidence_refs"));
+    assert!(!trace_text.contains("access_token_notes"));
+    assert!(!trace_text.contains("weekly review"));
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn performance_surface_rejects_invalid_evidence_ref_before_feedback_or_trace_write() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let before_attempt: Option<String> =
+        sqlx::query_scalar("SELECT attempt FROM feedback_loops WHERE id = $1")
+            .bind(fixture.feedback_loop_id)
+            .fetch_one(&pool)
+            .await
+            .expect("attempt should query");
+    let before_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces")
+        .fetch_one(&pool)
+        .await
+        .expect("trace count should query");
+
+    let response = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace": "child.english.spelling",
+            "surface": "performance",
+            "action": "submit_attempt",
+            "actor": fixture.owner_user_id,
+            "adapter": "mcp",
+            "payload": {
+                "space_id": fixture.space_id,
+                "feedback_loop_id": fixture.feedback_loop_id,
+                "attempt": {
+                    "target": "because",
+                    "submitted": "becuase"
+                },
+                "input_source": "agent_transcribed",
+                "input_confirmation": {
+                    "status": "confirmed",
+                    "method": "explicit_acceptance"
+                },
+                "evidence_refs": [{
+                    "provider": "agent_transcribed",
+                    "locator": "https://example.test/media/1",
+                    "media_type": "audio/mpeg",
+                    "metadata": {"note": "Bearer fixture-secret"}
+                }]
+            },
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("response should be json");
+    let diagnostic = body.to_string();
+    assert!(diagnostic.contains("invalid_evidence_reference"));
+    assert!(diagnostic.contains("secret_value_pattern_denied"));
+    assert!(!diagnostic.contains("Bearer fixture-secret"));
+
+    let after_attempt: Option<String> =
+        sqlx::query_scalar("SELECT attempt FROM feedback_loops WHERE id = $1")
+            .bind(fixture.feedback_loop_id)
+            .fetch_one(&pool)
+            .await
+            .expect("attempt should query");
+    let after_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces")
+        .fetch_one(&pool)
+        .await
+        .expect("trace count should query");
+    assert_eq!(after_attempt, before_attempt);
+    assert_eq!(after_traces, before_traces);
+}
+
 struct Fixture {
     owner_user_id: Uuid,
     owner_email: String,
