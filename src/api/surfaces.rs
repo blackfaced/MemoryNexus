@@ -18,6 +18,7 @@ use crate::db::trace::{
 use crate::domain::event::{
     EngineEvent, EngineEventEnvelope, EnginePayloadRef, EnginePayloadRefKind,
 };
+use crate::domain::practice_plan::{build_next_task_plan, PlanningRequest};
 use crate::domain::reflection::{
     build_reflection_insight, EvidenceRef, EvidenceRefKind, ReflectionEvidence, ReflectionRequest,
 };
@@ -63,6 +64,12 @@ struct ReviewEvidencePayload {
     evidence: Vec<ReflectionEvidence>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GenerateNextTaskPayload {
+    space_id: Uuid,
+    objective: Option<String>,
+}
+
 pub async fn handle(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
@@ -86,6 +93,9 @@ pub async fn handle(
         (Surface::Reflection, SurfaceAction::ReviewEvidence) => {
             review_evidence(&state, auth_user.user_id, request).await
         }
+        (Surface::Planning, SurfaceAction::GenerateNextTask) => {
+            generate_next_task(&state, auth_user.user_id, request).await
+        }
         (Surface::Observation, SurfaceAction::RequestConsolidation) => {
             request_manual_consolidation(&state, auth_user.user_id, request).await
         }
@@ -94,6 +104,93 @@ pub async fn handle(
             request.surface, request.action
         ))),
     }
+}
+
+async fn generate_next_task(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let started_at = Utc::now();
+    let payload: GenerateNextTaskPayload = serde_json::from_value(request.payload.clone())
+        .map_err(|error| {
+            AppError::BadRequest(format!("invalid generateNextTask payload: {error}"))
+        })?;
+
+    require_space_writer(state, payload.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+
+    let plan = build_next_task_plan(&PlanningRequest {
+        space_id: payload.space_id,
+        namespace_id: namespace.id,
+        namespace: request.namespace.clone(),
+        objective: payload.objective.clone(),
+    });
+    let output_summary = format!(
+        "Generated response-only next task for {}: {}",
+        plan.namespace, plan.next_task.prompt
+    );
+
+    let completed_at = Utc::now();
+    let trace = state
+        .repositories
+        .traces
+        .create_completed(CreateCompletedTrace {
+            space_id: payload.space_id,
+            namespace_id: Some(namespace.id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Planning,
+            mode: trace_mode(request.context.mode.as_deref())?,
+            runtime: deterministic_trace_runtime(request.context.runtime_preference),
+            input_summary: Some(format!(
+                "Planning generateNextTask in namespace {}",
+                request.namespace
+            )),
+            output_summary: Some(output_summary),
+            started_at,
+            completed_at,
+            latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: Vec::new(),
+            user_feedback: payload
+                .objective
+                .map(|objective| json!({"objective": objective})),
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "surface": request.surface,
+                "action": request.action,
+                "adapter": request.adapter,
+                "namespace": request.namespace,
+                "deterministic": true,
+                "plan_kind": plan.plan_kind.clone(),
+                "persistence": plan.persistence.clone(),
+            }),
+        })
+        .await
+        .map_err(AppError::Database)?;
+
+    let result = serde_json::to_value(plan)
+        .map_err(|error| AppError::Internal(format!("planning response failed: {error}")))?;
+    let response = SurfaceResponse::new(
+        Surface::Planning,
+        SurfaceAction::GenerateNextTask,
+        result,
+        trace.id,
+        vec!["Submit the next task through Performance Surface after it is attempted.".to_string()],
+        SurfaceVisibility::User,
+    );
+
+    Ok((StatusCode::OK, Json(ApiResponse::success(response))))
 }
 
 async fn capture_observation(
