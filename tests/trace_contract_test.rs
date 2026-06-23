@@ -120,6 +120,10 @@ fn trace_enums_accept_only_contract_values() {
         TraceTaskType::Capture
     );
     assert_eq!(
+        serde_json::from_str::<TraceTaskType>("\"observation\"").unwrap(),
+        TraceTaskType::Observation
+    );
+    assert_eq!(
         serde_json::from_str::<TraceMode>("\"focused\"").unwrap(),
         TraceMode::Focused
     );
