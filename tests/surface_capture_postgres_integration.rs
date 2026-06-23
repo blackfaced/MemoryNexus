@@ -202,6 +202,151 @@ async fn capture_surface_rejects_missing_auth_invalid_namespace_and_viewer_write
     assert_eq!(viewer_write.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn capture_surface_validates_evidence_refs_without_persisting_descriptors() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_capture_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+
+    let response = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace": "child.english.spelling",
+            "surface": "capture",
+            "action": "capture_observation",
+            "actor": fixture.owner_user_id,
+            "adapter": "mcp",
+            "payload": {
+                "title": "OCR-confirmed dictation",
+                "content": "because, friend",
+                "input_source": "agent_ocr",
+                "input_confirmation": {
+                    "status": "confirmed",
+                    "method": "explicit_acceptance"
+                },
+                "evidence_refs": [{
+                    "provider": "agent_ocr",
+                    "locator": "s3://study/archive/token-guidelines.pdf",
+                    "media_type": "image/png",
+                    "metadata": {"page": 2, "label": "weekly review"}
+                }],
+                "metadata": {"surface_note": "descriptor-free persistence"}
+            },
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body: Value = response.json().await.expect("response should be json");
+    let trace_id = uuid_field(&body, "/data/generated_trace_id");
+    let memory_id = uuid_field(&body, "/data/result/memory_id");
+
+    let memory: (Value,) = sqlx::query_as("SELECT source_metadata FROM memories WHERE id = $1")
+        .bind(memory_id)
+        .fetch_one(&pool)
+        .await
+        .expect("captured memory should exist");
+    assert_eq!(memory.0.get("evidence_refs"), None);
+    assert!(
+        !memory.0.to_string().contains("token-guidelines"),
+        "memory metadata must not persist raw evidence locators"
+    );
+
+    let trace: (Option<String>, Option<String>, Value) =
+        sqlx::query_as("SELECT input_summary, output_summary, metadata FROM traces WHERE id = $1")
+            .bind(trace_id)
+            .fetch_one(&pool)
+            .await
+            .expect("capture trace should exist");
+    let trace_text = format!(
+        "{}{}{}",
+        trace.0.unwrap_or_default(),
+        trace.1.unwrap_or_default(),
+        trace.2
+    );
+    assert!(!trace_text.contains("evidence_refs"));
+    assert!(!trace_text.contains("token-guidelines"));
+    assert!(!trace_text.contains("weekly review"));
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn capture_surface_rejects_invalid_evidence_ref_before_memory_or_trace_write() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_capture_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let before_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memories")
+        .fetch_one(&pool)
+        .await
+        .expect("memory count should query");
+    let before_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces")
+        .fetch_one(&pool)
+        .await
+        .expect("trace count should query");
+
+    let response = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace": "child.english.spelling",
+            "surface": "capture",
+            "action": "capture_observation",
+            "actor": fixture.owner_user_id,
+            "adapter": "mcp",
+            "payload": {
+                "content": "confirmed text survives only if evidence is safe",
+                "input_source": "agent_ocr",
+                "input_confirmation": {
+                    "status": "confirmed",
+                    "method": "explicit_acceptance"
+                },
+                "evidence_refs": [{
+                    "provider": "agent_ocr",
+                    "locator": "https://example.test/media/1?X-Amz-Signature=fixture-secret",
+                    "media_type": "image/png",
+                    "metadata": {}
+                }]
+            },
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("response should be json");
+    let diagnostic = body.to_string();
+    assert!(diagnostic.contains("invalid_evidence_reference"));
+    assert!(diagnostic.contains("locator_query_denied"));
+    assert!(!diagnostic.contains("fixture-secret"));
+    assert!(!diagnostic.contains("X-Amz-Signature=fixture-secret"));
+
+    let after_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memories")
+        .fetch_one(&pool)
+        .await
+        .expect("memory count should query");
+    let after_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces")
+        .fetch_one(&pool)
+        .await
+        .expect("trace count should query");
+    assert_eq!(after_memories, before_memories);
+    assert_eq!(after_traces, before_traces);
+}
+
 fn uuid_field(value: &Value, pointer: &str) -> Uuid {
     value
         .pointer(pointer)
