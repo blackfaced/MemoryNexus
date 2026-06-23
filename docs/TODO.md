@@ -168,10 +168,11 @@ Recommended sequence:
 8. Add visibility / permission fields, initially with simple policy.
 9. Add tests for routing, validation, response shaping, and Trace creation.
 
-In parallel with #147 and #148, add a required pull-request CI job for
-PostgreSQL-backed Surface integration tests. Pin service versions and report
-ignored integration tests explicitly. Network or external-provider checks stay
-manual or scheduled so they cannot make the deterministic merge gate flaky.
+In parallel with #147 and #148, implement #177 to add a required pull-request
+CI job for PostgreSQL-backed Surface integration tests. Pin service versions,
+enumerate ignored integration tests explicitly, and fail if any enumerated test
+file is not executed. Network or external-provider checks stay manual or
+scheduled so they cannot make the deterministic merge gate flaky.
 
 Non-goals:
 
@@ -222,6 +223,7 @@ Execution dependency graph:
 | Depends On | Issue Unlocked |
 | --- | --- |
 | #146 review, PostgreSQL verification, and merge | #147 Planning Surface |
+| #147/#148 shared Surface work | #177 required PostgreSQL Surface integration CI |
 | #147 | #148 Observation Surface |
 | #148 | #155 typed/pasted word-list Capture |
 | #155 typed/pasted path | #156 typed/pasted attempt submission |
@@ -248,7 +250,7 @@ lands.
 Recommended sequence:
 
 1. Review and merge #146 only after its PostgreSQL integration verification,
-   then implement #147 and #148 in order. Run the required PostgreSQL Surface
+   then implement #147 and #148 in order. Run #177 required PostgreSQL Surface
    integration CI work in parallel with #147/#148; keep external-provider
    checks manual or scheduled.
 2. After #148, implement #155 typed/pasted word-list Capture, then #156
@@ -405,6 +407,8 @@ Likely mapping:
 - #61 / #62 / #63 lifecycle fixtures -> Milestone 2 / 7 prototype work.
 - #128 / #129 / #130 install and deployment issues -> post-#160 distribution
   wave, not the initial Agent-smoke critical path.
+- #177 required PostgreSQL Surface integration CI -> Milestone 3 enabler in
+  parallel with #147/#148.
 
 ## Supporting Distribution Track
 

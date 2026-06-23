@@ -589,6 +589,49 @@ dispatcher.
 - `src/domain/growth_model.rs`
 - `tests/*surface_observation*`
 
+### Issue 3.CI: Require PostgreSQL Surface Integration CI
+
+**GitHub:** #177
+
+**Background:** Surface Gateway work now depends on shared dispatcher behavior
+and PostgreSQL-backed integration tests. Unit CI alone is not enough evidence
+before Planning, Observation, and Agent-facing Surface tools stack on the same
+contract.
+
+**Scope:**
+
+- Add a required pull-request CI job for PostgreSQL-backed Surface integration
+  tests.
+- Pin the PostgreSQL service version and use deterministic database isolation.
+- Dynamically enumerate `tests/surface_*_postgres_integration.rs`, convert file
+  stems to cargo `--test` names, and run each with `--ignored`.
+- Print both the enumerated and executed integration-test manifests.
+- Fail when the enumerated set is empty, any enumerated test is not executed, or
+  any test fails.
+- Leave branch-protection enrollment to the Coordinator after stable evidence:
+  five consecutive eligible successful runs across at least two PRs and one
+  main push, with no flake reruns.
+
+**Non-Goals:**
+
+- Do not add credentialed provider tests to the required merge gate.
+- Do not make Qdrant `latest` part of deterministic CI.
+- Do not change Surface behavior or test semantics in the CI-only issue.
+
+**Acceptance Criteria:**
+
+- A deliberately failing Surface PostgreSQL integration fixture blocks a PR.
+- A passing rerun unblocks the PR.
+- The job fails if `tests/surface_*_postgres_integration.rs` files are present
+  but not executed.
+- The local equivalent command is documented in the workflow or issue notes.
+- OpenRouter and other network/provider acceptance remains manual or scheduled.
+
+**Possible Files:**
+
+- `.github/workflows/*`
+- `tests/surface_*_postgres_integration.rs`
+
 ## Milestone 4: Event + Sleep Engine MVP
 
 ### Issue 4.1: Define Engine Event Model

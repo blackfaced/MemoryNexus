@@ -36,7 +36,7 @@ Encode these delivery edges explicitly:
 
 - [ ] **Step 3: Add the CI and distribution waves**
 
-State that required PostgreSQL Surface integration CI is started in parallel with #147/#148. Keep #128, #129, and #130 after initial #160 acceptance, and identify #130 as P1 for the Mac mini deployment path.
+State that #177 required PostgreSQL Surface integration CI is started in parallel with #147/#148. Keep #128, #129, and #130 after initial #160 acceptance, and identify #130 as P1 for the Mac mini deployment path.
 
 - [ ] **Step 4: Verify roadmap consistency**
 
@@ -99,7 +99,9 @@ Expected: text-first delivery and media gating are both explicit, with no contra
 
 **Files:**
 - No repository files
-- Update GitHub issues: `#146`, `#147`, `#148`, `#150`, `#152`, `#153`, `#155`, `#156`, `#158`, `#159`, `#160`, `#162`, `#175`, `#128`, `#130`
+- Update GitHub issue bodies from canonical sections for: `#146`, `#147`, `#148`, `#150`, `#152`, `#153`, `#155`, `#156`, `#157`, `#158`, `#159`, `#160`, `#162`, `#175`
+- Update scheduling and priority metadata for: `#130`
+- Keep `#128` and `#129` as post-#160 distribution issues without body sync in this pass.
 
 - [ ] **Step 1: Update issue bodies from `docs/issues.md`**
 
@@ -125,13 +127,14 @@ gh issue view 130 --json number,state,labels,body,url
 
 Expected: all three issues carry `priority:p1`, and #160/#162 show staged initial-versus-media acceptance.
 
-### Task 4: Create The Required Integration CI Issue
+### Task 4: Verify The Required Integration CI Issue
 
 **Files:**
-- No repository files
-- Create: one GitHub issue in the Surface Gateway or CI area
+- Modify: `docs/TODO.md`
+- Modify: `docs/issues.md`
+- Existing GitHub issue: #177
 
-- [ ] **Step 1: Create an enabler issue with explicit scope**
+- [ ] **Step 1: Confirm #177 has explicit scope**
 
 The issue title is:
 
@@ -139,7 +142,7 @@ The issue title is:
 CI: Require PostgreSQL Surface integration tests on pull requests
 ```
 
-Its scope must include a pinned PostgreSQL service, deterministic database isolation, all `surface_*_postgres_integration` tests, path-aware execution for Rust/migration changes, and branch-protection enrollment after the job is proven stable.
+Its scope must include a pinned PostgreSQL service, deterministic database isolation, dynamic enumeration of all `tests/surface_*_postgres_integration.rs` files, exact execution-set equality, and branch-protection enrollment only after the Coordinator observes five consecutive eligible successful runs across at least two PRs and one main push with no flake reruns.
 
 - [ ] **Step 2: Keep external systems out of the required job**
 
@@ -147,17 +150,17 @@ State that OpenRouter and other credentialed provider tests remain manual or sch
 
 - [ ] **Step 3: Define acceptance criteria**
 
-Require a deliberately failing integration fixture to block a PR, a passing rerun to unblock it, no use of `qdrant:latest`, and documentation of the local equivalent command.
+Require a deliberately failing integration fixture to block a PR, a passing rerun to unblock it, no use of `qdrant:latest`, documentation of the local equivalent command, and failure if enumerated ignored Surface integration tests are not executed.
 
-- [ ] **Step 4: Verify issue creation**
+- [ ] **Step 4: Verify issue state**
 
 Run:
 
 ```bash
-gh issue view <new-number> --json number,title,state,labels,milestone,body,url
+gh issue view 177 --json number,title,state,labels,milestone,body,url
 ```
 
-Expected: the issue is open, P0, testable, and names the exact required job boundary.
+Expected: #177 is open, P0, testable, in the Surface Gateway milestone, and names the exact required job boundary.
 
 ### Task 5: Review, Commit, Push, And Open The Planning PR
 

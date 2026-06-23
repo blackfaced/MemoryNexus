@@ -68,9 +68,10 @@ evidence descriptors.
 
 1. Implement #147 Planning after #146 lands.
 2. Implement #148 Observation after #147 lands.
-3. Add a P0 CI issue that makes PostgreSQL Surface integration tests a required
-   pull-request check. Pin service versions and keep external-provider tests
-   scheduled or manual.
+3. Track #177 as the P0 CI issue that makes PostgreSQL Surface integration
+   tests a required pull-request check. Pin service versions, require exact
+   enumeration/execution of ignored Surface integration tests, and keep
+   external-provider tests scheduled or manual.
 
 The shared `src/api/surfaces.rs` dispatcher remains serialized through this
 wave.
@@ -142,6 +143,7 @@ This ordering prevents the Dictation slice from bypassing the generic
 | #160 | Promote from P2 to P1; initial smoke depends on #155-#158 and text-capable #162. |
 | #162 | Promote from P2 to P1; text tools after #148, media mapping after #175. |
 | #175 | Keep P1 and mandatory for every media-derived input path. |
+| #177 | Add P0 required PostgreSQL Surface integration CI in parallel with #147/#148. |
 | #128 | Publish after the Agent loop is accepted so the first release is useful. |
 | #130 | Promote from P2 to P1 for the post-smoke Mac mini deployment path. |
 
