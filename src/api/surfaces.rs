@@ -18,6 +18,9 @@ use crate::db::trace::{
 use crate::domain::event::{
     EngineEvent, EngineEventEnvelope, EnginePayloadRef, EnginePayloadRefKind,
 };
+use crate::domain::reflection::{
+    build_reflection_insight, EvidenceRef, EvidenceRefKind, ReflectionEvidence, ReflectionRequest,
+};
 use crate::domain::sleep_cycle::{SleepCycleStatus, SleepCycleType};
 use crate::domain::surface::{
     RuntimePreference, Surface, SurfaceAction, SurfaceAdapter, SurfaceRequest, SurfaceResponse,
@@ -52,6 +55,14 @@ struct ManualConsolidationPayload {
     evidence_window_end: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ReviewEvidencePayload {
+    space_id: Uuid,
+    question: Option<String>,
+    #[serde(default)]
+    evidence: Vec<ReflectionEvidence>,
+}
+
 pub async fn handle(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
@@ -71,6 +82,9 @@ pub async fn handle(
         }
         (Surface::Performance, SurfaceAction::SubmitAttempt) => {
             submit_attempt(&state, auth_user.user_id, request).await
+        }
+        (Surface::Reflection, SurfaceAction::ReviewEvidence) => {
+            review_evidence(&state, auth_user.user_id, request).await
         }
         (Surface::Observation, SurfaceAction::RequestConsolidation) => {
             request_manual_consolidation(&state, auth_user.user_id, request).await
@@ -329,6 +343,181 @@ async fn submit_attempt(
     );
 
     Ok((StatusCode::OK, Json(ApiResponse::success(response))))
+}
+
+async fn review_evidence(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let started_at = Utc::now();
+    let payload: ReviewEvidencePayload =
+        serde_json::from_value(request.payload.clone()).map_err(|error| {
+            AppError::BadRequest(format!("invalid reviewEvidence payload: {error}"))
+        })?;
+
+    require_space_writer(state, payload.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+    validate_reflection_evidence_sources(
+        state,
+        user_id,
+        payload.space_id,
+        namespace.id,
+        &payload.evidence,
+    )
+    .await?;
+
+    let insight = build_reflection_insight(&ReflectionRequest {
+        space_id: payload.space_id,
+        namespace_id: namespace.id,
+        namespace: request.namespace.clone(),
+        question: payload.question.clone(),
+        evidence: payload.evidence.clone(),
+    });
+
+    let completed_at = Utc::now();
+    let trace = state
+        .repositories
+        .traces
+        .create_completed(CreateCompletedTrace {
+            space_id: payload.space_id,
+            namespace_id: Some(namespace.id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Review,
+            mode: trace_mode(request.context.mode.as_deref())?,
+            runtime: deterministic_trace_runtime(request.context.runtime_preference),
+            input_summary: Some(format!(
+                "Reflection reviewEvidence in namespace {} with {} evidence items",
+                request.namespace, insight.evidence_count
+            )),
+            output_summary: Some(insight.summary.clone()),
+            started_at,
+            completed_at,
+            latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: Vec::new(),
+            user_feedback: payload
+                .question
+                .map(|question| json!({"question": question})),
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "surface": request.surface,
+                "action": request.action,
+                "adapter": request.adapter,
+                "namespace": request.namespace,
+                "evidence_count": insight.evidence_count,
+                "evidence_refs": evidence_refs(&payload.evidence),
+                "deterministic": true,
+            }),
+        })
+        .await
+        .map_err(AppError::Database)?;
+
+    let follow_up_suggestions = if insight.evidence_count == 0 {
+        vec!["Provide confirmed evidence before asking for a reflection.".to_string()]
+    } else {
+        vec!["Use Planning Surface when this reflection should become a next task.".to_string()]
+    };
+
+    let result = serde_json::to_value(insight)
+        .map_err(|error| AppError::Internal(format!("reflection response failed: {error}")))?;
+    let response = SurfaceResponse::new(
+        Surface::Reflection,
+        SurfaceAction::ReviewEvidence,
+        result,
+        trace.id,
+        follow_up_suggestions,
+        SurfaceVisibility::User,
+    );
+
+    Ok((StatusCode::OK, Json(ApiResponse::success(response))))
+}
+
+async fn validate_reflection_evidence_sources(
+    state: &AppState,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    evidence: &[ReflectionEvidence],
+) -> Result<(), AppError> {
+    for item in evidence {
+        match item.source.kind {
+            EvidenceRefKind::Trace => {
+                let trace = state
+                    .repositories
+                    .traces
+                    .find_for_user(item.source.id, user_id)
+                    .await
+                    .map_err(AppError::Database)?
+                    .ok_or_else(|| invalid_evidence_ref(&item.source))?;
+                if trace.space_id != space_id || trace.namespace_id != Some(namespace_id) {
+                    return Err(invalid_evidence_ref(&item.source));
+                }
+            }
+            EvidenceRefKind::Memory => {
+                let memory = state
+                    .repositories
+                    .memories
+                    .find_by_id(item.source.id)
+                    .await
+                    .map_err(AppError::Database)?
+                    .ok_or_else(|| invalid_evidence_ref(&item.source))?;
+                if memory.space_id != space_id || memory.namespace_id != Some(namespace_id) {
+                    return Err(invalid_evidence_ref(&item.source));
+                }
+            }
+            EvidenceRefKind::FeedbackLoop => {
+                let feedback_loop = state
+                    .repositories
+                    .feedback_loops
+                    .find_for_user(item.source.id, user_id)
+                    .await
+                    .map_err(AppError::Database)?
+                    .ok_or_else(|| invalid_evidence_ref(&item.source))?;
+                if feedback_loop.space_id != space_id || feedback_loop.namespace_id != namespace_id
+                {
+                    return Err(invalid_evidence_ref(&item.source));
+                }
+            }
+            EvidenceRefKind::ReviewReport => {
+                let review_report = state
+                    .repositories
+                    .review_reports
+                    .find_for_user(item.source.id, user_id)
+                    .await
+                    .map_err(AppError::Database)?
+                    .ok_or_else(|| invalid_evidence_ref(&item.source))?;
+                if review_report.space_id != space_id
+                    || review_report.namespace_id != Some(namespace_id)
+                {
+                    return Err(invalid_evidence_ref(&item.source));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn invalid_evidence_ref(source: &EvidenceRef) -> AppError {
+    AppError::BadRequest(format!(
+        "reflection evidence reference {:?} {} was not found in the requested Space and Namespace",
+        source.kind, source.id
+    ))
+}
+
+fn evidence_refs(evidence: &[ReflectionEvidence]) -> Vec<EvidenceRef> {
+    evidence.iter().map(|item| item.source.clone()).collect()
 }
 
 async fn request_manual_consolidation(
