@@ -475,7 +475,11 @@ plan.
 
 **Background:** Reflection answers "what does this mean?" but first version can be deterministic.
 
-**Unlocks:** Issue 3.5.
+**Status:** Implemented in PR #176; pending review, PostgreSQL integration
+verification, merge, and closure of GitHub #146. This status does not complete
+Issue 2.8 / GitHub #142.
+
+**Unlocks:** Issue 3.5 / GitHub #147.
 
 **Dispatcher Ownership:** This issue starts the serialized dispatcher sequence
 from the completed Capture/Performance baseline. Reflection-domain workers own
@@ -498,6 +502,8 @@ from the completed Capture/Performance baseline. Reflection-domain workers own
 - Reflection Surface returns stable deterministic result.
 - Trace task type reflects review/reflection.
 - Tests pass without external credentials.
+- PostgreSQL integration tests verify Reflection routing, Trace provenance, and
+  same-Space behavior through the shared dispatcher.
 
 **Possible Files:**
 
@@ -509,12 +515,12 @@ from the completed Capture/Performance baseline. Reflection-domain workers own
 
 **Background:** Planning answers "what should happen next?".
 
-**Depends On:** Issue 3.4.
+**Depends On:** Issue 3.4 / GitHub #146.
 
-**Unlocks:** Issue 3.6.
+**Unlocks:** Issue 3.6 / GitHub #148.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
-after Issue 3.4 lands. Planning-domain workers own
+after Issue 3.4 / GitHub #146 lands. Planning-domain workers own
 `src/domain/practice_plan.rs` and must not concurrently edit the shared
 dispatcher.
 
@@ -533,6 +539,9 @@ dispatcher.
 
 - Planning Surface can return a next task for a namespace.
 - Trace links generated PracticePlan when that model exists, or stores output summary.
+- PostgreSQL integration tests verify Planning routing, Trace provenance, and
+  same-Space behavior through the shared dispatcher after Issue 3.4 / GitHub
+  #146 lands.
 
 **Possible Files:**
 
@@ -544,12 +553,14 @@ dispatcher.
 
 **Background:** Observation answers "how is long-term state changing?".
 
-**Depends On:** Issue 3.5.
+**Depends On:** Issue 3.5 / GitHub #147.
 
-**Unlocks:** Foundation F1; provides a required capability for Issue 6.2.
+**Unlocks:** The typed/pasted path in Issue 5.2 / GitHub #155, the text-capable
+generic tools in Issue 6.2 / GitHub #162, and Foundation F1 / GitHub #175 for
+media validation.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
-after Issue 3.5 lands. Growth-model workers own
+after Issue 3.5 / GitHub #147 lands. Growth-model workers own
 `src/domain/growth_model.rs` and must not concurrently edit the shared
 dispatcher.
 
@@ -568,12 +579,58 @@ dispatcher.
 
 - Observation Surface can return namespace state.
 - Response is adapter-shaped, not raw DB rows.
+- PostgreSQL integration tests verify Observation routing, Trace provenance,
+  and same-Space behavior through the shared dispatcher after Issue 3.5 /
+  GitHub #147 lands.
 
 **Possible Files:**
 
 - `src/api/surfaces.rs`
 - `src/domain/growth_model.rs`
 - `tests/*surface_observation*`
+
+### Issue 3.CI: Require PostgreSQL Surface Integration CI
+
+**GitHub:** #177
+
+**Background:** Surface Gateway work now depends on shared dispatcher behavior
+and PostgreSQL-backed integration tests. Unit CI alone is not enough evidence
+before Planning, Observation, and Agent-facing Surface tools stack on the same
+contract.
+
+**Scope:**
+
+- Add a required pull-request CI job for PostgreSQL-backed Surface integration
+  tests.
+- Pin the PostgreSQL service version and use deterministic database isolation.
+- Dynamically enumerate `tests/surface_*_postgres_integration.rs`, convert file
+  stems to cargo `--test` names, and run each with `--ignored`.
+- Print both the enumerated and executed integration-test manifests.
+- Fail when the enumerated set is empty, any enumerated test is not executed, or
+  any test fails.
+- Leave branch-protection enrollment to the Coordinator after stable evidence:
+  five consecutive eligible successful runs across at least two PRs and one
+  main push, with no flake reruns.
+
+**Non-Goals:**
+
+- Do not add credentialed provider tests to the required merge gate.
+- Do not make Qdrant `latest` part of deterministic CI.
+- Do not change Surface behavior or test semantics in the CI-only issue.
+
+**Acceptance Criteria:**
+
+- A deliberately failing Surface PostgreSQL integration fixture blocks a PR.
+- A passing rerun unblocks the PR.
+- The job fails if `tests/surface_*_postgres_integration.rs` files are present
+  but not executed.
+- The local equivalent command is documented in the workflow or issue notes.
+- OpenRouter and other network/provider acceptance remains manual or scheduled.
+
+**Possible Files:**
+
+- `.github/workflows/*`
+- `tests/surface_*_postgres_integration.rs`
 
 ## Milestone 4: Event + Sleep Engine MVP
 
@@ -607,6 +664,10 @@ blocking foreground responses.
 ### Issue 4.2: Publish ObservationCaptured And AttemptSubmitted
 
 **Background:** Capture and Performance Surface calls should emit events.
+
+**Scheduling:** Issue 4.2 / GitHub #150 may proceed in parallel with the
+Dictation critical path. It does not block the initial manual Agent smoke in
+Issue 5.7 / GitHub #160.
 
 **Scope:**
 
@@ -665,9 +726,17 @@ blocking foreground responses.
 
 **Background:** SleepCycle should produce a simple GrowthModel update.
 
+**Depends On:** For the selected Dictation critical path, Issue 5.4 / GitHub
+#157 provides the deterministic mistake evidence that this issue
+aggregates. Generic deterministic aggregation behavior remains reusable outside
+Dictation.
+
+**Unlocks:** Issue 4.5 / GitHub #153.
+
 **Scope:**
 
-- Read recent Trace / FeedbackLoop evidence.
+- Read recent Trace / FeedbackLoop evidence, including the deterministic
+  Dictation classifications produced by Issue 5.4 / GitHub #157.
 - Detect repeated patterns and evidence gaps deterministically.
 - Update or produce GrowthModel summary.
 
@@ -692,6 +761,10 @@ blocking foreground responses.
 ### Issue 4.5: Generate Simple PracticePlan
 
 **Background:** Planning should use GrowthModel evidence to suggest a next step.
+
+**Depends On:** Issue 4.4 / GitHub #152.
+
+**Unlocks:** Issue 5.5 / GitHub #158.
 
 **Scope:**
 
@@ -721,23 +794,30 @@ Execution dependency graph:
 
 | Depends On | Issue Unlocked |
 | --- | --- |
-| Issue 3.4 | Issue 3.5 |
-| Issue 3.5 | Issue 3.6 |
-| Issue 3.6 | Foundation F1 |
-| Foundation F1 | Issue 5.2 |
-| Foundation F1 + Issue 5.2 | Issue 5.3 |
-| Issue 5.3 | Issues 5.4 and 5.6 |
-| Issue 5.4 | Issue 5.5 |
-| Foundation F1 + Issues 3.4, 3.5, and 3.6 | Issue 6.2 |
-| Issues 5.2 through 5.6 + Issue 6.2 | Issue 5.7 |
-| Issue 5.7 | Issue 6.3 |
+| Issue 3.4 / GitHub #146 review, PostgreSQL verification, and merge | Issue 3.5 / GitHub #147 |
+| Issue 3.5 / GitHub #147 | Issue 3.6 / GitHub #148 |
+| Issue 3.6 / GitHub #148 | Issue 5.2 / GitHub #155 typed/pasted path |
+| Issue 5.2 / GitHub #155 typed/pasted path | Issue 5.3 / GitHub #156 typed/pasted path |
+| Issue 5.3 / GitHub #156 typed/pasted path | Issue 5.4 / GitHub #157 |
+| Issue 3.6 / GitHub #148 | Issue 6.2 / GitHub #162 text-capable generic Surface tools |
+| Issue 3.6 / GitHub #148 | Foundation F1 / GitHub #175 |
+| Foundation F1 / GitHub #175 | Media extensions in Issue 5.2 / GitHub #155, Issue 5.3 / GitHub #156, and Issue 6.2 / GitHub #162 |
+| Issue 5.4 / GitHub #157 | Issue 4.4 / GitHub #152 |
+| Issue 4.4 / GitHub #152 | Issue 4.5 / GitHub #153 |
+| Issue 4.5 / GitHub #153 | Issue 5.5 / GitHub #158 |
+| Issues 5.2-5.5 / GitHub #155-#158 + text-capable Issue 6.2 / GitHub #162 | Initial Issue 5.7 / GitHub #160 Agent smoke |
+| Issue 4.4 / GitHub #152 + Issue 5.3 / GitHub #156 | Issue 5.6 / GitHub #159 read-only Observation projection |
+| Issue 5.6 / GitHub #159 deterministic multi-day fixtures | Extended seven-day Issue 5.7 / GitHub #160 acceptance |
+| Initial Issue 5.7 / GitHub #160 acceptance | Issue 6.3 / GitHub #163 |
 
-The graph is acyclic. Its primary shared-dispatcher execution chain is Issue
-3.4 -> Issue 3.5 -> Issue 3.6 -> Foundation F1 -> Issue 5.2 -> Issue 5.3.
-Every affected issue that edits `src/api/surfaces.rs` takes dispatcher
-integration ownership only after its listed predecessor lands. Other workers
-own only their domain-specific modules and do not concurrently integrate the
-shared dispatcher. Redundant capability edges into Issue 6.2 remain explicit.
+The graph is acyclic. The serialized shared-dispatcher chain is Issue 3.4 /
+GitHub #146 -> Issue 3.5 / GitHub #147 -> Issue 3.6 / GitHub #148. After that,
+typed/pasted Dictation work and the text-capable generic MCP Surface tools can
+proceed without Foundation F1 / GitHub #175. Foundation F1 / #175 opens only
+the media-derived extensions. Every affected issue that edits
+`src/api/surfaces.rs` takes dispatcher integration ownership only after its
+listed predecessor lands. Adapter workers never own the shared dispatcher, and
+domain workers do not concurrently integrate it.
 
 ### Issue 5.1: Define Dictation Coach Contract
 
@@ -773,14 +853,15 @@ media, but ADR-021 and the media evidence contract currently define a docs-only
 contract. Descriptor validation must land before Dictation Capture accepts
 `EvidenceRefInput`.
 
-**Depends On:** Issue 3.6.
+**Depends On:** Issue 3.6 / GitHub #148.
 
-**Unlocks:** Issue 5.2; contributes to Issues 5.3 and 6.2 with their other
-dependencies.
+**Unlocks:** The media-derived extensions in Issue 5.2 / GitHub #155, Issue 5.3
+/ GitHub #156, and Issue 6.2 / GitHub #162. It does not block their typed/pasted
+or generic text-capable paths.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
-after Issue 3.6 lands. Evidence-domain workers own `src/domain/evidence.rs` and
-must not concurrently edit the shared dispatcher.
+after Issue 3.6 / GitHub #148 lands. Evidence-domain workers own
+`src/domain/evidence.rs` and must not concurrently edit the shared dispatcher.
 
 **Scope:**
 
@@ -972,36 +1053,55 @@ are called.
 
 **Background:** The daily loop begins by recording today's words, phrases, or sentences.
 
-**Depends On:** Foundation F1.
+**Depends On:** Issue 3.6 / GitHub #148 for the typed/pasted path. The media extension for
+`agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
+`evidence_refs` additionally depends on Foundation F1 / GitHub #175.
 
-**Unlocks:** Issue 5.3.
+**Unlocks:** The typed/pasted path unlocks the typed/pasted path in Issue 5.3 /
+GitHub #156; the media extension unlocks the corresponding media attempt path.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
-after Foundation F1 lands. Dictation-domain workers own
+after Issue 3.6 / GitHub #148 lands. Dictation-domain workers own
 `src/domain/dictation.rs` and must not concurrently edit the shared dispatcher.
 
 **Scope:**
 
 - Add Capture Surface flow for dictation list.
 - Use namespace such as `child.chinese.dictation`.
-- Accept confirmed text with `typed`, `pasted`, `agent_ocr`,
-  `agent_transcribed`, or `mixed` source provenance and optional validated
-  `EvidenceRefInput` descriptors.
-- Validate the role-neutral `input_confirmation` field defined by Foundation F1
-  for `agent_ocr`, `agent_transcribed`, and `mixed` media-derived input as
-  defense in depth, even when an Adapter already enforced it at transport.
+- First ship `typed` or `pasted` text without a media dependency. Such requests
+  must reject `evidence_refs`, `input_confirmation`, and every media-only
+  provenance or descriptor field.
+- Keep `agent_ocr`, `agent_transcribed`, and `mixed` source values disabled
+  until Foundation F1 / GitHub #175 lands.
+- After Foundation F1 / GitHub #175 lands, extend the same Surface action with
+  `agent_ocr`, `agent_transcribed`, or `mixed` source provenance,
+  `input_confirmation`, and optional validated `EvidenceRefInput` descriptors.
+- In the media extension, validate the role-neutral `input_confirmation` field
+  defined by Foundation F1 / GitHub #175 for `agent_ocr`,
+  `agent_transcribed`, and `mixed` media-derived input as defense in depth, even
+  when an Adapter already enforced it at transport.
+- MemoryNexus cannot infer an undisclosed physical source from normalized text;
+  the Adapter or caller must report source provenance truthfully.
 - Write Trace.
 
 **Non-Goals:**
 
 - MemoryNexus does not upload images or perform OCR / ASR on worksheets;
   Agent-prepared, explicitly user-confirmed normalized text is accepted.
+- No `EvidenceRef` persistence, repository, schema, or resolver.
 
 **Acceptance Criteria:**
 
-- User can capture typed or pasted text, or text prepared through Agent OCR/ASR.
+- User can capture requests declared as typed or pasted before the media
+  extension lands when no media-only fields are present.
+- After Foundation F1 / GitHub #175, text prepared through Agent OCR/ASR can use the
+  media extension without changing the text-first business path.
 - Every media-derived normalized payload requires explicit user acceptance or
   correction before submission.
+- Typed/pasted tests reject `evidence_refs`, `input_confirmation`, and every
+  media-only provenance or descriptor field.
+- Tests reject `agent_ocr`, `agent_transcribed`, and `mixed` source values until
+  Foundation F1 / GitHub #175 lands.
 - Surface tests reject missing, unconfirmed, or invalid-method
   `input_confirmation` for every media-derived source and accept the two
   confirmed methods.
@@ -1024,22 +1124,31 @@ after Foundation F1 lands. Dictation-domain workers own
 **Background:** Dictation Coach needs a text-first attempt submission before
 automated evaluation.
 
-**Depends On:** Foundation F1 and Issue 5.2.
+**Depends On:** Issue 5.2 / GitHub #155 for the typed/pasted path. The media extension for
+`agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
+`evidence_refs` additionally depends on Foundation F1 / GitHub #175.
 
-**Unlocks:** Issues 5.4 and 5.6.
+**Unlocks:** Issue 5.4 / GitHub #157 and the required attempt history for Issue
+5.6 / GitHub #159.
 
 **Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
-after Issue 5.2 lands. Dictation-domain workers own
+after Issue 5.2 / GitHub #155 lands. Dictation-domain workers own
 `src/domain/dictation.rs` and must not concurrently edit the shared dispatcher.
 
 **Scope:**
 
 - Submit expected items and actual result.
-- Allow attempts to link optional validated `EvidenceRefInput` values for
-  provenance.
-- Accept source provenance and validate the Foundation F1 role-neutral
-  `input_confirmation` field for `agent_ocr`, `agent_transcribed`, and `mixed`
-  media-derived input at the Surface boundary.
+- Typed/pasted requests must reject `evidence_refs`, `input_confirmation`, and
+  every media-only provenance or descriptor field.
+- Keep `agent_ocr`, `agent_transcribed`, and `mixed` source values disabled
+  until Foundation F1 / GitHub #175 lands.
+- In the media extension, allow attempts to carry optional validated
+  `EvidenceRefInput` values for request-local provenance.
+- In the media extension, accept source provenance and validate the Foundation
+  F1 / GitHub #175 role-neutral `input_confirmation` field for `agent_ocr`,
+  `agent_transcribed`, and `mixed` media-derived input at the Surface boundary.
+- MemoryNexus cannot infer an undisclosed physical source from normalized text;
+  the Adapter or caller must report source provenance truthfully.
 - Record FeedbackLoop attempt.
 - Write Trace.
 
@@ -1047,6 +1156,7 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 - MemoryNexus performs neither handwriting recognition nor audio transcription;
   Adapter-prepared, explicitly user-confirmed normalized text is allowed.
+- No `EvidenceRef` persistence, repository, schema, or resolver.
 
 **Acceptance Criteria:**
 
@@ -1054,7 +1164,13 @@ after Issue 5.2 lands. Dictation-domain workers own
 - Attempt is Space-owned and namespace-scoped.
 - Deterministic evaluation uses confirmed text and does not require linked media
   to be available.
-- Surface tests reject missing, unconfirmed, or invalid-method
+- Requests declared as typed/pasted work before Foundation F1 / GitHub #175
+  lands when no media-only fields are present.
+- Typed/pasted tests reject `evidence_refs`, `input_confirmation`, and every
+  media-only provenance or descriptor field.
+- Tests reject `agent_ocr`, `agent_transcribed`, and `mixed` source values until
+  Foundation F1 / GitHub #175 lands.
+- Media-extension Surface tests reject missing, unconfirmed, or invalid-method
   `input_confirmation` for every media-derived source and accept the two
   confirmed methods.
 - Positive-path fakes/spies prove accepted descriptor objects, raw locators,
@@ -1073,9 +1189,10 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 **Background:** First feedback should be deterministic before LLM/OCR.
 
-**Depends On:** Issue 5.3.
+**Depends On:** Issue 5.3 / GitHub #156.
 
-**Unlocks:** Issue 5.5.
+**Unlocks:** Issue 4.4 / GitHub #152 on the selected Dictation Engine
+critical path.
 
 **Scope:**
 
@@ -1103,14 +1220,17 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 **Background:** Dictation Coach value is next action, not just diagnosis.
 
-**Depends On:** Issue 5.4.
+**Depends On:** Issue 4.5 / GitHub #153, and therefore transitively Issue 4.4 /
+GitHub #152 and Issue 5.4 / GitHub #157.
 
-**Unlocks:** Issue 5.7.
+**Unlocks:** Initial Issue 5.7 / GitHub #160 Agent smoke.
 
 **Scope:**
 
-- Generate simple next practice from mistake patterns.
-- Produce PracticePlan.
+- Shape or reuse the evidence-linked PracticePlan generated by Issue 4.5 /
+  GitHub #153 as tomorrow's focused ten-minute Dictation practice.
+- Use the existing GrowthModel -> PracticePlan path; do not create a parallel
+  Dictation planning model or generation path.
 - Link source traces.
 
 **Non-Goals:**
@@ -1122,6 +1242,8 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 - Repeated pattern yields focused next practice.
 - Plan is short and actionable.
+- The returned exercise retains the PracticePlan evidence links from Issue 4.5
+  / GitHub #153.
 - Tests cover Chinese and English examples.
 
 **Possible Files:**
@@ -1134,55 +1256,73 @@ after Issue 5.2 lands. Dictation-domain workers own
 
 **Background:** Observation Surface should show long-term change.
 
-**Depends On:** Issue 5.3.
+**Depends On:** The canonical GrowthModel output from Issue 4.4 / GitHub #152,
+plus the required attempt history from Issue 5.3 / GitHub #156 for the extended
+Dictation path.
 
-**Unlocks:** Issue 5.7.
+**Contribution:** Supplies deterministic multi-day fixtures and the extended
+seven-day acceptance for Issue 5.7 / GitHub #160. It does not block the initial
+Agent smoke.
 
-**Dispatcher Ownership:** Take `src/api/surfaces.rs` integration ownership only
-after Issue 5.3 lands. Growth-model workers own
-`src/domain/growth_model.rs` and must not concurrently edit the shared
+**Dispatcher Ownership:** This issue does not own GrowthModel aggregation or
+writes. Any read-only Observation integration in `src/api/surfaces.rs` starts
+only after Issue 3.6 / GitHub #148, Issue 4.4 / GitHub #152, and Issue 5.3 /
+GitHub #156 land; fixture workers must not concurrently edit the shared
 dispatcher.
 
 **Scope:**
 
-- Summarize last 7 days of attempts.
-- Include recurring errors, stability, and current focus.
+- Build a read-only Observation projection over the canonical Issue 4.4 /
+  GitHub #152 GrowthModel output plus evidence and attempt fixtures.
+- Summarize recurring errors, stability, and current focus for the last 7 days
+  without mutating the canonical model.
 
 **Non-Goals:**
 
 - No dashboard yet.
 - No charts unless existing UI makes it trivial.
+- Do not create or update a second GrowthModel.
+- Do not reclassify mistakes independently of Issue 5.4 / GitHub #157 evidence
+  already aggregated by Issue 4.4 / GitHub #152.
 
 **Acceptance Criteria:**
 
 - Summary includes Trace/attempt evidence IDs, never `EvidenceRefInput`
   descriptors or descriptor fields.
+- Projection reads the canonical GrowthModel and performs no GrowthModel write.
 - Empty history returns useful empty state.
 
 **Possible Files:**
 
-- `src/domain/growth_model.rs`
 - `src/api/surfaces.rs`
+- `tests/fixtures/dictation_agent/*`
 - `tests/*dictation_observation*`
 
 ### Issue 5.7: Minimal Dictation Agent Demo
 
 **Background:** The first usable product test should run through a Dictation
 Agent before a dedicated product App is built, reusing the generic MCP/chat
-Surface Adapter from Issue 6.2.
+Surface Adapter from Issue 6.2 / GitHub #162.
 
-**Depends On:** Issues 5.2, 5.3, 5.4, 5.5, 5.6, and 6.2.
+**Depends On:** For the initial typed/pasted smoke, Issues 5.2-5.5 / GitHub
+#155-#158 and the text-capable portion of Issue 6.2 / GitHub #162. Issue 5.6 /
+GitHub #159 contributes only the extended seven-day acceptance. Media prompt
+acceptance/correction is a later extension after Foundation F1 / GitHub #175
+and the media-capable portion of Issue 6.2 / GitHub #162.
 
-**Unlocks:** Issue 6.3.
+**Unlocks:** Initial acceptance unlocks Issue 6.3 / GitHub #163.
 
 **Scope:**
 
 - Implement Dictation Agent orchestration and product-facing action mapping over
   the generic adapter.
-- Own only the Dictation product prompt/interaction that obtains explicit
-  acceptance or correction for Agent-prepared normalized text, then map the
-  result to Foundation F1's generic `input_confirmation` field through Issue
-  6.2's adapter mapping.
+- Run the initial loop entirely through typed/pasted generic Surface tools,
+  without a web UI.
+- In the media extension, own only the Dictation product prompt/interaction
+  that obtains explicit acceptance or correction for Agent-prepared normalized
+  text, then map the result to the generic `input_confirmation` field defined
+  by Foundation F1 / GitHub #175 through the adapter mapping in Issue 6.2 /
+  GitHub #162.
 - Exercise one-learner Capture, Performance, Reflection, Planning, and
   Observation through the generic Surface Adapter.
 
@@ -1196,16 +1336,22 @@ Surface Adapter from Issue 6.2.
 
 **Acceptance Criteria:**
 
-- End-to-end dictation demo works for one learner with manually entered or
-  Agent-confirmed text.
-- Dictation orchestration uses Issue 6.2 generic tools and does not directly
-  access Engine internals.
-- The flow covers all five Surfaces and writes Trace provenance where required.
+- Initial end-to-end dictation demo works for one learner with requests declared
+  as typed or pasted and no media-only fields.
+- Dictation orchestration uses Issue 6.2 / GitHub #162 generic tools and does
+  not directly access Engine internals.
+- Initial acceptance covers all five generic Surfaces and writes Trace
+  provenance where required, without a web UI.
+- Extended seven-day acceptance uses Issue 5.6 / GitHub #159 deterministic
+  multi-day fixtures but does not redefine the initial smoke gate.
+- After Foundation F1 / GitHub #175 and media-capable Issue 6.2 / GitHub #162,
+  media prompt tests demonstrate explicit acceptance and correction before
+  Surface submission.
 - Product-facing mappings and prompt/confirmation policy remain outside the
   generic adapter.
-- Prompt-flow tests demonstrate explicit acceptance and explicit correction,
-  then assert successful mapping to `explicit_acceptance` and
-  `explicit_correction` respectively.
+- Media-extension prompt-flow tests demonstrate explicit acceptance and
+  explicit correction, then assert successful mapping to
+  `explicit_acceptance` and `explicit_correction` respectively.
 - No parent/child or other product role is added to Engine contracts.
 
 **Possible Files:**
@@ -1244,13 +1390,16 @@ Surface Adapter from Issue 6.2.
 **Background:** MCP/chat clients need generic transport and tool plumbing over
 Surface Gateway before product-specific Agent orchestration is added.
 
-**Depends On:** Foundation F1 and Issues 3.4, 3.5, and 3.6.
+**Depends On:** Issue 3.6 / GitHub #148 for text-capable generic Surface tools. Media mapping
+for `agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
+`evidence_refs` additionally depends on Foundation F1 / GitHub #175.
 
-**Unlocks:** Issue 5.7.
+**Unlocks:** The text-capable tools unlock the initial Issue 5.7 / GitHub #160
+smoke; the media mapping contributes to its later media prompt extension.
 
-**Dispatcher Ownership:** This adapter issue does not edit
-`src/api/surfaces.rs`. It owns MCP/chat transport and mapping modules after the
-required Surface capabilities and F1 contract land.
+**Dispatcher Ownership:** This adapter issue never edits
+`src/api/surfaces.rs`. It owns only MCP/chat transport and mapping modules after
+the required Surface capabilities land.
 
 **Scope:**
 
@@ -1258,8 +1407,14 @@ required Surface capabilities and F1 contract land.
   Surface Gateway.
 - Map generic actions and capabilities across Capture, Performance, Reflection,
   Planning, and Observation without product-specific Engine actions.
-- Enforce and map the role-neutral adapter request field already defined by
-  Foundation F1:
+- Ship the text-capable generic Surface tools after Issue 3.6 / GitHub #148
+  without waiting for Foundation F1 / GitHub #175.
+- Typed/pasted tool requests must reject `evidence_refs`, `input_confirmation`,
+  and every media-only provenance or descriptor field.
+- Keep `agent_ocr`, `agent_transcribed`, and `mixed` source values disabled
+  until Foundation F1 / GitHub #175 lands.
+- In the media mapping, enforce and map the role-neutral adapter request field
+  already defined by Foundation F1 / GitHub #175:
 
   ```text
   input_confirmation: {
@@ -1268,30 +1423,41 @@ required Surface capabilities and F1 contract land.
   }
   ```
 
-- Enforce `input_confirmation` in the MCP/chat Adapter for `agent_ocr`,
+- In the media mapping, enforce `input_confirmation` in the MCP/chat Adapter for `agent_ocr`,
   `agent_transcribed`, and `mixed` media-derived input before making a generic
   Surface call.
+- MemoryNexus cannot infer an undisclosed physical source from normalized text;
+  the Adapter or caller must report source provenance truthfully.
 - Keep OCR, ASR, and media acquisition outside MemoryNexus, and require explicit
   user acceptance or correction before submitting any media-derived normalized
   payload.
-- Pass optional validated, opaque `EvidenceRefInput` descriptors through generic
-  calls. Return and preserve the generated Trace ID/provenance for the Surface
-  call, but do not return or claim persistence of media descriptors. Only the
-  generated Surface call Trace ID/provenance is returned; descriptors remain
-  ephemeral in this slice. Generic calls do not resolve evidence and do not
-  require media, provider, or resolver availability.
+- In the media mapping, pass optional validated, opaque `EvidenceRefInput`
+  descriptors through generic calls. Return and preserve the generated Trace
+  ID/provenance for the Surface call, but do not return or claim persistence of
+  media descriptors. Only the generated Surface call Trace ID/provenance is
+  returned; descriptors remain ephemeral in this slice. Generic calls do not
+  resolve evidence and do not require media, provider, or resolver availability.
 
 **Non-Goals:**
 
 - Do not make agent own memory.
+- Do not edit `src/api/surfaces.rs` or access Engine repositories directly.
 - Do not add evidence resolution, provider availability detection, or media
   inspection; those behaviors belong to a future resolver issue.
+- Do not add `EvidenceRef` persistence or claim that descriptors are persisted
+  or resolvable.
 - Do not add Dictation orchestration, product-facing mappings, prompt policy, or
   Dictation-specific Engine actions.
 
 **Acceptance Criteria:**
 
 - Generic MCP/chat smoke demonstrates all five Surfaces.
+- Text-capable tools work after Issue 3.6 / GitHub #148 without Foundation F1 /
+  GitHub #175.
+- Typed/pasted tool tests reject `evidence_refs`, `input_confirmation`, and every
+  media-only provenance or descriptor field before any Surface call.
+- Tests reject `agent_ocr`, `agent_transcribed`, and `mixed` source values until
+  Foundation F1 / GitHub #175 lands.
 - Agent response includes trace provenance where appropriate.
 - Calls use generic Capture, Performance, Reflection, Planning, and Observation
   capabilities and actions.
@@ -1300,10 +1466,10 @@ required Surface capabilities and F1 contract land.
   call, reject an invalid method, and accept both `explicit_acceptance` and
   `explicit_correction` with `status: "confirmed"`.
 - Confirmed-text processing succeeds when an optional opaque
-  `EvidenceRefInput` passes Foundation F1 validation; the adapter makes no
-  availability or persistence claim and performs no resolver call. Its response
-  exposes only the generated Surface call Trace ID/provenance, never descriptor
-  objects, raw locators, or metadata.
+  `EvidenceRefInput` passes Foundation F1 / GitHub #175 validation; the adapter
+  makes no availability or persistence claim and performs no resolver call. Its
+  response exposes only the generated Surface call Trace ID/provenance, never
+  descriptor objects, raw locators, or metadata.
 
 **Possible Files:**
 
@@ -1315,9 +1481,10 @@ required Surface capabilities and F1 contract land.
 
 **Background:** A practice adapter should use only the surfaces it needs.
 
-**Depends On:** Issue 5.7.
+**Depends On:** Initial Issue 5.7 / GitHub #160 acceptance.
 
-**Status:** Deferred until the Issue 5.7 Agent loop is accepted.
+**Status:** Deferred until the initial Issue 5.7 / GitHub #160 Agent loop is
+accepted.
 
 **Scope:**
 
