@@ -70,6 +70,11 @@ struct GenerateNextTaskPayload {
     objective: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GetStateSummaryPayload {
+    space_id: Uuid,
+}
+
 pub async fn handle(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
@@ -96,6 +101,9 @@ pub async fn handle(
         (Surface::Planning, SurfaceAction::GenerateNextTask) => {
             generate_next_task(&state, auth_user.user_id, request).await
         }
+        (Surface::Observation, SurfaceAction::GetStateSummary) => {
+            get_state_summary(&state, auth_user.user_id, request).await
+        }
         (Surface::Observation, SurfaceAction::RequestConsolidation) => {
             request_manual_consolidation(&state, auth_user.user_id, request).await
         }
@@ -104,6 +112,120 @@ pub async fn handle(
             request.surface, request.action
         ))),
     }
+}
+
+async fn get_state_summary(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let started_at = Utc::now();
+    let payload: GetStateSummaryPayload =
+        serde_json::from_value(request.payload.clone()).map_err(|error| {
+            AppError::BadRequest(format!("invalid getStateSummary payload: {error}"))
+        })?;
+
+    require_space_member(state, payload.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+
+    let counts = load_observation_counts(&state.db, payload.space_id, namespace.id).await?;
+    let latest_trace_task_type =
+        latest_trace_task_type(&state.db, payload.space_id, namespace.id).await?;
+    let output_summary = format!(
+        "Observed {}: {} memories, {} traces, {} feedback loops",
+        request.namespace,
+        counts.memory_count,
+        counts.trace_count,
+        counts.feedback_loop_total()
+    );
+
+    let result = json!({
+        "status": "state_summary_ready",
+        "space_id": payload.space_id,
+        "namespace_id": namespace.id,
+        "namespace": request.namespace,
+        "summary": output_summary,
+        "counts": {
+            "memories": counts.memory_count,
+            "traces": counts.trace_count,
+            "feedback_loops": {
+                "active": counts.active_feedback_loop_count,
+                "completed": counts.completed_feedback_loop_count,
+                "paused": counts.paused_feedback_loop_count,
+                "total": counts.feedback_loop_total(),
+            },
+            "review_reports": counts.review_report_count,
+            "sleep_cycles": counts.sleep_cycle_count,
+        },
+        "trends": {
+            "recent_trace_count": counts.trace_count,
+            "latest_trace_task_type": latest_trace_task_type,
+        },
+        "growth_model": {
+            "status": "not_persisted",
+            "growth_model_id": Value::Null,
+            "note": "No persisted GrowthModel is available for this namespace yet.",
+        },
+    });
+
+    let completed_at = Utc::now();
+    let trace = state
+        .repositories
+        .traces
+        .create_completed(CreateCompletedTrace {
+            space_id: payload.space_id,
+            namespace_id: Some(namespace.id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Observation,
+            mode: trace_mode(request.context.mode.as_deref())?,
+            runtime: deterministic_trace_runtime(request.context.runtime_preference),
+            input_summary: Some(format!(
+                "Observation getStateSummary in namespace {}",
+                request.namespace
+            )),
+            output_summary: Some(output_summary),
+            started_at,
+            completed_at,
+            latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: Vec::new(),
+            user_feedback: None,
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "surface": request.surface,
+                "action": request.action,
+                "adapter": request.adapter,
+                "namespace": request.namespace,
+                "deterministic": true,
+                "memory_count": counts.memory_count,
+                "trace_count": counts.trace_count,
+                "feedback_loop_count": counts.feedback_loop_total(),
+                "growth_model_status": "not_persisted",
+            }),
+        })
+        .await
+        .map_err(AppError::Database)?;
+
+    let response = SurfaceResponse::new(
+        Surface::Observation,
+        SurfaceAction::GetStateSummary,
+        result,
+        trace.id,
+        vec!["Use Planning Surface when the observed state should become a next task.".to_string()],
+        SurfaceVisibility::User,
+    );
+
+    Ok((StatusCode::OK, Json(ApiResponse::success(response))))
 }
 
 async fn generate_next_task(
@@ -835,6 +957,151 @@ fn map_sleep_cycle_create_error(error: Error) -> AppError {
     } else {
         AppError::Database(error)
     }
+}
+
+#[derive(Debug)]
+struct ObservationCounts {
+    memory_count: i64,
+    trace_count: i64,
+    active_feedback_loop_count: i64,
+    completed_feedback_loop_count: i64,
+    paused_feedback_loop_count: i64,
+    review_report_count: i64,
+    sleep_cycle_count: i64,
+}
+
+impl ObservationCounts {
+    fn feedback_loop_total(&self) -> i64 {
+        self.active_feedback_loop_count
+            + self.completed_feedback_loop_count
+            + self.paused_feedback_loop_count
+    }
+}
+
+async fn load_observation_counts(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+) -> Result<ObservationCounts, AppError> {
+    let memory_count = count_namespace_rows(
+        pool,
+        "SELECT COUNT(*) FROM memories WHERE space_id = $1 AND namespace_id = $2",
+        space_id,
+        namespace_id,
+    )
+    .await?;
+    let trace_count = count_namespace_rows(
+        pool,
+        "SELECT COUNT(*) FROM traces WHERE space_id = $1 AND namespace_id = $2",
+        space_id,
+        namespace_id,
+    )
+    .await?;
+    let active_feedback_loop_count =
+        count_feedback_loops(pool, space_id, namespace_id, "active").await?;
+    let completed_feedback_loop_count =
+        count_feedback_loops(pool, space_id, namespace_id, "completed").await?;
+    let paused_feedback_loop_count =
+        count_feedback_loops(pool, space_id, namespace_id, "paused").await?;
+    let review_report_count = count_namespace_rows(
+        pool,
+        "SELECT COUNT(*) FROM cognitive_review_reports WHERE space_id = $1 AND namespace_id = $2",
+        space_id,
+        namespace_id,
+    )
+    .await?;
+    let sleep_cycle_count = count_namespace_rows(
+        pool,
+        "SELECT COUNT(*) FROM sleep_cycles WHERE space_id = $1 AND namespace_id = $2",
+        space_id,
+        namespace_id,
+    )
+    .await?;
+
+    Ok(ObservationCounts {
+        memory_count,
+        trace_count,
+        active_feedback_loop_count,
+        completed_feedback_loop_count,
+        paused_feedback_loop_count,
+        review_report_count,
+        sleep_cycle_count,
+    })
+}
+
+async fn count_namespace_rows(
+    pool: &PgPool,
+    sql: &str,
+    space_id: Uuid,
+    namespace_id: Uuid,
+) -> Result<i64, AppError> {
+    sqlx::query_scalar(sql)
+        .bind(space_id)
+        .bind(namespace_id)
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::Database)
+}
+
+async fn count_feedback_loops(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    status: &str,
+) -> Result<i64, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM feedback_loops
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND status = $3
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(status)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::Database)
+}
+
+async fn latest_trace_task_type(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+) -> Result<Option<String>, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT task_type
+        FROM traces
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND status = 'completed'
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Database)
+}
+
+async fn require_space_member(
+    state: &AppState,
+    space_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    state
+        .repositories
+        .spaces
+        .find_member(space_id, user_id)
+        .await
+        .map_err(AppError::Database)?
+        .map(|_| ())
+        .ok_or(AppError::Unauthorized)
 }
 
 async fn require_space_writer(
