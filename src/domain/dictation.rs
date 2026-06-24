@@ -173,6 +173,7 @@ pub struct DictationItemResult {
     pub actual_text: Option<String>,
     pub status: String,
     pub mistake_types: Vec<String>,
+    pub explanation: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -445,6 +446,7 @@ fn evaluate_item(
         expected_text: expected,
         actual_text: actual,
         status: status.to_string(),
+        explanation: explanation_for(&mistake_types),
         mistake_types,
     }
 }
@@ -461,15 +463,24 @@ fn classify_mistake(task_kind: DictationTaskKind, expected: &str, actual: &str) 
     }
 
     match task_kind {
-        DictationTaskKind::ChineseDictation => {
-            if expected.chars().count() == actual.chars().count() {
-                vec!["wrong_character".to_string()]
-            } else {
-                vec!["unclassified".to_string()]
-            }
-        }
+        DictationTaskKind::ChineseDictation => classify_chinese_dictation(expected, actual),
         DictationTaskKind::EnglishSpelling => classify_english_spelling(expected, actual),
         DictationTaskKind::EnglishSentenceDictation => classify_english_sentence(expected, actual),
+    }
+}
+
+fn classify_chinese_dictation(expected: &str, actual: &str) -> Vec<String> {
+    let expected_count = expected.chars().count();
+    let actual_count = actual.chars().count();
+
+    if actual_count < expected_count && is_subsequence(actual, expected) {
+        vec!["missing_character".to_string()]
+    } else if actual_count > expected_count && is_subsequence(expected, actual) {
+        vec!["extra_character".to_string()]
+    } else if expected_count == actual_count {
+        vec!["wrong_character".to_string()]
+    } else {
+        vec!["unclassified".to_string()]
     }
 }
 
@@ -510,6 +521,32 @@ fn classify_english_spelling(expected: &str, actual: &str) -> Vec<String> {
     } else {
         vec!["unclassified".to_string()]
     }
+}
+
+fn explanation_for(mistake_types: &[String]) -> String {
+    match mistake_types.first().map(String::as_str) {
+        Some("correct") => "actual text matches expected text",
+        Some("missing_item") => "no submitted text was provided for this expected item",
+        Some("extra_item") => "submitted text has no corresponding expected item",
+        Some("missing_character") => {
+            "actual text is missing one or more characters from expected text"
+        }
+        Some("extra_character") => "actual text has one or more extra characters",
+        Some("wrong_character") => "actual text differs by character with the same length",
+        Some("missing_word") => "actual text is missing one or more expected words",
+        Some("extra_word") => "actual text includes one or more extra words",
+        Some("word_order_error") => "actual text uses expected words in a different order",
+        Some("missing_letter") => "actual text is missing one or more letters from expected text",
+        Some("extra_letter") => "actual text has one or more extra letters",
+        Some("letter_order_error") => "actual text uses expected letters in a different order",
+        Some("double_letter_error") => "difference is limited to repeated letters",
+        Some("capitalization_error") => "actual text differs only by capitalization",
+        Some("punctuation_error") => "actual text differs only by punctuation",
+        Some("spacing_error") => "actual text differs only by spacing",
+        Some("unclassified") | None => "deterministic text evidence is insufficient to classify",
+        Some(_) => "deterministic text evidence matched a known mistake type",
+    }
+    .to_string()
 }
 
 fn missing_type(task_kind: DictationTaskKind) -> &'static str {
@@ -573,6 +610,17 @@ fn is_missing_letters(expected: &str, actual: &str) -> bool {
     for expected_char in expected.chars() {
         if current == Some(expected_char) {
             current = actual_chars.next();
+        }
+    }
+    current.is_none()
+}
+
+fn is_subsequence(needle: &str, haystack: &str) -> bool {
+    let mut needle_chars = needle.chars();
+    let mut current = needle_chars.next();
+    for haystack_char in haystack.chars() {
+        if current == Some(haystack_char) {
+            current = needle_chars.next();
         }
     }
     current.is_none()
