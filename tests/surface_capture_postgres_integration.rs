@@ -45,7 +45,13 @@ async fn capture_surface_stores_memory_writes_trace_and_publishes_observation_ev
             "adapter": "mcp",
             "payload": {
                 "title": "Today's spelling words",
-                "content": "because, friend, enough",
+                "task_kind": "english_spelling",
+                "source": "typed",
+                "prompt_items": [
+                    {"item_kind": "english_word", "expected_text": "because", "metadata": {}},
+                    {"item_kind": "english_word", "expected_text": "friend", "metadata": {}},
+                    {"item_kind": "english_word", "expected_text": "enough", "metadata": {}}
+                ],
                 "tags": ["dictation", "spelling"]
             },
             "context": {
@@ -85,12 +91,23 @@ async fn capture_surface_stores_memory_writes_trace_and_publishes_observation_ev
     assert_eq!(memory.0, fixture.owner_user_id);
     assert_eq!(memory.1, fixture.space_id);
     assert_eq!(memory.2, Some(fixture.namespace_id));
-    assert_eq!(memory.3, "because, friend, enough");
+    assert_eq!(memory.3, "because\nfriend\nenough");
     assert_eq!(memory.4, "surface_capture");
     assert_eq!(
         memory.5["surface"],
         json!("capture"),
         "memory should carry Surface provenance"
+    );
+    assert_eq!(memory.5["input_source"], "typed");
+    assert_eq!(
+        memory.5["capture"]["dictation"]["task_kind"],
+        "english_spelling"
+    );
+    assert_eq!(memory.5["capture"]["dictation"]["item_count"], 3);
+    assert_eq!(memory.5["capture"]["dictation"].get("evidence_refs"), None);
+    assert_eq!(
+        memory.5["capture"]["dictation"].get("input_confirmation"),
+        None
     );
 
     let trace: (
@@ -101,9 +118,10 @@ async fn capture_surface_stores_memory_writes_trace_and_publishes_observation_ev
         String,
         String,
         Vec<Uuid>,
+        Value,
     ) = sqlx::query_as(
         r#"
-        SELECT space_id, namespace_id, source_type, task_type, mode, runtime, generated_memory_ids
+        SELECT space_id, namespace_id, source_type, task_type, mode, runtime, generated_memory_ids, metadata
         FROM traces
         WHERE id = $1
         "#,
@@ -120,6 +138,9 @@ async fn capture_surface_stores_memory_writes_trace_and_publishes_observation_ev
     assert_eq!(trace.4, "fast");
     assert_eq!(trace.5, "deterministic");
     assert_eq!(trace.6, vec![memory_id]);
+    assert_eq!(trace.7["namespace"], "child.english.spelling");
+    assert_eq!(trace.7["input_source"], "typed");
+    assert_eq!(trace.7["capture"]["dictation"]["item_count"], 3);
 }
 
 #[tokio::test]

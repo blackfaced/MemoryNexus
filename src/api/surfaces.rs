@@ -15,6 +15,10 @@ use crate::db::space::SpaceMemberRole;
 use crate::db::trace::{
     CreateCompletedTrace, TraceMode, TraceRuntime, TraceSourceType, TraceTaskType,
 };
+use crate::domain::dictation::{
+    build_dictation_capture, DictationCaptureInput, DictationSource, DictationTaskKind,
+    PromptItemInput,
+};
 use crate::domain::event::{
     EngineEvent, EngineEventEnvelope, EnginePayloadRef, EnginePayloadRefKind,
 };
@@ -34,15 +38,30 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 struct CapturePayload {
     title: Option<String>,
-    content: String,
+    content: Option<String>,
+    task_kind: Option<DictationTaskKind>,
+    source: Option<DictationSource>,
     input_source: Option<String>,
     input_confirmation: Option<InputConfirmation>,
+    #[serde(default)]
+    prompt_items: Vec<PromptItemInput>,
     #[serde(default)]
     evidence_refs: Vec<Value>,
     #[serde(default)]
     tags: Vec<String>,
     #[serde(default)]
     metadata: Value,
+}
+
+#[derive(Debug)]
+struct PreparedCapturePayload {
+    title: Option<String>,
+    content: String,
+    input_source: Option<String>,
+    tags: Vec<String>,
+    metadata: Value,
+    source_metadata: Value,
+    trace_metadata: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -333,18 +352,7 @@ async fn capture_observation(
     let started_at = Utc::now();
     let payload: CapturePayload = serde_json::from_value(request.payload.clone())
         .map_err(|error| AppError::BadRequest(format!("invalid capture payload: {error}")))?;
-
-    let content = payload.content.trim().to_string();
-    if content.is_empty() {
-        return Err(AppError::BadRequest(
-            "capture payload content cannot be empty".to_string(),
-        ));
-    }
-    validate_surface_evidence(
-        payload.input_source.as_deref(),
-        payload.input_confirmation.as_ref(),
-        &payload.evidence_refs,
-    )?;
+    let prepared = prepare_capture_payload(&request.namespace, payload)?;
 
     let space = state
         .repositories
@@ -364,8 +372,8 @@ async fn capture_observation(
             space_id: space.id,
             namespace_id: Some(namespace.id),
             feedback_loop_id: None,
-            title: payload.title.clone(),
-            content: content.clone(),
+            title: prepared.title.clone(),
+            content: prepared.content.clone(),
             memory_type: MemoryType::Text,
             file_path: None,
             is_shared: false,
@@ -377,9 +385,11 @@ async fn capture_observation(
                 "actor": request.actor,
                 "namespace": request.namespace,
                 "context": request.context,
-                "metadata": payload.metadata,
+                "metadata": prepared.metadata,
+                "input_source": prepared.input_source,
+                "capture": prepared.source_metadata,
             }),
-            tags: payload.tags,
+            tags: prepared.tags,
         })
         .await
         .map_err(AppError::Database)?;
@@ -397,7 +407,7 @@ async fn capture_observation(
             task_type: TraceTaskType::Capture,
             mode: trace_mode(request.context.mode.as_deref())?,
             runtime: trace_runtime(request.context.runtime_preference),
-            input_summary: Some(redacted_summary(&content)),
+            input_summary: Some(redacted_summary(&prepared.content)),
             output_summary: Some(format!("Captured observation as memory {}", memory.id)),
             started_at,
             completed_at,
@@ -419,6 +429,9 @@ async fn capture_observation(
                 "surface": request.surface,
                 "action": request.action,
                 "adapter": request.adapter,
+                "namespace": request.namespace,
+                "input_source": prepared.input_source,
+                "capture": prepared.trace_metadata,
                 "event": "observation_captured",
             }),
         })
@@ -450,6 +463,106 @@ async fn capture_observation(
     );
 
     Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
+}
+
+fn prepare_capture_payload(
+    namespace: &str,
+    payload: CapturePayload,
+) -> Result<PreparedCapturePayload, AppError> {
+    if payload.task_kind.is_some() || payload.source.is_some() || !payload.prompt_items.is_empty() {
+        return prepare_dictation_capture_payload(namespace, payload);
+    }
+
+    let content = payload.content.unwrap_or_default().trim().to_string();
+    if content.is_empty() {
+        return Err(AppError::BadRequest(
+            "capture payload content cannot be empty".to_string(),
+        ));
+    }
+    validate_surface_evidence(
+        payload.input_source.as_deref(),
+        payload.input_confirmation.as_ref(),
+        &payload.evidence_refs,
+    )?;
+
+    Ok(PreparedCapturePayload {
+        title: payload.title,
+        content,
+        input_source: payload.input_source,
+        tags: payload.tags,
+        metadata: payload.metadata,
+        source_metadata: json!({}),
+        trace_metadata: json!({}),
+    })
+}
+
+fn prepare_dictation_capture_payload(
+    namespace: &str,
+    payload: CapturePayload,
+) -> Result<PreparedCapturePayload, AppError> {
+    let task_kind = payload
+        .task_kind
+        .ok_or_else(|| AppError::BadRequest("dictation capture requires task_kind".to_string()))?;
+    let source = resolve_dictation_source(payload.source, payload.input_source.as_deref())?;
+    let input = DictationCaptureInput {
+        namespace: namespace.to_string(),
+        task_kind,
+        source,
+        title: payload.title,
+        prompt_items: payload.prompt_items,
+        input_confirmation: payload.input_confirmation,
+        evidence_refs: payload.evidence_refs,
+        metadata: payload.metadata,
+    };
+    let capture =
+        build_dictation_capture(input).map_err(|error| AppError::BadRequest(error.to_string()))?;
+    let source_metadata = json!({
+        "dictation": capture.persistence_metadata,
+    });
+    let trace_metadata = json!({
+        "namespace": namespace,
+        "input_source": capture.source,
+        "dictation": {
+            "task_kind": capture.task_kind,
+            "item_count": capture.prompt_items.len(),
+            "evidence_ref_count": capture.evidence_ref_count,
+        },
+    });
+
+    Ok(PreparedCapturePayload {
+        title: capture.title,
+        content: capture.canonical_text,
+        input_source: Some(capture.source.as_str().to_string()),
+        tags: payload.tags,
+        metadata: capture.persistence_metadata["metadata"].clone(),
+        source_metadata,
+        trace_metadata,
+    })
+}
+
+fn resolve_dictation_source(
+    source: Option<DictationSource>,
+    input_source: Option<&str>,
+) -> Result<DictationSource, AppError> {
+    let input_source = match input_source {
+        Some(value) => Some(
+            serde_json::from_value::<DictationSource>(json!(value)).map_err(|_| {
+                AppError::BadRequest(format!("unsupported dictation source: {value}"))
+            })?,
+        ),
+        None => None,
+    };
+
+    match (source, input_source) {
+        (Some(source), Some(input_source)) if source != input_source => Err(AppError::BadRequest(
+            "dictation capture source and input_source must match when both are provided"
+                .to_string(),
+        )),
+        (Some(source), _) | (_, Some(source)) => Ok(source),
+        (None, None) => Err(AppError::BadRequest(
+            "dictation capture requires source".to_string(),
+        )),
+    }
 }
 
 async fn submit_attempt(
@@ -1415,5 +1528,105 @@ mod tests {
         .unwrap();
         validate_media_fields_allowed(SurfaceAction::SubmitAttempt, &json!({"evidence_refs": []}))
             .unwrap();
+    }
+
+    #[test]
+    fn dictation_capture_payload_builds_canonical_text_and_descriptor_free_metadata() {
+        let payload: CapturePayload = serde_json::from_value(json!({
+            "title": "Today's words",
+            "task_kind": "english_spelling",
+            "source": "typed",
+            "prompt_items": [
+                {"item_kind": "english_word", "expected_text": " because ", "metadata": {}},
+                {"item_kind": "english_word", "expected_text": "friend", "metadata": {}}
+            ],
+            "tags": ["dictation"],
+            "metadata": {"adapter_note": "typed list"}
+        }))
+        .unwrap();
+
+        let prepared =
+            prepare_capture_payload("child.english.spelling", payload).expect("valid dictation");
+
+        assert_eq!(prepared.content, "because\nfriend");
+        assert_eq!(prepared.title.as_deref(), Some("Today's words"));
+        assert_eq!(prepared.input_source.as_deref(), Some("typed"));
+        assert_eq!(
+            prepared.source_metadata["dictation"]["task_kind"],
+            "english_spelling"
+        );
+        assert_eq!(prepared.source_metadata["dictation"]["source"], "typed");
+        assert_eq!(
+            prepared.source_metadata["dictation"].get("evidence_refs"),
+            None
+        );
+        assert_eq!(
+            prepared.source_metadata["dictation"].get("input_confirmation"),
+            None
+        );
+        assert_eq!(
+            prepared.trace_metadata["namespace"],
+            "child.english.spelling"
+        );
+        assert_eq!(prepared.trace_metadata["input_source"], "typed");
+        assert_eq!(prepared.trace_metadata["dictation"]["item_count"], 2);
+    }
+
+    #[test]
+    fn typed_dictation_capture_payload_rejects_media_descriptors() {
+        let payload: CapturePayload = serde_json::from_value(json!({
+            "task_kind": "english_spelling",
+            "source": "typed",
+            "input_confirmation": {
+                "status": "confirmed",
+                "method": "explicit_acceptance"
+            },
+            "prompt_items": [
+                {"item_kind": "english_word", "expected_text": "because", "metadata": {}}
+            ]
+        }))
+        .unwrap();
+
+        let err = prepare_capture_payload("child.english.spelling", payload).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+        assert!(err
+            .to_string()
+            .contains("typed or pasted dictation capture cannot include input_confirmation"));
+    }
+
+    #[test]
+    fn media_dictation_capture_payload_accepts_validated_refs_without_persisting_them() {
+        let payload: CapturePayload = serde_json::from_value(json!({
+            "task_kind": "english_spelling",
+            "source": "agent_ocr",
+            "input_confirmation": {
+                "status": "confirmed",
+                "method": "explicit_correction"
+            },
+            "evidence_refs": [{
+                "provider": "agent_ocr",
+                "locator": "s3://dictation/archive/worksheet-2026-06-24.png",
+                "media_type": "image/png",
+                "metadata": {"page": 1}
+            }],
+            "prompt_items": [
+                {"item_kind": "english_word", "expected_text": "because", "metadata": {}}
+            ]
+        }))
+        .unwrap();
+
+        let prepared =
+            prepare_capture_payload("child.english.spelling", payload).expect("media dictation");
+        let combined_persistence =
+            format!("{}{}", prepared.source_metadata, prepared.trace_metadata);
+
+        assert_eq!(prepared.input_source.as_deref(), Some("agent_ocr"));
+        assert_eq!(
+            prepared.trace_metadata["dictation"]["evidence_ref_count"],
+            1
+        );
+        assert!(!combined_persistence.contains("worksheet-2026-06-24"));
+        assert!(!combined_persistence.contains("evidence_refs"));
     }
 }
