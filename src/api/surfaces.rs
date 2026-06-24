@@ -16,8 +16,8 @@ use crate::db::trace::{
     CreateCompletedTrace, TraceMode, TraceRuntime, TraceSourceType, TraceTaskType,
 };
 use crate::domain::dictation::{
-    build_dictation_capture, DictationCaptureInput, DictationSource, DictationTaskKind,
-    PromptItemInput,
+    build_dictation_attempt, build_dictation_capture, DictationAttemptInput, DictationCaptureInput,
+    DictationSource, DictationTaskKind, PromptItemInput, SubmittedItemInput,
 };
 use crate::domain::event::{
     EngineEvent, EngineEventEnvelope, EnginePayloadRef, EnginePayloadRefKind,
@@ -70,11 +70,31 @@ struct SubmitAttemptPayload {
     feedback_loop_id: Option<Uuid>,
     goal: Option<String>,
     task: Option<String>,
-    attempt: Value,
+    attempt: Option<Value>,
+    task_kind: Option<DictationTaskKind>,
+    source: Option<DictationSource>,
     input_source: Option<String>,
+    #[serde(default)]
+    prompt_items: Vec<PromptItemInput>,
+    #[serde(default)]
+    submitted_items: Vec<SubmittedItemInput>,
+    #[serde(default)]
+    metadata: Value,
     input_confirmation: Option<InputConfirmation>,
     #[serde(default)]
     evidence_refs: Vec<Value>,
+}
+
+#[derive(Debug)]
+struct PreparedSubmitAttemptPayload {
+    space_id: Uuid,
+    feedback_loop_id: Option<Uuid>,
+    goal: Option<String>,
+    task: Option<String>,
+    attempt_summary: String,
+    evaluation: Value,
+    trace_metadata: Value,
+    input_source: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -503,7 +523,8 @@ fn prepare_dictation_capture_payload(
     let task_kind = payload
         .task_kind
         .ok_or_else(|| AppError::BadRequest("dictation capture requires task_kind".to_string()))?;
-    let source = resolve_dictation_source(payload.source, payload.input_source.as_deref())?;
+    let source =
+        resolve_dictation_source(payload.source, payload.input_source.as_deref(), "capture")?;
     let input = DictationCaptureInput {
         namespace: namespace.to_string(),
         task_kind,
@@ -543,6 +564,7 @@ fn prepare_dictation_capture_payload(
 fn resolve_dictation_source(
     source: Option<DictationSource>,
     input_source: Option<&str>,
+    record_kind: &str,
 ) -> Result<DictationSource, AppError> {
     let input_source = match input_source {
         Some(value) => Some(
@@ -554,15 +576,102 @@ fn resolve_dictation_source(
     };
 
     match (source, input_source) {
-        (Some(source), Some(input_source)) if source != input_source => Err(AppError::BadRequest(
-            "dictation capture source and input_source must match when both are provided"
-                .to_string(),
-        )),
+        (Some(source), Some(input_source)) if source != input_source => {
+            Err(AppError::BadRequest(format!(
+                "dictation {record_kind} source and input_source must match when both are provided"
+            )))
+        }
         (Some(source), _) | (_, Some(source)) => Ok(source),
-        (None, None) => Err(AppError::BadRequest(
-            "dictation capture requires source".to_string(),
-        )),
+        (None, None) => Err(AppError::BadRequest(format!(
+            "dictation {record_kind} requires source"
+        ))),
     }
+}
+
+fn prepare_submit_attempt_payload(
+    namespace: &str,
+    payload: SubmitAttemptPayload,
+) -> Result<PreparedSubmitAttemptPayload, AppError> {
+    if payload.task_kind.is_some()
+        || payload.source.is_some()
+        || !payload.prompt_items.is_empty()
+        || !payload.submitted_items.is_empty()
+    {
+        return prepare_dictation_attempt_payload(namespace, payload);
+    }
+
+    validate_surface_evidence(
+        payload.input_source.as_deref(),
+        payload.input_confirmation.as_ref(),
+        &payload.evidence_refs,
+    )?;
+    let attempt = payload.attempt.ok_or_else(|| {
+        AppError::BadRequest(
+            "submitAttempt requires attempt unless using dictation submitted_items".to_string(),
+        )
+    })?;
+    let attempt_summary = attempt_summary(&attempt);
+    let task = payload.task.or_else(|| task_from_attempt(&attempt));
+    let evaluation = json!(deterministic_evaluation(&attempt));
+
+    Ok(PreparedSubmitAttemptPayload {
+        space_id: payload.space_id,
+        feedback_loop_id: payload.feedback_loop_id,
+        goal: payload.goal,
+        task,
+        attempt_summary,
+        evaluation,
+        trace_metadata: Value::Null,
+        input_source: payload.input_source,
+    })
+}
+
+fn prepare_dictation_attempt_payload(
+    namespace: &str,
+    payload: SubmitAttemptPayload,
+) -> Result<PreparedSubmitAttemptPayload, AppError> {
+    let task_kind = payload
+        .task_kind
+        .ok_or_else(|| AppError::BadRequest("dictation attempt requires task_kind".to_string()))?;
+    let source =
+        resolve_dictation_source(payload.source, payload.input_source.as_deref(), "attempt")?;
+    let input = DictationAttemptInput {
+        namespace: namespace.to_string(),
+        task_kind,
+        source,
+        task: payload.task,
+        goal: payload.goal,
+        prompt_items: payload.prompt_items,
+        submitted_items: payload.submitted_items,
+        input_confirmation: payload.input_confirmation,
+        evidence_refs: payload.evidence_refs,
+        metadata: payload.metadata,
+    };
+    let attempt =
+        build_dictation_attempt(input).map_err(|error| AppError::BadRequest(error.to_string()))?;
+    let evaluation = serde_json::to_value(&attempt.evaluation).map_err(|error| {
+        AppError::Internal(format!(
+            "dictation evaluation serialization failed: {error}"
+        ))
+    })?;
+    let trace_metadata = json!({
+        "task_kind": attempt.task_kind,
+        "source": attempt.source,
+        "item_count": attempt.prompt_items.len(),
+        "submitted_item_count": attempt.submitted_items.len(),
+        "evidence_ref_count": attempt.evidence_ref_count,
+    });
+
+    Ok(PreparedSubmitAttemptPayload {
+        space_id: payload.space_id,
+        feedback_loop_id: payload.feedback_loop_id,
+        goal: attempt.goal,
+        task: attempt.task,
+        attempt_summary: attempt.summary,
+        evaluation,
+        trace_metadata,
+        input_source: Some(attempt.source.as_str().to_string()),
+    })
 }
 
 async fn submit_attempt(
@@ -573,18 +682,13 @@ async fn submit_attempt(
     let started_at = Utc::now();
     let payload: SubmitAttemptPayload = serde_json::from_value(request.payload.clone())
         .map_err(|error| AppError::BadRequest(format!("invalid submitAttempt payload: {error}")))?;
-    validate_surface_evidence(
-        payload.input_source.as_deref(),
-        payload.input_confirmation.as_ref(),
-        &payload.evidence_refs,
-    )?;
+    let prepared = prepare_submit_attempt_payload(&request.namespace, payload)?;
 
-    require_space_writer(state, payload.space_id, user_id).await?;
+    require_space_writer(state, prepared.space_id, user_id).await?;
     let namespace =
-        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+        resolve_namespace_by_name(state, user_id, prepared.space_id, &request.namespace).await?;
 
-    let attempt = attempt_summary(&payload.attempt);
-    let feedback_loop = match payload.feedback_loop_id {
+    let feedback_loop = match prepared.feedback_loop_id {
         Some(feedback_loop_id) => {
             let existing = state
                 .repositories
@@ -593,34 +697,32 @@ async fn submit_attempt(
                 .await
                 .map_err(AppError::Database)?
                 .ok_or(AppError::Unauthorized)?;
-            if existing.space_id != payload.space_id || existing.namespace_id != namespace.id {
+            if existing.space_id != prepared.space_id || existing.namespace_id != namespace.id {
                 return Err(AppError::BadRequest(
                     "FeedbackLoop must belong to the requested Space and Namespace".to_string(),
                 ));
             }
-            patch_feedback_loop_attempt(state, feedback_loop_id, attempt).await?
+            patch_feedback_loop_attempt(state, feedback_loop_id, prepared.attempt_summary.clone())
+                .await?
         }
         None => {
-            let task = payload
-                .task
-                .or_else(|| task_from_attempt(&payload.attempt))
-                .ok_or_else(|| {
-                    AppError::BadRequest(
-                        "submitAttempt requires task when feedback_loop_id is omitted".to_string(),
-                    )
-                })?;
-            let goal = payload
+            let task = prepared.task.ok_or_else(|| {
+                AppError::BadRequest(
+                    "submitAttempt requires task when feedback_loop_id is omitted".to_string(),
+                )
+            })?;
+            let goal = prepared
                 .goal
                 .unwrap_or_else(|| format!("Practice {}", request.namespace));
             state
                 .repositories
                 .feedback_loops
                 .create(CreateFeedbackLoop {
-                    space_id: payload.space_id,
+                    space_id: prepared.space_id,
                     namespace_id: namespace.id,
                     goal,
                     task,
-                    attempt: Some(attempt),
+                    attempt: Some(prepared.attempt_summary.clone()),
                     evaluation: None,
                     feedback: None,
                     adjustment: None,
@@ -633,13 +735,12 @@ async fn submit_attempt(
         }
     };
 
-    let evaluation = deterministic_evaluation(&payload.attempt);
     let completed_at = Utc::now();
     let trace = state
         .repositories
         .traces
         .create_completed(CreateCompletedTrace {
-            space_id: payload.space_id,
+            space_id: prepared.space_id,
             namespace_id: Some(namespace.id),
             source_type: trace_source_type(request.adapter),
             task_type: TraceTaskType::Practice,
@@ -666,14 +767,17 @@ async fn submit_attempt(
             generated_lens_run_ids: Vec::new(),
             generated_review_report_ids: Vec::new(),
             generated_feedback_loop_ids: vec![feedback_loop.id],
-            user_feedback: Some(json!({"attempt": payload.attempt})),
+            user_feedback: Some(json!({"attempt": prepared.attempt_summary})),
             error: None,
             metadata: json!({
                 "surface_gateway": true,
                 "surface": request.surface,
                 "action": request.action,
                 "adapter": request.adapter,
+                "namespace": request.namespace,
+                "input_source": prepared.input_source,
                 "deep_consolidation": false,
+                "dictation": prepared.trace_metadata,
             }),
         })
         .await
@@ -686,7 +790,7 @@ async fn submit_attempt(
             "status": "attempt_recorded",
             "feedback_loop_id": feedback_loop.id,
             "namespace_id": namespace.id,
-            "evaluation": evaluation,
+            "evaluation": prepared.evaluation,
             "deep_consolidation": false,
         }),
         trace.id,
@@ -1628,5 +1732,72 @@ mod tests {
         );
         assert!(!combined_persistence.contains("worksheet-2026-06-24"));
         assert!(!combined_persistence.contains("evidence_refs"));
+    }
+
+    #[test]
+    fn media_dictation_attempt_payload_rejects_confirmation_matrix_at_surface_boundary() {
+        for source in ["agent_ocr", "agent_transcribed", "mixed"] {
+            let missing = dictation_attempt_payload_with_confirmation(source, None);
+            let err =
+                prepare_submit_attempt_payload("child.english.spelling", missing).unwrap_err();
+            assert!(matches!(err, AppError::BadRequest(_)));
+            assert!(err
+                .to_string()
+                .contains("input_confirmation is required for media-derived dictation attempt"));
+
+            let unconfirmed = dictation_attempt_payload_with_confirmation(
+                source,
+                Some(json!({
+                    "status": "unknown",
+                    "method": "explicit_acceptance"
+                })),
+            );
+            let err =
+                prepare_submit_attempt_payload("child.english.spelling", unconfirmed).unwrap_err();
+            assert!(matches!(err, AppError::BadRequest(_)));
+            assert!(err.to_string().contains(
+                "input_confirmation must be confirmed by explicit acceptance or correction"
+            ));
+
+            let invalid_method = dictation_attempt_payload_with_confirmation(
+                source,
+                Some(json!({
+                    "status": "confirmed",
+                    "method": "manual_bypass"
+                })),
+            );
+            let err = prepare_submit_attempt_payload("child.english.spelling", invalid_method)
+                .unwrap_err();
+            assert!(matches!(err, AppError::BadRequest(_)));
+            assert!(err.to_string().contains(
+                "input_confirmation must be confirmed by explicit acceptance or correction"
+            ));
+        }
+    }
+
+    fn dictation_attempt_payload_with_confirmation(
+        source: &str,
+        input_confirmation: Option<Value>,
+    ) -> SubmitAttemptPayload {
+        let mut payload = json!({
+            "space_id": Uuid::new_v4(),
+            "task_kind": "english_spelling",
+            "source": source,
+            "prompt_items": [
+                {"item_kind": "english_word", "expected_text": "because", "metadata": {}}
+            ],
+            "submitted_items": [
+                {"actual_text": "becaus", "metadata": {}}
+            ],
+            "task": "Today's spelling words",
+            "goal": "Practice child.english.spelling",
+            "metadata": {}
+        });
+
+        if let Some(input_confirmation) = input_confirmation {
+            payload["input_confirmation"] = input_confirmation;
+        }
+
+        serde_json::from_value(payload).expect("test payload should deserialize")
     }
 }

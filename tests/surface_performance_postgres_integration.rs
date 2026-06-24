@@ -115,6 +115,91 @@ async fn performance_surface_submit_attempt_updates_feedback_loop_and_writes_tra
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn performance_surface_submit_attempt_records_typed_dictation_payload() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+
+    let response = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace": "child.english.spelling",
+            "surface": "performance",
+            "action": "submit_attempt",
+            "actor": fixture.owner_user_id,
+            "adapter": "mcp",
+            "payload": {
+                "space_id": fixture.space_id,
+                "task_kind": "english_spelling",
+                "source": "typed",
+                "prompt_items": [
+                    {"item_kind": "english_word", "expected_text": "because", "metadata": {}}
+                ],
+                "submitted_items": [
+                    {"actual_text": "becaus", "metadata": {}}
+                ],
+                "task": "Today's spelling words",
+                "goal": "Practice child.english.spelling",
+                "metadata": {"session": "monday"}
+            },
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("response should be json");
+    let trace_id = uuid_field(&body, "/data/generated_trace_id");
+    let feedback_loop_id = uuid_field(&body, "/data/result/feedback_loop_id");
+    assert_eq!(
+        body.pointer("/data/result/evaluation/summary")
+            .and_then(Value::as_str),
+        Some("needs_review")
+    );
+    assert_eq!(
+        body.pointer("/data/result/evaluation/item_results/0/mistake_types/0")
+            .and_then(Value::as_str),
+        Some("missing_letter")
+    );
+
+    let feedback_loop: (Uuid, Uuid, String, String, String) = sqlx::query_as(
+        "SELECT space_id, namespace_id, goal, task, attempt FROM feedback_loops WHERE id = $1",
+    )
+    .bind(feedback_loop_id)
+    .fetch_one(&pool)
+    .await
+    .expect("feedback loop should exist");
+    assert_eq!(feedback_loop.0, fixture.space_id);
+    assert_eq!(feedback_loop.1, fixture.namespace_id);
+    assert_eq!(feedback_loop.2, "Practice child.english.spelling");
+    assert_eq!(feedback_loop.3, "Today's spelling words");
+    assert_eq!(feedback_loop.4, "because -> becaus");
+
+    let trace: (Uuid, Option<Uuid>, Option<Value>, Value) = sqlx::query_as(
+        "SELECT space_id, namespace_id, user_feedback, metadata FROM traces WHERE id = $1",
+    )
+    .bind(trace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("trace should exist");
+    assert_eq!(trace.0, fixture.space_id);
+    assert_eq!(trace.1, Some(fixture.namespace_id));
+    assert_eq!(trace.2, Some(json!({"attempt": "because -> becaus"})));
+    assert_eq!(trace.3["namespace"], "child.english.spelling");
+    assert_eq!(trace.3["dictation"]["task_kind"], "english_spelling");
+    assert_eq!(trace.3["dictation"]["source"], "typed");
+    assert_eq!(trace.3["dictation"]["item_count"], 1);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
 async fn performance_surface_rejects_cross_namespace_and_cross_space_attempts() {
     let pool = postgres_pool().await;
     db::run_migrations(&pool)
@@ -287,6 +372,92 @@ async fn performance_surface_validates_evidence_refs_without_persisting_descript
     assert!(!trace_text.contains("evidence_refs"));
     assert!(!trace_text.contains("access_token_notes"));
     assert!(!trace_text.contains("weekly review"));
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn performance_surface_media_dictation_attempt_excludes_evidence_descriptors_from_persistence(
+) {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+
+    let response = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace": "child.english.spelling",
+            "surface": "performance",
+            "action": "submit_attempt",
+            "actor": fixture.owner_user_id,
+            "adapter": "mcp",
+            "payload": {
+                "space_id": fixture.space_id,
+                "feedback_loop_id": fixture.feedback_loop_id,
+                "task_kind": "english_spelling",
+                "source": "agent_ocr",
+                "input_confirmation": {
+                    "status": "confirmed",
+                    "method": "explicit_correction"
+                },
+                "prompt_items": [
+                    {"item_kind": "english_word", "expected_text": "because", "metadata": {}}
+                ],
+                "submitted_items": [
+                    {"actual_text": "becaus", "metadata": {}}
+                ],
+                "evidence_refs": [{
+                    "provider": "agent_ocr",
+                    "locator": "s3://dictation/archive/attempt-worksheet.png",
+                    "media_type": "image/png",
+                    "transcript": "raw transcript should not persist",
+                    "transcript_source": "agent_ocr",
+                    "metadata": {"label": "weekly review", "page": 2}
+                }],
+                "metadata": {"session": "media-confirmed"}
+            },
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("response should be json");
+    let trace_id = uuid_field(&body, "/data/generated_trace_id");
+
+    let feedback_loop: (String,) =
+        sqlx::query_as("SELECT attempt FROM feedback_loops WHERE id = $1")
+            .bind(fixture.feedback_loop_id)
+            .fetch_one(&pool)
+            .await
+            .expect("feedback loop should exist");
+    assert_eq!(feedback_loop.0, "because -> becaus");
+
+    let trace: (Option<String>, Option<String>, Option<Value>, Value) = sqlx::query_as(
+        "SELECT input_summary, output_summary, user_feedback, metadata FROM traces WHERE id = $1",
+    )
+    .bind(trace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("performance trace should exist");
+    let trace_text = format!(
+        "{}{}{}{}",
+        trace.0.unwrap_or_default(),
+        trace.1.unwrap_or_default(),
+        trace.2.unwrap_or(Value::Null),
+        trace.3
+    );
+    assert!(!trace_text.contains("evidence_refs"));
+    assert!(!trace_text.contains("attempt-worksheet"));
+    assert!(!trace_text.contains("raw transcript"));
+    assert!(!trace_text.contains("weekly review"));
+    assert_eq!(trace.3["dictation"]["evidence_ref_count"], 1);
 }
 
 #[tokio::test]
