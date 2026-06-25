@@ -125,7 +125,7 @@ pub struct PracticePlanEvidenceGap {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
+#[serde(tag = "result", rename_all = "snake_case")]
 pub enum PracticePlanGeneration {
     Plan(Box<PracticePlan>),
     EvidenceGap(PracticePlanEvidenceGap),

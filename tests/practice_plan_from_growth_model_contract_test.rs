@@ -70,6 +70,46 @@ fn recurring_dictation_pattern_generates_evidence_linked_ten_minute_plan() {
 }
 
 #[test]
+fn practice_plan_generation_json_round_trip_preserves_plan_status() {
+    let space_id = Uuid::new_v4();
+    let namespace_id = Uuid::new_v4();
+    let first_trace = EvidenceId::Trace(Uuid::new_v4());
+    let second_feedback_loop = EvidenceId::FeedbackLoop(Uuid::new_v4());
+    let generation_trace_id = Uuid::new_v4();
+    let growth = aggregate_growth_model(
+        space_id,
+        namespace_id,
+        vec![
+            GrowthEvidenceRecord {
+                space_id,
+                namespace_id,
+                evidence_id: first_trace,
+                signal_labels: vec!["missing_letter".to_string()],
+                explanation: None,
+            },
+            GrowthEvidenceRecord {
+                space_id,
+                namespace_id,
+                evidence_id: second_feedback_loop,
+                signal_labels: vec!["missing_letter".to_string()],
+                explanation: None,
+            },
+        ],
+        Utc.with_ymd_and_hms(2026, 6, 24, 21, 0, 0).unwrap(),
+    );
+    let generated = PracticePlanGeneration::from_growth_model(&growth.model, generation_trace_id);
+
+    let value = serde_json::to_value(&generated).expect("PracticePlanGeneration should serialize");
+    assert_eq!(value["result"], "plan");
+    assert_eq!(value["status"], "selected");
+
+    let round_trip: PracticePlanGeneration =
+        serde_json::from_value(value).expect("PracticePlanGeneration should deserialize");
+
+    assert_eq!(round_trip, generated);
+}
+
+#[test]
 fn sparse_growth_model_returns_evidence_gap_instead_of_targeted_plan() {
     let space_id = Uuid::new_v4();
     let namespace_id = Uuid::new_v4();
