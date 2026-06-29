@@ -311,18 +311,21 @@ fn dictation_mistake_type(pattern: &str) -> &str {
 
 fn practice_content_for_mistake(mistake_type: &str) -> String {
     match mistake_type {
-        "missing_letter" => "Spend 10 minutes practicing words where a letter was missed. Say each word, spell it slowly, then check and rewrite any missed letter.".to_string(),
-        "extra_letter" => "Spend 10 minutes practicing words where an extra letter appeared. Spell each word once slowly, compare it with the target, then rewrite it without the extra letter.".to_string(),
-        "letter_order_error" => "Spend 10 minutes practicing words with letter-order mistakes. Break each word into chunks, spell each chunk aloud, then write the full word again.".to_string(),
-        "double_letter_error" => "Spend 10 minutes practicing words with double-letter patterns. Mark the repeated letters first, then spell and rewrite each word twice.".to_string(),
-        "capitalization_error" => "Spend 10 minutes practicing capitalization in recent dictation items. Copy each item once, circle the capital letters, then write it again from memory.".to_string(),
-        "spacing_error" => "Spend 10 minutes practicing spacing in recent dictation items. Read each item aloud, mark the word breaks, then rewrite it with stable spacing.".to_string(),
-        "punctuation_error" => "Spend 10 minutes practicing punctuation in recent dictation items. Read each sentence aloud, place punctuation deliberately, then compare with the target.".to_string(),
-        "missing_word" => "Spend 10 minutes practicing sentences where a word was missed. Read the sentence, underline each spoken word, then rewrite it from memory.".to_string(),
-        "extra_word" => "Spend 10 minutes practicing sentences where an extra word appeared. Read the target sentence, count each word, then rewrite only the target words.".to_string(),
-        "word_order_error" => "Spend 10 minutes practicing word order. Put the words in order first, read the sentence aloud, then write it from memory.".to_string(),
+        "wrong_character" => "Tomorrow practice: 10-minute daily dictation for wrong character mistakes. Use a small word list from recent misses: listen, write, check the target, then rewrite each missed item once.".to_string(),
+        "missing_character" => "Tomorrow practice: 10-minute daily dictation for missing character mistakes. Use a small word list from recent misses: listen, write every character, check, then rewrite the missed item.".to_string(),
+        "extra_character" => "Tomorrow practice: 10-minute daily dictation for extra character mistakes. Use a small word list from recent misses: listen, write only the target characters, check, then rewrite once.".to_string(),
+        "missing_letter" => "Tomorrow practice: 10-minute spelling practice for missing letter mistakes. Spend 10 minutes on recent spelling attempt misses: say the word, chunk it, spell it slowly, check, then rewrite the missed letter correctly.".to_string(),
+        "extra_letter" => "Tomorrow practice: 10-minute spelling practice for extra letter mistakes. For each recent spelling attempt, chunk the word, spell it slowly, check the target, then rewrite without the extra letter.".to_string(),
+        "letter_order_error" => "Tomorrow practice: 10-minute spelling practice for letter order mistakes. Chunk each recent word, spell each chunk slowly, check the order, then rewrite the full word once.".to_string(),
+        "double_letter_error" => "Tomorrow practice: 10-minute spelling practice for double-letter mistakes. Mark the repeated letters in each word, spell it slowly, check, then rewrite it twice.".to_string(),
+        "capitalization_error" => "Tomorrow practice: 10-minute daily dictation for capitalization mistakes. Copy each recent item once, mark the capital letters, then write it again from memory.".to_string(),
+        "spacing_error" => "Tomorrow practice: 10-minute daily dictation for spacing mistakes. Read each recent item aloud, mark word breaks, write it, check, then rewrite with stable spacing.".to_string(),
+        "punctuation_error" => "Tomorrow practice: 10-minute sentence dictation for punctuation mistakes. Listen or read once, write the sentence, place punctuation deliberately, then check and rewrite.".to_string(),
+        "missing_word" => "Tomorrow practice: 10-minute sentence dictation for missing word mistakes. Listen, write the sentence, underline each word you heard, check, then rewrite the full sentence.".to_string(),
+        "extra_word" => "Tomorrow practice: 10-minute sentence dictation for extra word mistakes. Listen, write the sentence, count the target words, check, then rewrite only the target sentence.".to_string(),
+        "word_order_error" => "Tomorrow practice: 10-minute sentence dictation for word order mistakes. First listen, arrange the words in order, write the sentence, check, then rewrite from memory.".to_string(),
         _ => format!(
-            "Spend 10 minutes on focused dictation practice for {mistake_type}. Use recent missed items, write each one slowly, then check and correct it."
+            "Tomorrow practice: 10-minute daily dictation for {mistake_type}. Use recent missed items, write each one slowly, check the target, then correct and rewrite it."
         ),
     }
 }
@@ -347,6 +350,15 @@ fn expected_effect_for_mistake(mistake_type: &str) -> String {
         "spacing_error" => "Improve spacing accuracy in the next dictation attempt.".to_string(),
         "punctuation_error" => {
             "Improve punctuation accuracy in the next dictation attempt.".to_string()
+        }
+        "wrong_character" => {
+            "Reduce wrong-character mistakes in the next dictation attempt.".to_string()
+        }
+        "missing_character" => {
+            "Reduce missing-character mistakes in the next dictation attempt.".to_string()
+        }
+        "extra_character" => {
+            "Reduce extra-character mistakes in the next dictation attempt.".to_string()
         }
         "missing_word" => {
             "Reduce missing-word sentence dictation mistakes in the next attempt.".to_string()
