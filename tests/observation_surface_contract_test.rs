@@ -49,6 +49,21 @@ fn observation_state_summary_response_is_adapter_shaped() {
             "growth_model": {
                 "status": "not_persisted",
                 "growth_model_id": Value::Null
+            },
+            "dictation_observation": {
+                "status": "ready",
+                "timeframe": "7d",
+                "evidence_record_count": 2,
+                "recurring_mistake_types": ["missing_letter"],
+                "stability_signal": "needs_focus",
+                "current_focus": "Review missing_letter with short targeted practice",
+                "supporting_evidence_ids": [
+                    {"kind": "trace", "id": Uuid::new_v4()},
+                    {"kind": "feedback_loop", "id": Uuid::new_v4()}
+                ],
+                "evidence_gaps": [],
+                "growth_model_id": Uuid::new_v4(),
+                "growth_model_status": "derived_from_growth_evidence"
             }
         }),
         trace_id,
@@ -60,6 +75,16 @@ fn observation_state_summary_response_is_adapter_shaped() {
     assert_eq!(result["status"], "state_summary_ready");
     assert_eq!(result["growth_model"]["status"], "not_persisted");
     assert_eq!(result["growth_model"]["growth_model_id"], Value::Null);
+    assert_eq!(result["dictation_observation"]["timeframe"], "7d");
+    assert_eq!(
+        result["dictation_observation"]["recurring_mistake_types"][0],
+        "missing_letter"
+    );
+    assert_eq!(
+        result["dictation_observation"]["supporting_evidence_ids"][0]["kind"],
+        "trace"
+    );
+    assert_eq!(result["dictation_observation"].get("evidence_refs"), None);
     assert_eq!(result.get("raw_rows"), None);
     assert_eq!(result.get("memory_atoms"), None);
     assert_eq!(result.get("cognitive_scenes"), None);

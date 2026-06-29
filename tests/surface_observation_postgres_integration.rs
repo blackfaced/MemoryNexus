@@ -126,6 +126,45 @@ async fn observation_surface_returns_state_summary_and_writes_observation_trace(
         body.pointer("/data/result/growth_model/growth_model_id"),
         Some(&Value::Null)
     );
+    assert_eq!(
+        body.pointer("/data/result/dictation_observation/status")
+            .and_then(Value::as_str),
+        Some("ready")
+    );
+    assert_eq!(
+        body.pointer("/data/result/dictation_observation/timeframe")
+            .and_then(Value::as_str),
+        Some("7d")
+    );
+    assert_eq!(
+        body.pointer("/data/result/dictation_observation/evidence_record_count")
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(
+        body.pointer("/data/result/dictation_observation/recurring_mistake_types/0")
+            .and_then(Value::as_str),
+        Some("missing_letter")
+    );
+    assert_eq!(
+        body.pointer("/data/result/dictation_observation/supporting_evidence_ids/0/kind")
+            .and_then(Value::as_str),
+        Some("trace")
+    );
+    let body_text = body.to_string();
+    for descriptor_field in [
+        "evidence_refs",
+        "input_confirmation",
+        "input_source",
+        "locator",
+        "transcript",
+        "provider",
+    ] {
+        assert!(
+            !body_text.contains(descriptor_field),
+            "observation response must not include descriptor field {descriptor_field}: {body_text}"
+        );
+    }
     assert_eq!(body.pointer("/data/result/raw_rows"), None);
 
     let trace: ObservationTraceRow = sqlx::query_as(
@@ -402,15 +441,39 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
         namespace_id,
         "capture",
         "captured word list",
+        json!({}),
     )
     .await;
-    seed_trace(pool, space_id, namespace_id, "practice", "attempt recorded").await;
+    seed_trace(
+        pool,
+        space_id,
+        namespace_id,
+        "practice",
+        "attempt recorded",
+        json!({
+            "dictation": {
+                "growth_evidence": {
+                    "signal_labels": ["missing_letter"]
+                }
+            }
+        }),
+    )
+    .await;
     seed_trace(
         pool,
         space_id,
         namespace_id,
         "review",
         "mistake pattern reviewed",
+        json!({
+            "dictation": {
+                "evaluation": {
+                    "item_results": [
+                        {"mistake_types": ["missing_letter"]}
+                    ]
+                }
+            }
+        }),
     )
     .await;
 
@@ -550,6 +613,7 @@ async fn seed_trace(
     namespace_id: Uuid,
     task_type: &str,
     output: &str,
+    metadata: Value,
 ) {
     sqlx::query(
         r#"
@@ -589,7 +653,7 @@ async fn seed_trace(
             '{}',
             '{}',
             '{}',
-            '{}'
+            $5
         )
         "#,
     )
@@ -597,6 +661,7 @@ async fn seed_trace(
     .bind(namespace_id)
     .bind(task_type)
     .bind(output)
+    .bind(metadata)
     .execute(pool)
     .await
     .expect("trace seed should insert");

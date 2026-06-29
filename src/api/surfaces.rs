@@ -2,7 +2,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::{Error, PgPool};
+use sqlx::{Error, FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
@@ -19,10 +19,14 @@ use crate::domain::dictation::{
     build_dictation_attempt, build_dictation_capture, DictationAttemptInput, DictationCaptureInput,
     DictationSource, DictationTaskKind, PromptItemInput, SubmittedItemInput,
 };
+use crate::domain::dictation_observation::{
+    build_dictation_observation_summary, DictationObservationEvidenceRecord,
+};
 use crate::domain::event::{
     EngineEvent, EngineEventEnvelope, EnginePayloadRef, EnginePayloadRefKind,
 };
 use crate::domain::evidence::{validate_evidence_request, InputConfirmation};
+use crate::domain::growth_model::{EvidenceId, GrowthEvidenceRecord};
 use crate::domain::practice_plan::{build_next_task_plan, PlanningRequest};
 use crate::domain::reflection::{
     build_reflection_insight, EvidenceRef, EvidenceRefKind, ReflectionEvidence, ReflectionRequest,
@@ -181,6 +185,20 @@ async fn get_state_summary(
     let counts = load_observation_counts(&state.db, payload.space_id, namespace.id).await?;
     let latest_trace_task_type =
         latest_trace_task_type(&state.db, payload.space_id, namespace.id).await?;
+    let observation_window_end = started_at + chrono::Duration::minutes(1);
+    let dictation_evidence = load_recent_dictation_observation_evidence(
+        &state.db,
+        payload.space_id,
+        namespace.id,
+        observation_window_end,
+    )
+    .await?;
+    let dictation_observation = build_dictation_observation_summary(
+        payload.space_id,
+        namespace.id,
+        observation_window_end,
+        dictation_evidence,
+    );
     let output_summary = format!(
         "Observed {}: {} memories, {} traces, {} feedback loops",
         request.namespace,
@@ -216,6 +234,7 @@ async fn get_state_summary(
             "growth_model_id": Value::Null,
             "note": "No persisted GrowthModel is available for this namespace yet.",
         },
+        "dictation_observation": dictation_observation,
     });
 
     let completed_at = Utc::now();
@@ -260,6 +279,8 @@ async fn get_state_summary(
                 "trace_count": counts.trace_count,
                 "feedback_loop_count": counts.feedback_loop_total(),
                 "growth_model_status": "not_persisted",
+                "dictation_observation_status": dictation_observation.status,
+                "dictation_observation_evidence_record_count": dictation_observation.evidence_record_count,
             }),
         })
         .await
@@ -1228,6 +1249,155 @@ fn map_sleep_cycle_create_error(error: Error) -> AppError {
         AppError::Unauthorized
     } else {
         AppError::Database(error)
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct DictationTraceEvidenceRow {
+    id: Uuid,
+    started_at: DateTime<Utc>,
+    metadata: Value,
+}
+
+#[derive(Debug, FromRow)]
+struct DictationFeedbackLoopEvidenceRow {
+    id: Uuid,
+    updated_at: DateTime<Utc>,
+    evaluation: Option<String>,
+}
+
+async fn load_recent_dictation_observation_evidence(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Vec<DictationObservationEvidenceRecord>, AppError> {
+    let window_start = now - chrono::Duration::days(7);
+    let mut records = Vec::new();
+
+    let trace_rows = sqlx::query_as::<_, DictationTraceEvidenceRow>(
+        r#"
+        SELECT id, started_at, metadata
+        FROM traces
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND started_at >= $3
+          AND started_at <= $4
+          AND status = 'completed'
+          AND task_type <> 'observation'
+        ORDER BY started_at ASC, id ASC
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(window_start)
+    .bind(now)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    for row in trace_rows {
+        let signal_labels = dictation_signal_labels_from_value(&row.metadata);
+        if signal_labels.is_empty() {
+            continue;
+        }
+        records.push(DictationObservationEvidenceRecord {
+            observed_at: row.started_at,
+            growth_evidence: GrowthEvidenceRecord {
+                space_id,
+                namespace_id,
+                evidence_id: EvidenceId::Trace(row.id),
+                signal_labels,
+                explanation: None,
+            },
+        });
+    }
+
+    let feedback_loop_rows = sqlx::query_as::<_, DictationFeedbackLoopEvidenceRow>(
+        r#"
+        SELECT id, updated_at, evaluation
+        FROM feedback_loops
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND updated_at >= $3
+          AND updated_at <= $4
+        ORDER BY updated_at ASC, id ASC
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(window_start)
+    .bind(now)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    for row in feedback_loop_rows {
+        let signal_labels = row
+            .evaluation
+            .as_deref()
+            .and_then(|evaluation| serde_json::from_str::<Value>(evaluation).ok())
+            .map(|value| dictation_signal_labels_from_value(&value))
+            .unwrap_or_default();
+        if signal_labels.is_empty() {
+            continue;
+        }
+        records.push(DictationObservationEvidenceRecord {
+            observed_at: row.updated_at,
+            growth_evidence: GrowthEvidenceRecord {
+                space_id,
+                namespace_id,
+                evidence_id: EvidenceId::FeedbackLoop(row.id),
+                signal_labels,
+                explanation: None,
+            },
+        });
+    }
+
+    Ok(records)
+}
+
+fn dictation_signal_labels_from_value(value: &Value) -> Vec<String> {
+    let mut labels = Vec::new();
+    collect_dictation_signal_labels(value, &mut labels);
+    labels
+}
+
+fn collect_dictation_signal_labels(value: &Value, labels: &mut Vec<String>) {
+    match value {
+        Value::Object(object) => {
+            for (key, nested) in object {
+                if matches!(key.as_str(), "signal_labels" | "mistake_types") {
+                    collect_string_array_labels(nested, labels);
+                } else {
+                    collect_dictation_signal_labels(nested, labels);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_dictation_signal_labels(item, labels);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_string_array_labels(value: &Value, labels: &mut Vec<String>) {
+    let Some(items) = value.as_array() else {
+        return;
+    };
+    for item in items {
+        let Some(label) = item
+            .as_str()
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+        else {
+            continue;
+        };
+        if !labels.iter().any(|existing| existing == label) {
+            labels.push(label.to_string());
+        }
     }
 }
 
