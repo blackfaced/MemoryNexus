@@ -4,12 +4,11 @@
 adapter over the Rust API, not a second backend. Memory still belongs to
 `CognitiveSpace`; MCP clients only call tools that operate through the API.
 
-Current MCP tools are compatibility surfaces over existing object-level APIs.
-Surface Gateway exists in the HTTP API for Capture, Performance, and manual
-consolidation, but MCP tools have not yet been moved onto that Gateway. The
-refreshed architecture treats MCP as an Adapter. New capabilities should move
-toward Surface Gateway actions for Capture, Performance, Reflection, Planning,
-and Observation instead of giving agents direct Engine ownership.
+MCP includes both compatibility tools over existing object-level APIs and
+generic Surface Gateway tools for Capture, Performance, Reflection, Planning,
+and Observation. The Surface tools treat MCP as an Adapter: they call
+`/api/v1/surfaces` with `adapter: "mcp"` and do not give agents direct Engine
+ownership or repository access.
 
 ## Configuration
 
@@ -107,6 +106,11 @@ checkout. Skip the build step only when the MCP config uses `cargo run`. Rebuild
 | `record_practice_feedback` | Canonical: record mistake pattern, feedback, adjustment, and next exercise for a namespace practice session |
 | `list_practice_sessions` | Canonical: list practice sessions in a Skill Namespace |
 | `get_practice_session` | Canonical: fetch one practice session from a Skill Namespace |
+| `surface_capture_observation` | Generic Surface Gateway Capture action `capture_observation` |
+| `surface_submit_attempt` | Generic Surface Gateway Performance action `submit_attempt` |
+| `surface_review_evidence` | Generic Surface Gateway Reflection action `review_evidence` |
+| `surface_generate_next_task` | Generic Surface Gateway Planning action `generate_next_task` |
+| `surface_get_state_summary` | Generic Surface Gateway Observation action `get_state_summary` |
 | `learning_math_create_practice_session` | Compatibility: create a parent-assisted `learning.math` practice session |
 | `learning_math_record_attempt` | Compatibility: record a learner's answer or reasoning for a `learning.math` practice session |
 | `learning_math_record_feedback` | Compatibility: record mistake pattern, feedback, adjustment, and next exercise for `learning.math` |
@@ -128,9 +132,9 @@ printf '%s\n' \
 
 Expected output includes an `initialize` response and a `tools/list` response.
 The `tools/list` response must include MemoryNexus tools such as
-`create_space`, `add_memory`, `search_memories`, `run_lens`,
-`get_install_status`, `upgrade_install`, and the canonical practice-session
-tools.
+`create_space`, `add_memory`, `search_memories`, `run_lens`, the generic
+Surface tools, `get_install_status`, `upgrade_install`, and the canonical
+practice-session tools.
 
 To call a tool, keep the API running and send a `tools/call` request:
 
@@ -217,6 +221,76 @@ CognitiveScene, or CognitiveProjection as practice-flow inputs.
 
 The tool response returns MemoryNexus API JSON as text content so MCP clients can
 read the same traceable payload that the CLI sees.
+
+Generic Surface Gateway tools use this shared argument shape:
+
+```json
+{
+  "namespace": "child.english.spelling",
+  "actor": "<authenticated-user-id>",
+  "payload": {
+    "space_id": "<space-id>"
+  },
+  "context": {
+    "mode": "fast",
+    "locale": "en-US",
+    "device": "desktop",
+    "runtime_preference": "deterministic"
+  }
+}
+```
+
+The MCP adapter fills in the generic Surface fields:
+
+| Tool | Surface | Action |
+| --- | --- | --- |
+| `surface_capture_observation` | `capture` | `capture_observation` |
+| `surface_submit_attempt` | `performance` | `submit_attempt` |
+| `surface_review_evidence` | `reflection` | `review_evidence` |
+| `surface_generate_next_task` | `planning` | `generate_next_task` |
+| `surface_get_state_summary` | `observation` | `get_state_summary` |
+
+Capture can derive the target Space from the namespace resolved by the API.
+Performance, Reflection, Planning, and Observation follow the current HTTP
+Surface contract and require `payload.space_id`.
+
+Typed or pasted requests are text-first. When `payload.source` or
+`payload.input_source` is `typed` or `pasted`, the adapter rejects
+`evidence_refs`, `input_confirmation`, and media descriptor fields before
+calling the API. Media-derived sources `agent_ocr`, `agent_transcribed`, and
+`mixed` require:
+
+```json
+{
+  "input_confirmation": {
+    "status": "confirmed",
+    "method": "explicit_acceptance"
+  }
+}
+```
+
+`method` may also be `explicit_correction`. Optional `EvidenceRefInput`
+descriptors may pass through only on confirmed media-derived Capture or
+Performance calls. MemoryNexus does not perform OCR, ASR, media inspection,
+resolver execution, descriptor persistence, or provider availability checks in
+this path.
+
+Surface tool responses preserve generated Surface provenance such as
+`generated_trace_id` when returned by the API. The MCP adapter does not return
+evidence descriptor objects, raw locators, provider metadata, or claim that
+descriptors were stored or are resolvable.
+
+Generic Surface smoke:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"surface_capture_observation","arguments":{"namespace":"child.english.spelling","actor":"<user-id>","payload":{"source":"typed","content":"because\nfriend"},"context":{"mode":"fast","runtime_preference":"deterministic"}}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"surface_submit_attempt","arguments":{"namespace":"child.english.spelling","actor":"<user-id>","payload":{"space_id":"<space-id>","source":"typed","attempt":{"target":"because","submitted":"becuase"}},"context":{"mode":"fast","runtime_preference":"deterministic"}}}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"surface_review_evidence","arguments":{"namespace":"child.english.spelling","actor":"<user-id>","payload":{"space_id":"<space-id>","question":"What pattern appears?","evidence":[]},"context":{"mode":"focused","runtime_preference":"deterministic"}}}}' \
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"surface_generate_next_task","arguments":{"namespace":"child.english.spelling","actor":"<user-id>","payload":{"space_id":"<space-id>","objective":"Review the because spelling pattern"},"context":{"mode":"focused","runtime_preference":"deterministic"}}}}' \
+  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"surface_get_state_summary","arguments":{"namespace":"child.english.spelling","actor":"<user-id>","payload":{"space_id":"<space-id>","timeframe":"7d"},"context":{"mode":"focused","runtime_preference":"deterministic"}}}}' \
+  | MEMORYNEXUS_TOKEN='<jwt-token>' cargo run --quiet --bin memorynexus-mcp
+```
 
 Install or upgrade inspection:
 
