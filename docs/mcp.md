@@ -364,3 +364,6 @@ debugging. Use `memorynexus-mcp` when an AI client should call MemoryNexus tools
 directly.
 
 Both surfaces use the same Rust API and the same `CognitiveSpace` boundary.
+
+For the first Dictation Coach agent loop over these generic tools, see
+[Minimal Dictation Agent Demo](dictation-agent-demo.md).
