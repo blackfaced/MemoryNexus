@@ -64,13 +64,101 @@ jobs:
       - run: cargo test --all-features --all-targets
         timeout-minutes: 20
 
+  surface-postgres:
+    name: PostgreSQL Surface Integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: memorynexus_surface_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d memorynexus_surface_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memorynexus_surface_ci
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: Decide whether Surface PostgreSQL tests are required
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}" > changed-files.txt
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > changed-files.txt
+          else
+            git ls-tree -r --name-only HEAD > changed-files.txt
+          fi
+
+          echo "Changed files:"
+          cat changed-files.txt
+
+          if grep -E '^(src/|tests/|migrations/|\.github/workflows/|Cargo\.toml$|Cargo\.lock$)' changed-files.txt >/dev/null; then
+            echo "run_surface_postgres=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_surface_postgres=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Skip docs-only Surface PostgreSQL gate
+        if: steps.changes.outputs.run_surface_postgres != 'true'
+        run: echo "No Rust, tests, migrations, Cargo, or workflow changes; PostgreSQL Surface Integration context is intentionally green."
+      - name: Enumerate Surface PostgreSQL integration targets
+        if: steps.changes.outputs.run_surface_postgres == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          find tests -maxdepth 1 -type f -name 'surface_*_postgres_integration.rs' -print \
+            | sort \
+            | tee surface-postgres-files.txt
+
+          if [[ ! -s surface-postgres-files.txt ]]; then
+            echo "No tests/surface_*_postgres_integration.rs files were found."
+            exit 1
+          fi
+
+          sed -E 's#^tests/##; s#\.rs$##' surface-postgres-files.txt \
+            | tee surface-postgres-enumerated-targets.txt
+
+          echo "Enumerated Surface PostgreSQL targets:"
+          cat surface-postgres-enumerated-targets.txt
+      - name: Run Surface PostgreSQL integration targets
+        if: steps.changes.outputs.run_surface_postgres == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > surface-postgres-executed-targets.txt
+
+          while IFS= read -r target; do
+            echo "$target" | tee -a surface-postgres-executed-targets.txt
+            cargo test --locked --test "$target" -- --ignored --test-threads=1
+          done < surface-postgres-enumerated-targets.txt
+
+          echo "Executed Surface PostgreSQL targets:"
+          cat surface-postgres-executed-targets.txt
+
+          diff -u surface-postgres-enumerated-targets.txt surface-postgres-executed-targets.txt
+        timeout-minutes: 15
+
   acceptance:
     name: Acceptance
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.acceptance == 'true'
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16.4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -83,7 +171,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       qdrant:
-        image: qdrant/qdrant:latest
+        image: qdrant/qdrant:v1.12.4
         ports:
           - 6333:6333
     env:

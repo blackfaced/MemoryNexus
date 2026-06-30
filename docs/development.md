@@ -86,6 +86,49 @@ cargo test
 cargo clippy --all-targets --all-features -- -D clippy::all
 ```
 
+## PostgreSQL Surface Integration
+
+Pull request CI has a stable `PostgreSQL Surface Integration` check for the
+ignored Surface Gateway suites. It starts pinned PostgreSQL, dynamically
+enumerates every `tests/surface_*_postgres_integration.rs` target, runs each
+target with `--ignored`, and fails if the enumerated and executed manifests do
+not match.
+
+Run the same gate locally with a dedicated database:
+
+```bash
+docker compose up -d postgres
+
+docker exec memorynexus_db psql -U postgres -d postgres -c \
+  "DROP DATABASE IF EXISTS memorynexus_surface_ci"
+docker exec memorynexus_db psql -U postgres -d postgres -c \
+  "CREATE DATABASE memorynexus_surface_ci"
+
+find tests -maxdepth 1 -type f -name 'surface_*_postgres_integration.rs' -print \
+  | sort \
+  | tee /tmp/memorynexus-surface-postgres-files.txt
+
+test -s /tmp/memorynexus-surface-postgres-files.txt
+
+sed -E 's#^tests/##; s#\.rs$##' /tmp/memorynexus-surface-postgres-files.txt \
+  | tee /tmp/memorynexus-surface-postgres-enumerated-targets.txt
+
+: > /tmp/memorynexus-surface-postgres-executed-targets.txt
+
+while IFS= read -r target; do
+  echo "$target" | tee -a /tmp/memorynexus-surface-postgres-executed-targets.txt
+  DATABASE_URL=postgresql://postgres:postgres@localhost:5432/memorynexus_surface_ci \
+    cargo test --locked --test "$target" -- --ignored --test-threads=1
+done < /tmp/memorynexus-surface-postgres-enumerated-targets.txt
+
+diff -u \
+  /tmp/memorynexus-surface-postgres-enumerated-targets.txt \
+  /tmp/memorynexus-surface-postgres-executed-targets.txt
+
+docker exec memorynexus_db psql -U postgres -d postgres -c \
+  "DROP DATABASE IF EXISTS memorynexus_surface_ci"
+```
+
 ## Acceptance
 
 The local acceptance test drives the real API through the CLI and requires local
