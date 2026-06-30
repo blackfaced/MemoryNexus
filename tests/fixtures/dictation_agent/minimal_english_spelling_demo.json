@@ -1,0 +1,67 @@
+{
+  "namespace": "child.english.spelling",
+  "actor": "00000000-0000-0000-0000-000000000001",
+  "space_id": "22222222-2222-2222-2222-222222222222",
+  "locale": "en-US",
+  "word_list": {
+    "title": "Tuesday spelling list",
+    "source": "typed",
+    "task_kind": "english_spelling",
+    "prompt_items": [
+      {
+        "id": "word-1",
+        "item_kind": "english_word",
+        "expected_text": "because",
+        "hint": "reason"
+      },
+      {
+        "id": "word-2",
+        "item_kind": "english_word",
+        "expected_text": "friend"
+      }
+    ]
+  },
+  "attempt": {
+    "source": "pasted",
+    "task_id": "task-demo-0001",
+    "submitted_items": [
+      {
+        "prompt_item_id": "word-1",
+        "actual_text": "becuase"
+      },
+      {
+        "prompt_item_id": "word-2",
+        "actual_text": "friend"
+      }
+    ]
+  },
+  "review": {
+    "attempt_id": "attempt-demo-0001",
+    "evaluation_id": "evaluation-demo-0001",
+    "timeframe": "today"
+  },
+  "planning": {
+    "target_date": "2026-07-01",
+    "duration_minutes": 10
+  },
+  "observation": {
+    "timeframe": "7d"
+  },
+  "surface_responses": [
+    {
+      "generated_trace_id": "trace-capture-0001"
+    },
+    {
+      "generated_trace_id": "trace-performance-0002"
+    },
+    {
+      "generated_trace_id": "trace-reflection-0003"
+    },
+    {
+      "generated_trace_id": "trace-planning-0004"
+    },
+    {
+      "generated_trace_id": "trace-observation-0005"
+    }
+  ]
+}
