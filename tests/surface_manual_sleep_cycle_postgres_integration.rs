@@ -136,7 +136,7 @@ async fn manual_consolidation_surface_rejects_cross_space_request() {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL and DATABASE_URL"]
-async fn manual_consolidation_surface_rejects_archived_namespace() {
+async fn manual_consolidation_surface_rejects_archived_namespace_as_bad_request() {
     let pool = postgres_pool().await;
     db::run_migrations(&pool)
         .await
@@ -173,7 +173,7 @@ async fn manual_consolidation_surface_rejects_archived_namespace() {
         .await
         .expect("surface request should send");
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let created_count: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*)
