@@ -799,10 +799,21 @@ async fn submit_attempt(
                 "input_source": prepared.input_source,
                 "deep_consolidation": false,
                 "dictation": prepared.trace_metadata,
+                "event": "attempt_submitted",
             }),
         })
         .await
         .map_err(AppError::Database)?;
+
+    let event = EngineEvent::AttemptSubmitted(EngineEventEnvelope {
+        space_id: prepared.space_id,
+        namespace_id: namespace.id,
+        source_trace_id: trace.id,
+        payload_refs: vec![EnginePayloadRef {
+            kind: EnginePayloadRefKind::Attempt,
+            id: feedback_loop.id,
+        }],
+    });
 
     let response = SurfaceResponse::new(
         Surface::Performance,
@@ -813,6 +824,7 @@ async fn submit_attempt(
             "namespace_id": namespace.id,
             "evaluation": prepared.evaluation,
             "deep_consolidation": false,
+            "event": event,
         }),
         trace.id,
         vec!["Review this attempt later for recurring mistake patterns".to_string()],
