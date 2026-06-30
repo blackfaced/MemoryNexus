@@ -475,9 +475,8 @@ plan.
 
 **Background:** Reflection answers "what does this mean?" but first version can be deterministic.
 
-**Status:** Implemented in PR #176; pending review, PostgreSQL integration
-verification, merge, and closure of GitHub #146. This status does not complete
-Issue 2.8 / GitHub #142.
+**Status:** Closed on GitHub as #146 on 2026-06-23. This status does not
+complete Issue 2.8 / GitHub #142.
 
 **Unlocks:** Issue 3.5 / GitHub #147.
 
@@ -514,6 +513,8 @@ from the completed Capture/Performance baseline. Reflection-domain workers own
 ### Issue 3.5: Implement Planning Surface Mock
 
 **Background:** Planning answers "what should happen next?".
+
+**Status:** Closed on GitHub as #147 on 2026-06-23.
 
 **Depends On:** Issue 3.4 / GitHub #146.
 
@@ -552,6 +553,8 @@ dispatcher.
 ### Issue 3.6: Implement Observation Surface Mock
 
 **Background:** Observation answers "how is long-term state changing?".
+
+**Status:** Closed on GitHub as #148 on 2026-06-23.
 
 **Depends On:** Issue 3.5 / GitHub #147.
 
@@ -593,21 +596,33 @@ dispatcher.
 
 **GitHub:** #177
 
+**Status:** Open on GitHub as #177. This is the current `priority:p0`
+infrastructure hardening task.
+
 **Background:** Surface Gateway work now depends on shared dispatcher behavior
 and PostgreSQL-backed integration tests. Unit CI alone is not enough evidence
-before Planning, Observation, and Agent-facing Surface tools stack on the same
-contract.
+before additional shared-dispatcher Surface work stacks on the same contract.
 
 **Scope:**
 
-- Add a required pull-request CI job for PostgreSQL-backed Surface integration
-  tests.
-- Pin the PostgreSQL service version and use deterministic database isolation.
+- Add a stable-name pull-request CI job for PostgreSQL-backed Surface
+  integration tests. The implementation PR may merge before branch protection
+  requires the new context.
+- Pin the PostgreSQL service to an exact patch tag or digest and use
+  deterministic database isolation.
 - Dynamically enumerate `tests/surface_*_postgres_integration.rs`, convert file
-  stems to cargo `--test` names, and run each with `--ignored`.
-- Print both the enumerated and executed integration-test manifests.
-- Fail when the enumerated set is empty, any enumerated test is not executed, or
-  any test fails.
+  stems to cargo `--test` names, and run every target with `--ignored` and
+  serial test threads where required.
+- Print both the enumerated and executed integration-test manifests and require
+  exact set equality.
+- Fail when the enumerated set is empty, any enumerated test is not executed,
+  or any target fails.
+- Trigger for Rust, tests, migrations, Cargo manifests/lockfile, and CI workflow
+  changes. Docs-only PRs may skip DB execution through path-aware logic, but the
+  stable check context must remain present and successful.
+- Use `cargo --locked` where applicable and cache dependencies without sharing
+  mutable database state.
+- Document copy-pasteable local equivalent commands in `docs/development.md`.
 - Leave branch-protection enrollment to the Coordinator after stable evidence:
   five consecutive eligible successful runs across at least two PRs and one
   main push, with no flake reruns.
@@ -616,16 +631,30 @@ contract.
 
 - Do not add credentialed provider tests to the required merge gate.
 - Do not make Qdrant `latest` part of deterministic CI.
-- Do not change Surface behavior or test semantics in the CI-only issue.
+- Do not change Surface/Adapter/Engine behavior or test semantics in the
+  CI-only issue.
+- Do not modify branch protection from the Worker implementation PR.
 
 **Acceptance Criteria:**
 
-- A deliberately failing Surface PostgreSQL integration fixture blocks a PR.
-- A passing rerun unblocks the PR.
-- The job fails if `tests/surface_*_postgres_integration.rs` files are present
-  but not executed.
-- The local equivalent command is documented in the workflow or issue notes.
-- OpenRouter and other network/provider acceptance remains manual or scheduled.
+- A PR run dynamically enumerates and executes all existing ignored PostgreSQL
+  Surface test targets rather than reporting them ignored.
+- Enumerated and executed target manifests are printed and exactly equal; the
+  job fails on unexpected empty enumeration, missing execution, or any target
+  failure.
+- A deliberately failing temporary fixture/assertion blocks a PR run; removing
+  it produces a passing rerun URL.
+- The implementation PR may merge with the stable context still non-required,
+  without the Worker changing branch protection.
+- After five consecutive eligible successful runs across at least two PRs and
+  one main push, with no flake rerun, an administrator makes the stable context
+  required and records branch-protection evidence before closing #177.
+- `docs/development.md` contains copy-pasteable local commands.
+- No `qdrant:latest`, floating PostgreSQL major-only image, external provider
+  credential, or network provider call is in the required job.
+- Existing Format, Clippy, Build, and Test checks remain.
+- Runtime target stays practical; if it exceeds 10 minutes, document timing and
+  split deterministic suites without weakening coverage.
 
 **Possible Files:**
 
@@ -853,6 +882,8 @@ media, but ADR-021 and the media evidence contract currently define a docs-only
 contract. Descriptor validation must land before Dictation Capture accepts
 `EvidenceRefInput`.
 
+**Status:** Closed on GitHub as #175 on 2026-06-23.
+
 **Depends On:** Issue 3.6 / GitHub #148.
 
 **Unlocks:** The media-derived extensions in Issue 5.2 / GitHub #155, Issue 5.3
@@ -1053,6 +1084,8 @@ are called.
 
 **Background:** The daily loop begins by recording today's words, phrases, or sentences.
 
+**Status:** Closed on GitHub as #155 on 2026-06-24.
+
 **Depends On:** Issue 3.6 / GitHub #148 for the typed/pasted path. The media extension for
 `agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
 `evidence_refs` additionally depends on Foundation F1 / GitHub #175.
@@ -1124,6 +1157,8 @@ after Issue 3.6 / GitHub #148 lands. Dictation-domain workers own
 **Background:** Dictation Coach needs a text-first attempt submission before
 automated evaluation.
 
+**Status:** Closed on GitHub as #156 on 2026-06-24.
+
 **Depends On:** Issue 5.2 / GitHub #155 for the typed/pasted path. The media extension for
 `agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
 `evidence_refs` additionally depends on Foundation F1 / GitHub #175.
@@ -1189,6 +1224,8 @@ after Issue 5.2 / GitHub #155 lands. Dictation-domain workers own
 
 **Background:** First feedback should be deterministic before LLM/OCR.
 
+**Status:** Closed on GitHub as #157 on 2026-06-24.
+
 **Depends On:** Issue 5.3 / GitHub #156.
 
 **Unlocks:** Issue 4.4 / GitHub #152 on the selected Dictation Engine
@@ -1219,6 +1256,8 @@ critical path.
 ### Issue 5.5: Generate Tomorrow 10-Minute Practice
 
 **Background:** Dictation Coach value is next action, not just diagnosis.
+
+**Status:** Closed on GitHub as #158 on 2026-06-29.
 
 **Depends On:** Issue 4.5 / GitHub #153, and therefore transitively Issue 4.4 /
 GitHub #152 and Issue 5.4 / GitHub #157.
@@ -1255,6 +1294,8 @@ GitHub #152 and Issue 5.4 / GitHub #157.
 ### Issue 5.6: Dictation 7-Day Observation Summary
 
 **Background:** Observation Surface should show long-term change.
+
+**Status:** Closed on GitHub as #159 on 2026-06-29.
 
 **Depends On:** The canonical GrowthModel output from Issue 4.4 / GitHub #152,
 plus the required attempt history from Issue 5.3 / GitHub #156 for the extended
@@ -1303,6 +1344,9 @@ dispatcher.
 **Background:** The first usable product test should run through a Dictation
 Agent before a dedicated product App is built, reusing the generic MCP/chat
 Surface Adapter from Issue 6.2 / GitHub #162.
+
+**Status:** Closed on GitHub as #160 on 2026-06-30. This is an accepted
+text-first Agent smoke, not a standalone app.
 
 **Depends On:** For the initial typed/pasted smoke, Issues 5.2-5.5 / GitHub
 #155-#158 and the text-capable portion of Issue 6.2 / GitHub #162. Issue 5.6 /
@@ -1389,6 +1433,8 @@ and the media-capable portion of Issue 6.2 / GitHub #162.
 
 **Background:** MCP/chat clients need generic transport and tool plumbing over
 Surface Gateway before product-specific Agent orchestration is added.
+
+**Status:** Closed on GitHub as #162 on 2026-06-30.
 
 **Depends On:** Issue 3.6 / GitHub #148 for text-capable generic Surface tools. Media mapping
 for `agent_ocr`, `agent_transcribed`, `mixed`, `input_confirmation`, and
@@ -1483,8 +1529,9 @@ the required Surface capabilities land.
 
 **Depends On:** Initial Issue 5.7 / GitHub #160 acceptance.
 
-**Status:** Deferred until the initial Issue 5.7 / GitHub #160 Agent loop is
-accepted.
+**Status:** Ready to start after the accepted #160 Agent smoke. This remains an
+adapter/app slice and must not move product roles or memory ownership into the
+Engine.
 
 **Scope:**
 
