@@ -4,25 +4,22 @@ This guide targets local personal agents such as Claw or Hermes. The goal is to
 let an agent use MemoryNexus as a personal cognitive substrate without making
 the agent own memory.
 
-> Status update: current MCP tools expose existing object-level capabilities.
-> Surface Gateway now exists for the HTTP Capture path, Performance
-> `submitAttempt`, and manual consolidation. MCP/chat Surface Gateway tools are
-> still pending, so this guide remains the compatibility path for Claw,
-> Hermes, and similar agents.
+> Status update: MCP now exposes generic Surface Gateway tools for Capture,
+> Performance, Reflection, Planning, and Observation. Existing object-level MCP
+> tools remain for compatibility, but agents should use Surface tools for new
+> feedback-loop flows.
 
 ## Claw/Hermes Dictation Media Contract
 
-The MCP/chat Surface Gateway tools described here are pending. The following is
-the target operating contract for issues #160 and #162, not a claim that those
-tools already exist:
+Generic MCP/chat Surface Gateway tools are available. They are still text-first
+adapter tools, not OCR/ASR or media resolver tools:
 
 1. Extract text from images, handwriting, audio, or video outside MemoryNexus.
 2. Obtain explicit user acceptance or correction for every media-derived
    normalized payload before submission. OCR/ASR confidence may guide which
    text the Agent highlights or reviews, but it never substitutes for this
    confirmation.
-3. Submit only confirmed normalized text through the future Surface Gateway MCP
-   tools.
+3. Submit only confirmed normalized text through the Surface Gateway MCP tools.
 4. Attach optional `EvidenceRefInput` only when inspection of the original
    media matters for provenance.
 5. Never persist tokens, credentials, mount secrets, or signed URLs in an
@@ -43,6 +40,43 @@ transcript preserves provenance and cannot replace explicitly confirmed text.
 Evidence references follow the
 [Media Evidence Contract](media-evidence-contract.md), and media failure must
 not invalidate completed text feedback.
+
+The generic Surface MCP tools are:
+
+| Tool | Surface | Action |
+| --- | --- | --- |
+| `surface_capture_observation` | Capture | `capture_observation` |
+| `surface_submit_attempt` | Performance | `submit_attempt` |
+| `surface_review_evidence` | Reflection | `review_evidence` |
+| `surface_generate_next_task` | Planning | `generate_next_task` |
+| `surface_get_state_summary` | Observation | `get_state_summary` |
+
+Each tool maps to `/api/v1/surfaces` with `adapter: "mcp"`, the requested
+`namespace`, the authenticated `actor`, a generic `payload`, and `context`.
+Dictation wording belongs in payload semantics and agent copy; the Engine action
+names stay generic. Performance, Reflection, Planning, and Observation payloads
+must include the current `payload.space_id` required by the HTTP Surface
+contract.
+
+Typed and pasted inputs must use `payload.source` or `payload.input_source` as
+`typed` or `pasted` and must not include media descriptor fields. Media-derived
+inputs must use `agent_ocr`, `agent_transcribed`, or `mixed` and include:
+
+```json
+{
+  "input_confirmation": {
+    "status": "confirmed",
+    "method": "explicit_acceptance"
+  }
+}
+```
+
+`method` may also be `explicit_correction`. Optional `EvidenceRefInput`
+descriptors may be passed only for confirmed media-derived Capture and
+Performance calls. The MCP adapter response preserves generated Surface
+provenance such as `generated_trace_id`, but it does not return descriptor
+objects, raw locators, or metadata and does not claim evidence persistence or
+resolver availability.
 
 If you want another agent to install and connect MemoryNexus by itself, give it
 [Agent Self-Install Guide](agent-self-install.md). That file is written as an
@@ -274,18 +308,22 @@ Use `run_lens` when the agent needs interpretation, not just retrieval:
 
 Recommended order for Claw/Hermes:
 
-1. `route_agent_context` when the correct MemoryNexus action is not obvious.
-2. `get_profile` for compact working context.
-3. `list_reminders` with `due_only=true` to surface scheduled recall.
-4. `search_memories` for raw recall when the task mentions a specific topic.
-5. `run_lens` when the agent needs an interpretation, tradeoff review, or
+1. Use `surface_capture_observation`, `surface_submit_attempt`,
+   `surface_review_evidence`, `surface_generate_next_task`, and
+   `surface_get_state_summary` for new Capture -> Performance -> Reflection ->
+   Planning -> Observation feedback-loop flows.
+2. `route_agent_context` when the correct MemoryNexus action is not obvious.
+3. `get_profile` for compact working context.
+4. `list_reminders` with `due_only=true` to surface scheduled recall.
+5. `search_memories` for raw recall when the task mentions a specific topic.
+6. `run_lens` when the agent needs an interpretation, tradeoff review, or
    contradiction check.
-6. `learning_math_create_practice_session`, `learning_math_record_attempt`,
+7. `learning_math_create_practice_session`, `learning_math_record_attempt`,
    and `learning_math_record_feedback` for parent-assisted STEM learning
    practice.
-7. Generate a review report when the task is periodic synthesis over a time
+8. Generate a review report when the task is periodic synthesis over a time
    window.
-8. `add_memory` only when the information is durable and safe to persist.
+9. `add_memory` only when the information is durable and safe to persist.
 
 ## Memory Shape
 
@@ -321,6 +359,13 @@ printf '%s\n' \
 The response should include the tool list, a successful memory creation, a
 persisted profile snapshot, a routing recommendation, at least one search result
 from the same `CognitiveSpace`, and any due reminders.
+
+For a generic Surface Gateway smoke, use the five `surface_*` tools in order:
+capture a typed word list, submit a typed attempt, request reflection, generate
+a next task, and observe the namespace summary. Include `payload.space_id` for
+the Performance, Reflection, Planning, and Observation calls. Each successful
+API response should include generated Trace provenance such as
+`generated_trace_id` where the Surface returns it.
 
 ## Current Gaps
 

@@ -1,4 +1,5 @@
-use serde_json::{json, Value};
+use memorynexus::domain::evidence::{validate_evidence_request, InputConfirmation};
+use serde_json::{json, Map, Value};
 use std::io::{self, BufRead, Write};
 
 const DEFAULT_API_URL: &str = "http://localhost:8080";
@@ -393,6 +394,36 @@ fn tools_list_result() -> Value {
                     "required": ["namespace_id", "practice_session_id"]
                 }),
             ),
+            surface_tool_schema(
+                "surface_capture_observation",
+                "Capture a generic observation through Surface Gateway.",
+                "capture",
+                "capture_observation",
+            ),
+            surface_tool_schema(
+                "surface_submit_attempt",
+                "Submit a generic performance attempt through Surface Gateway.",
+                "performance",
+                "submit_attempt",
+            ),
+            surface_tool_schema(
+                "surface_review_evidence",
+                "Review generic evidence through Surface Gateway.",
+                "reflection",
+                "review_evidence",
+            ),
+            surface_tool_schema(
+                "surface_generate_next_task",
+                "Generate a generic next task through Surface Gateway.",
+                "planning",
+                "generate_next_task",
+            ),
+            surface_tool_schema(
+                "surface_get_state_summary",
+                "Get a generic namespace state summary through Surface Gateway.",
+                "observation",
+                "get_state_summary",
+            ),
             tool_schema(
                 "learning_math_create_practice_session",
                 "Compatibility alias: create a parent-assisted learning.math practice session in a Cognitive Space.",
@@ -515,6 +546,84 @@ fn tool_schema(name: &str, description: &str, input_schema: Value) -> Value {
     })
 }
 
+fn surface_tool_schema(name: &str, description: &str, surface: &str, action: &str) -> Value {
+    tool_schema(
+        name,
+        description,
+        json!({
+            "type": "object",
+            "properties": {
+                "namespace": {"type": "string"},
+                "actor": {"type": "string", "description": "Authenticated actor UUID"},
+                "payload": {
+                    "type": "object",
+                    "description": "Generic Surface payload. Performance, Reflection, Planning, and Observation payloads must include space_id. Confirmed text is canonical; media descriptors are allowed only for confirmed media-derived Capture/Performance calls."
+                },
+                "context": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {"type": "string", "enum": ["fast", "focused", "deep", "none"]},
+                        "locale": {"type": "string"},
+                        "device": {"type": "string"},
+                        "runtime_preference": {"type": "string", "enum": ["auto", "cloud", "deterministic", "hybrid", "local"]}
+                    }
+                },
+                "surface": {"type": "string", "const": surface},
+                "action": {"type": "string", "const": action}
+            },
+            "required": ["namespace", "actor"]
+        }),
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SurfaceToolSpec {
+    name: &'static str,
+    surface: &'static str,
+    action: &'static str,
+    accepts_evidence_refs: bool,
+}
+
+const SURFACE_TOOL_SPECS: &[SurfaceToolSpec] = &[
+    SurfaceToolSpec {
+        name: "surface_capture_observation",
+        surface: "capture",
+        action: "capture_observation",
+        accepts_evidence_refs: true,
+    },
+    SurfaceToolSpec {
+        name: "surface_submit_attempt",
+        surface: "performance",
+        action: "submit_attempt",
+        accepts_evidence_refs: true,
+    },
+    SurfaceToolSpec {
+        name: "surface_review_evidence",
+        surface: "reflection",
+        action: "review_evidence",
+        accepts_evidence_refs: false,
+    },
+    SurfaceToolSpec {
+        name: "surface_generate_next_task",
+        surface: "planning",
+        action: "generate_next_task",
+        accepts_evidence_refs: false,
+    },
+    SurfaceToolSpec {
+        name: "surface_get_state_summary",
+        surface: "observation",
+        action: "get_state_summary",
+        accepts_evidence_refs: false,
+    },
+];
+
+fn surface_tool_spec(tool_name: &str) -> Option<SurfaceToolSpec> {
+    SURFACE_TOOL_SPECS
+        .iter()
+        .copied()
+        .find(|spec| spec.name == tool_name)
+}
+
 fn build_api_request_for_tool(
     config: &Config,
     tool_name: &str,
@@ -525,6 +634,10 @@ fn build_api_request_for_tool(
         .clone()
         .ok_or_else(|| McpError::new("MEMORYNEXUS_TOKEN is required"))?;
     let base_url = config.api_url.trim_end_matches('/');
+
+    if let Some(spec) = surface_tool_spec(tool_name) {
+        return build_surface_api_request(base_url, token, spec, arguments);
+    }
 
     match tool_name {
         "list_spaces" => Ok(ApiRequest {
@@ -883,6 +996,120 @@ fn build_api_request_for_tool(
     }
 }
 
+fn build_surface_api_request(
+    base_url: &str,
+    token: String,
+    spec: SurfaceToolSpec,
+    arguments: &Value,
+) -> Result<ApiRequest, McpError> {
+    let payload = arguments
+        .get("payload")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    if !payload.is_object() {
+        return Err(McpError::new("payload must be a JSON object"));
+    }
+    validate_surface_payload(spec, &payload)?;
+
+    Ok(ApiRequest {
+        method: HttpMethod::Post,
+        url: format!("{base_url}/api/v1/surfaces"),
+        body: Some(json!({
+            "namespace": required_string(arguments, "namespace")?,
+            "surface": spec.surface,
+            "action": spec.action,
+            "actor": required_string(arguments, "actor")?,
+            "adapter": "mcp",
+            "payload": payload,
+            "context": surface_context(arguments),
+        })),
+        token,
+    })
+}
+
+fn validate_surface_payload(spec: SurfaceToolSpec, payload: &Value) -> Result<(), McpError> {
+    let source = surface_payload_source(payload);
+    if matches!(source.as_deref(), Some("typed" | "pasted")) {
+        reject_media_only_fields_for_text_source(payload)?;
+    }
+
+    if payload.get("evidence_refs").is_some() && !spec.accepts_evidence_refs {
+        return Err(McpError::new(
+            "evidence_refs are supported only for confirmed media-derived Capture/Performance Surface calls",
+        ));
+    }
+    if payload.get("evidence_refs").is_some()
+        && !matches!(
+            source.as_deref(),
+            Some("agent_ocr" | "agent_transcribed" | "mixed")
+        )
+    {
+        return Err(McpError::new(
+            "evidence_refs require a confirmed media-derived source",
+        ));
+    }
+    if let Some(evidence_refs) = payload.get("evidence_refs") {
+        if !evidence_refs.is_array() {
+            return Err(McpError::new("evidence_refs must be a JSON array"));
+        }
+    }
+
+    let confirmation = payload
+        .get("input_confirmation")
+        .map(|value| serde_json::from_value::<InputConfirmation>(value.clone()))
+        .transpose()
+        .map_err(|_| McpError::new("invalid_input_confirmation"))?;
+    let evidence_refs = payload
+        .get("evidence_refs")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice);
+
+    validate_evidence_request(source.as_deref(), confirmation.as_ref(), evidence_refs)
+        .map_err(|error| McpError::new(error.to_string()))?;
+
+    Ok(())
+}
+
+fn surface_payload_source(payload: &Value) -> Option<String> {
+    optional_string(payload, "input_source").or_else(|| optional_string(payload, "source"))
+}
+
+fn reject_media_only_fields_for_text_source(payload: &Value) -> Result<(), McpError> {
+    for field in MEDIA_ONLY_PAYLOAD_FIELDS {
+        if payload.get(field).is_some() {
+            return Err(McpError::new(format!(
+                "typed/pasted Surface payloads must not include media-only field: {field}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+const MEDIA_ONLY_PAYLOAD_FIELDS: &[&str] = &[
+    "evidence_refs",
+    "input_confirmation",
+    "provider",
+    "locator",
+    "media_type",
+    "content_hash",
+    "original_name",
+    "captured_at",
+    "transcript",
+    "transcript_source",
+    "media_descriptor",
+    "media_provenance",
+];
+
+fn surface_context(arguments: &Value) -> Value {
+    let context = arguments.get("context").unwrap_or(&Value::Null);
+    json!({
+        "mode": optional_string(context, "mode"),
+        "locale": optional_string(context, "locale"),
+        "device": optional_string(context, "device"),
+        "runtime_preference": optional_string(context, "runtime_preference"),
+    })
+}
+
 async fn call_tool(config: &Config, params: &Value) -> Result<Value, McpError> {
     let tool_name = params
         .get("name")
@@ -905,6 +1132,11 @@ async fn call_tool(config: &Config, params: &Value) -> Result<Value, McpError> {
 
     let request = build_api_request_for_tool(config, tool_name, arguments)?;
     let response = execute_api_request(request).await?;
+    let response = if surface_tool_spec(tool_name).is_some() {
+        shape_surface_tool_response(response)
+    } else {
+        response
+    };
 
     Ok(json!({
         "content": [
@@ -917,6 +1149,45 @@ async fn call_tool(config: &Config, params: &Value) -> Result<Value, McpError> {
         "isError": false,
     }))
 }
+
+fn shape_surface_tool_response(response: Value) -> Value {
+    remove_descriptor_fields(response)
+}
+
+fn remove_descriptor_fields(value: Value) -> Value {
+    match value {
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(remove_descriptor_fields).collect())
+        }
+        Value::Object(object) => {
+            let mut sanitized = Map::new();
+            for (key, value) in object {
+                if RESPONSE_DESCRIPTOR_FIELDS.contains(&key.as_str()) {
+                    continue;
+                }
+                sanitized.insert(key, remove_descriptor_fields(value));
+            }
+            Value::Object(sanitized)
+        }
+        other => other,
+    }
+}
+
+const RESPONSE_DESCRIPTOR_FIELDS: &[&str] = &[
+    "evidence_refs",
+    "input_confirmation",
+    "input_source",
+    "provider",
+    "locator",
+    "media_type",
+    "content_hash",
+    "original_name",
+    "captured_at",
+    "transcript",
+    "transcript_source",
+    "media_descriptor",
+    "media_provenance",
+];
 
 fn is_local_tool(tool_name: &str) -> bool {
     matches!(tool_name, "get_install_status" | "upgrade_install")
@@ -1323,6 +1594,11 @@ mod tests {
                 "record_practice_feedback",
                 "list_practice_sessions",
                 "get_practice_session",
+                "surface_capture_observation",
+                "surface_submit_attempt",
+                "surface_review_evidence",
+                "surface_generate_next_task",
+                "surface_get_state_summary",
                 "learning_math_create_practice_session",
                 "learning_math_record_attempt",
                 "learning_math_record_feedback",
@@ -1332,6 +1608,312 @@ mod tests {
                 "upgrade_install",
             ]
         );
+    }
+
+    fn config_with_token() -> Config {
+        Config {
+            api_url: "http://localhost:8080".to_string(),
+            token: Some("jwt-token".to_string()),
+        }
+    }
+
+    fn base_surface_args(payload: Value) -> Value {
+        json!({
+            "namespace": "child.english.spelling",
+            "actor": "00000000-0000-0000-0000-000000000001",
+            "payload": payload,
+            "context": {
+                "mode": "fast",
+                "locale": "en-US",
+                "device": "desktop",
+                "runtime_preference": "deterministic"
+            }
+        })
+    }
+
+    #[test]
+    fn surface_tools_map_all_five_generic_actions_to_surface_gateway() {
+        let config = config_with_token();
+        let cases = [
+            (
+                "surface_capture_observation",
+                "capture",
+                "capture_observation",
+                json!({"source": "typed", "content": "because\nfriend"}),
+            ),
+            (
+                "surface_submit_attempt",
+                "performance",
+                "submit_attempt",
+                json!({
+                    "space_id": "22222222-2222-2222-2222-222222222222",
+                    "source": "pasted",
+                    "attempt": {"target": "because", "submitted": "becuase"}
+                }),
+            ),
+            (
+                "surface_review_evidence",
+                "reflection",
+                "review_evidence",
+                json!({
+                    "space_id": "22222222-2222-2222-2222-222222222222",
+                    "question": "What changed?",
+                    "evidence": []
+                }),
+            ),
+            (
+                "surface_generate_next_task",
+                "planning",
+                "generate_next_task",
+                json!({
+                    "space_id": "22222222-2222-2222-2222-222222222222",
+                    "objective": "Review spelling pattern"
+                }),
+            ),
+            (
+                "surface_get_state_summary",
+                "observation",
+                "get_state_summary",
+                json!({
+                    "space_id": "22222222-2222-2222-2222-222222222222",
+                    "timeframe": "7d"
+                }),
+            ),
+        ];
+
+        for (tool, surface, action, payload) in cases {
+            let expected_payload = payload.clone();
+            let request = build_api_request_for_tool(&config, tool, &base_surface_args(payload))
+                .expect("surface tool should build request");
+
+            assert_eq!(request.method, HttpMethod::Post);
+            assert_eq!(request.url, "http://localhost:8080/api/v1/surfaces");
+            assert_eq!(request.token, "jwt-token");
+            assert_eq!(
+                request.body.unwrap(),
+                json!({
+                    "namespace": "child.english.spelling",
+                    "surface": surface,
+                    "action": action,
+                    "actor": "00000000-0000-0000-0000-000000000001",
+                    "adapter": "mcp",
+                    "payload": expected_payload,
+                    "context": {
+                        "mode": "fast",
+                        "locale": "en-US",
+                        "device": "desktop",
+                        "runtime_preference": "deterministic"
+                    }
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn typed_or_pasted_surface_payloads_reject_media_only_fields_before_request_build() {
+        let config = config_with_token();
+        for source in ["typed", "pasted"] {
+            for field in [
+                "evidence_refs",
+                "input_confirmation",
+                "provider",
+                "locator",
+                "media_type",
+                "content_hash",
+                "original_name",
+                "captured_at",
+                "transcript",
+                "transcript_source",
+                "media_descriptor",
+                "media_provenance",
+            ] {
+                let mut payload = json!({"source": source, "content": "because"});
+                payload[field] = json!("not allowed");
+                let error = build_api_request_for_tool(
+                    &config,
+                    "surface_capture_observation",
+                    &base_surface_args(payload),
+                )
+                .unwrap_err();
+
+                assert!(
+                    error.message.contains("typed/pasted"),
+                    "unexpected error for {source} {field}: {}",
+                    error.message
+                );
+                assert!(
+                    error.message.contains(field),
+                    "error should name rejected field {field}: {}",
+                    error.message
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn media_derived_surface_payloads_require_confirmed_input_confirmation() {
+        let config = config_with_token();
+        for source in ["agent_ocr", "agent_transcribed", "mixed"] {
+            let error = build_api_request_for_tool(
+                &config,
+                "surface_submit_attempt",
+                &base_surface_args(json!({"source": source, "attempt": "becuase"})),
+            )
+            .unwrap_err();
+            assert!(error.message.contains("input_confirmation"));
+
+            for confirmation in [
+                json!({"status": "pending", "method": "explicit_acceptance"}),
+                json!({"status": "confirmed", "method": "implicit_acceptance"}),
+            ] {
+                let error = build_api_request_for_tool(
+                    &config,
+                    "surface_submit_attempt",
+                    &base_surface_args(json!({
+                        "source": source,
+                        "attempt": "becuase",
+                        "input_confirmation": confirmation
+                    })),
+                )
+                .unwrap_err();
+                assert!(error.message.contains("invalid_input_confirmation"));
+            }
+        }
+    }
+
+    #[test]
+    fn confirmed_media_derived_capture_and_performance_accept_evidence_refs() {
+        let config = config_with_token();
+        let evidence_ref = json!({
+            "provider": "agent_ocr",
+            "locator": "s3://study/archive/dictation-1.png",
+            "media_type": "image/png",
+            "metadata": {"page": 1}
+        });
+
+        for (tool, payload) in [
+            (
+                "surface_capture_observation",
+                json!({
+                    "input_source": "agent_ocr",
+                    "content": "because",
+                    "input_confirmation": {
+                        "status": "confirmed",
+                        "method": "explicit_acceptance"
+                    },
+                    "evidence_refs": [evidence_ref.clone()]
+                }),
+            ),
+            (
+                "surface_submit_attempt",
+                json!({
+                    "source": "mixed",
+                    "attempt": "becuase",
+                    "input_confirmation": {
+                        "status": "confirmed",
+                        "method": "explicit_correction"
+                    },
+                    "evidence_refs": [evidence_ref.clone()]
+                }),
+            ),
+        ] {
+            let request = build_api_request_for_tool(&config, tool, &base_surface_args(payload))
+                .expect("confirmed media-derived request should build");
+            assert_eq!(
+                request.body.unwrap()["payload"]["evidence_refs"],
+                json!([evidence_ref])
+            );
+        }
+    }
+
+    #[test]
+    fn evidence_refs_are_rejected_for_non_capture_performance_surface_tools() {
+        let config = config_with_token();
+        let error = build_api_request_for_tool(
+            &config,
+            "surface_review_evidence",
+            &base_surface_args(json!({
+                "source": "agent_ocr",
+                "input_confirmation": {
+                    "status": "confirmed",
+                    "method": "explicit_acceptance"
+                },
+                "evidence_refs": [{
+                    "provider": "agent_ocr",
+                    "locator": "s3://study/archive/dictation-1.png",
+                    "media_type": "image/png",
+                    "metadata": {}
+                }]
+            })),
+        )
+        .unwrap_err();
+
+        assert!(error.message.contains("Capture/Performance"));
+    }
+
+    #[test]
+    fn evidence_refs_require_media_derived_source_even_on_capture_performance() {
+        let config = config_with_token();
+        let error = build_api_request_for_tool(
+            &config,
+            "surface_capture_observation",
+            &base_surface_args(json!({
+                "content": "because",
+                "input_confirmation": {
+                    "status": "confirmed",
+                    "method": "explicit_acceptance"
+                },
+                "evidence_refs": [{
+                    "provider": "agent_ocr",
+                    "locator": "s3://study/archive/dictation-1.png",
+                    "media_type": "image/png",
+                    "metadata": {}
+                }]
+            })),
+        )
+        .unwrap_err();
+
+        assert!(error.message.contains("media-derived source"));
+    }
+
+    #[test]
+    fn surface_tool_response_keeps_trace_provenance_without_descriptor_objects() {
+        let api_response = json!({
+            "data": {
+                "surface": "capture",
+                "action": "capture_observation",
+                "generated_trace_id": "11111111-1111-1111-1111-111111111111",
+                "result": {
+                    "status": "captured",
+                    "evidence_refs": [{
+                        "provider": "agent_ocr",
+                        "locator": "s3://private/raw.png",
+                        "media_type": "image/png",
+                        "metadata": {"secret": "hidden"}
+                    }]
+                }
+            }
+        });
+
+        let shaped = shape_surface_tool_response(api_response);
+        let text = shaped.to_string();
+
+        assert_eq!(
+            shaped["data"]["generated_trace_id"],
+            "11111111-1111-1111-1111-111111111111"
+        );
+        for forbidden in [
+            "evidence_refs",
+            "locator",
+            "provider",
+            "metadata",
+            "raw.png",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "surface MCP response leaked {forbidden}: {text}"
+            );
+        }
     }
 
     #[test]
