@@ -75,6 +75,13 @@ async fn capture_surface_stores_memory_writes_trace_and_publishes_observation_ev
         body["data"]["result"]["event"]["observation_captured"]["source_trace_id"],
         trace_id.to_string()
     );
+    assert_eq!(
+        body["data"]["result"]["event"]["observation_captured"]["payload_refs"],
+        json!([{
+            "kind": "observation",
+            "id": memory_id
+        }])
+    );
 
     let memory: (Uuid, Uuid, Option<Uuid>, String, String, Value) = sqlx::query_as(
         r#"
@@ -355,6 +362,7 @@ async fn capture_surface_rejects_invalid_evidence_ref_before_memory_or_trace_wri
     assert!(diagnostic.contains("locator_query_denied"));
     assert!(!diagnostic.contains("fixture-secret"));
     assert!(!diagnostic.contains("X-Amz-Signature=fixture-secret"));
+    assert_eq!(body.pointer("/data/result/event"), None);
 
     let after_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memories")
         .fetch_one(&pool)

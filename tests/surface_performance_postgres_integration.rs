@@ -63,6 +63,7 @@ async fn performance_surface_submit_attempt_updates_feedback_loop_and_writes_tra
     let body: Value = response.json().await.expect("response should be json");
 
     let trace_id = uuid_field(&body, "/data/generated_trace_id");
+    let feedback_loop_id = uuid_field(&body, "/data/result/feedback_loop_id");
     assert_eq!(
         body.pointer("/data/surface").and_then(Value::as_str),
         Some("performance")
@@ -85,6 +86,19 @@ async fn performance_surface_submit_attempt_updates_feedback_loop_and_writes_tra
             .and_then(Value::as_bool),
         Some(false)
     );
+    assert_eq!(feedback_loop_id, fixture.feedback_loop_id);
+    assert_eq!(
+        body.pointer("/data/result/event/attempt_submitted/source_trace_id")
+            .and_then(Value::as_str),
+        Some(trace_id.to_string().as_str())
+    );
+    assert_eq!(
+        body["data"]["result"]["event"]["attempt_submitted"]["payload_refs"],
+        json!([{
+            "kind": "attempt",
+            "id": fixture.feedback_loop_id
+        }])
+    );
 
     let attempt: String = sqlx::query_scalar("SELECT attempt FROM feedback_loops WHERE id = $1")
         .bind(fixture.feedback_loop_id)
@@ -94,9 +108,9 @@ async fn performance_surface_submit_attempt_updates_feedback_loop_and_writes_tra
     assert!(attempt.contains("because"));
     assert!(attempt.contains("becuase"));
 
-    let trace: (Uuid, String, String, String, String, Vec<Uuid>) = sqlx::query_as(
+    let trace: (Uuid, String, String, String, String, Vec<Uuid>, Value) = sqlx::query_as(
         r#"
-        SELECT namespace_id, source_type, task_type, mode, runtime, generated_feedback_loop_ids
+        SELECT namespace_id, source_type, task_type, mode, runtime, generated_feedback_loop_ids, metadata
         FROM traces
         WHERE id = $1
         "#,
@@ -111,6 +125,7 @@ async fn performance_surface_submit_attempt_updates_feedback_loop_and_writes_tra
     assert_eq!(trace.3, "fast");
     assert_eq!(trace.4, "deterministic");
     assert_eq!(trace.5, vec![fixture.feedback_loop_id]);
+    assert_eq!(trace.6["event"], "attempt_submitted");
 }
 
 #[tokio::test]
@@ -522,6 +537,7 @@ async fn performance_surface_rejects_invalid_evidence_ref_before_feedback_or_tra
     assert!(diagnostic.contains("invalid_evidence_reference"));
     assert!(diagnostic.contains("secret_value_pattern_denied"));
     assert!(!diagnostic.contains("Bearer fixture-secret"));
+    assert_eq!(body.pointer("/data/result/event"), None);
 
     let after_attempt: Option<String> =
         sqlx::query_scalar("SELECT attempt FROM feedback_loops WHERE id = $1")
