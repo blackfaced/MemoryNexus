@@ -1,0 +1,99 @@
+{
+  "id": "dictbench.zh.recurring-wrong-character.v1",
+  "namespace": "child.chinese.dictation",
+  "locale": "zh-Hans",
+  "task_kind": "chinese_dictation",
+  "task": {
+    "id": "dictbench-task-zh-001",
+    "title": "Chinese words with recurring character substitution",
+    "source": "test_fixture",
+    "prompt_items": [
+      {
+        "id": "zh-word-1",
+        "item_kind": "chinese_word",
+        "expected_text": "春天",
+        "display_text": "春天",
+        "hint": "season word",
+        "locale": "zh-Hans",
+        "order_index": 0,
+        "metadata": {}
+      },
+      {
+        "id": "zh-word-2",
+        "item_kind": "chinese_word",
+        "expected_text": "朋友",
+        "display_text": "朋友",
+        "locale": "zh-Hans",
+        "order_index": 1,
+        "metadata": {}
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "id": "dictbench-attempt-zh-001-day1",
+      "submitted_at": "2026-06-24T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "zh-word-1",
+          "actual_text": "春大",
+          "order_index": 0,
+          "metadata": {}
+        },
+        {
+          "prompt_item_id": "zh-word-2",
+          "actual_text": "朋友",
+          "order_index": 1,
+          "metadata": {}
+        }
+      ]
+    },
+    {
+      "id": "dictbench-attempt-zh-001-day2",
+      "submitted_at": "2026-06-25T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "zh-word-1",
+          "actual_text": "春大",
+          "order_index": 0,
+          "metadata": {}
+        },
+        {
+          "prompt_item_id": "zh-word-2",
+          "actual_text": "朋友",
+          "order_index": 1,
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "expected_mistake_patterns": [
+    {
+      "mistake_type": "wrong_character",
+      "attempt_ids": [
+        "dictbench-attempt-zh-001-day1",
+        "dictbench-attempt-zh-001-day2"
+      ],
+      "prompt_item_ids": ["zh-word-1"],
+      "recurrence": "recurring",
+      "notes": "Equal character count with one differing character maps to the deterministic wrong_character rule."
+    }
+  ],
+  "expected_next_practice": {
+    "outcome": "plan",
+    "duration_minutes": 10,
+    "target_mistake_types": ["wrong_character"],
+    "expectations": [
+      "Generate 10-minute daily dictation practice.",
+      "Use a small word list with recent wrong_character misses.",
+      "Ask the learner to listen, write, check, and rewrite."
+    ]
+  },
+  "deterministic_evaluation_notes": [
+    "No OCR, ASR, provider model, database, or vector index is required.",
+    "Later runners should classify 春天 versus 春大 as wrong_character and preserve 朋友 as correct evidence.",
+    "The repeated wrong_character evidence is sufficient to expect a short next-practice plan."
+  ]
+}
