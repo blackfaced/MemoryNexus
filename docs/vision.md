@@ -3,10 +3,10 @@
 MemoryNexus is a local-first long-term feedback engine for personal cognition
 and skill acquisition.
 
-It should not be positioned as a generic AI memory app, second brain, agent
-memory store, connector platform, or RAG profile API. Those are crowded and
-infrastructure-heavy spaces. MemoryNexus should focus on what happens after
-memory is captured:
+It should not be positioned as a generic recall product, personal knowledge
+vault, agent recall store, connector platform, or RAG profile API. Those are
+crowded and infrastructure-heavy spaces. MemoryNexus should focus on what
+happens after memory is captured:
 
 ```text
 Trace -> FeedbackLoop -> GrowthModel -> PracticePlan

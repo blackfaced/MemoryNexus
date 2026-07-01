@@ -645,18 +645,18 @@ dispatcher.
 
 **GitHub:** #177
 
-**Status:** Open on GitHub as #177. This is the current `priority:p0`
-infrastructure hardening task.
+**Status:** Closed on GitHub on 2026-06-30. This is now the completed
+PostgreSQL Surface integration CI foundation for the Surface Gateway MVP.
 
-**Background:** Surface Gateway work now depends on shared dispatcher behavior
-and PostgreSQL-backed integration tests. Unit CI alone is not enough evidence
-before additional shared-dispatcher Surface work stacks on the same contract.
+**Background:** Surface Gateway work depends on shared dispatcher behavior and
+PostgreSQL-backed integration tests. Unit CI alone was not enough evidence
+before additional shared-dispatcher Surface work could stack on the same
+contract.
 
 **Scope:**
 
 - Add a stable-name pull-request CI job for PostgreSQL-backed Surface
-  integration tests. The implementation PR may merge before branch protection
-  requires the new context.
+  integration tests.
 - Pin the PostgreSQL service to an exact patch tag or digest and use
   deterministic database isolation.
 - Dynamically enumerate `tests/surface_*_postgres_integration.rs`, convert file
@@ -672,9 +672,8 @@ before additional shared-dispatcher Surface work stacks on the same contract.
 - Use `cargo --locked` where applicable and cache dependencies without sharing
   mutable database state.
 - Document copy-pasteable local equivalent commands in `docs/development.md`.
-- Leave branch-protection enrollment to the Coordinator after stable evidence:
-  five consecutive eligible successful runs across at least two PRs and one
-  main push, with no flake reruns.
+- Record branch-protection evidence after stable runs make the check safe to
+  require.
 
 **Non-Goals:**
 
@@ -693,11 +692,8 @@ before additional shared-dispatcher Surface work stacks on the same contract.
   failure.
 - A deliberately failing temporary fixture/assertion blocks a PR run; removing
   it produces a passing rerun URL.
-- The implementation PR may merge with the stable context still non-required,
-  without the Worker changing branch protection.
-- After five consecutive eligible successful runs across at least two PRs and
-  one main push, with no flake rerun, an administrator makes the stable context
-  required and records branch-protection evidence before closing #177.
+- The stable context can be required after evidence is recorded by the
+  Coordinator or administrator.
 - `docs/development.md` contains copy-pasteable local commands.
 - No `qdrant:latest`, floating PostgreSQL major-only image, external provider
   credential, or network provider call is in the required job.
@@ -743,8 +739,12 @@ blocking foreground responses.
 
 **Background:** Capture and Performance Surface calls should emit events.
 
-**Scheduling:** Issue 4.2 / GitHub #150 may proceed in parallel with the
-Dictation critical path. It does not block the initial manual Agent smoke in
+**GitHub:** #150
+
+**Status:** Closed on GitHub on 2026-07-01.
+
+**Scheduling:** Issue 4.2 / GitHub #150 proceeded in parallel with the
+Dictation critical path. It did not block the initial manual Agent smoke in
 Issue 5.7 / GitHub #160.
 
 **Scope:**

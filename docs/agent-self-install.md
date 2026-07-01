@@ -81,13 +81,14 @@ Release archives are the target binary-first distribution path for
 `aarch64-apple-darwin`, `x86_64-apple-darwin`, and
 `x86_64-unknown-linux-gnu`.
 
-As of 2026-06-17, the first GitHub Release artifact is still pending. If no
-release is available, use Developer Profile source-build commands or a
-maintainer-provided local binary. Do not pretend Trial or Local One-click is
-plug-and-play until the release archive and checksum exist.
+GitHub release archives are now the documented Local One-click distribution
+format. If no compatible release is available for the requested tag or target,
+use Developer Profile source-build commands or a maintainer-provided local
+binary. Do not pretend Trial is plug-and-play until a real Trial API endpoint
+and scoped token are available.
 
-When published, each archive is named `memorynexus-<tag>-<target>.tar.gz` and
-contains a Local One-click bundle layout:
+Each archive is named `memorynexus-<tag>-<target>.tar.gz` and contains a Local
+One-click bundle layout:
 
 - `bin/memorynexus`
 - `bin/memorynexus-cli`
