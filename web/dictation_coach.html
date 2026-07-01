@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dictation Coach</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #202124;
+        --muted: #5f6368;
+        --line: #d7dde5;
+        --panel: #ffffff;
+        --wash: #f4f7fb;
+        --blue: #225ea8;
+        --green: #1d6f42;
+        --amber: #8a5a00;
+        --red: #b42318;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--wash);
+        color: var(--ink);
+      }
+
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      header {
+        display: grid;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 30px;
+        line-height: 1.15;
+      }
+
+      h2 {
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      h3 {
+        font-size: 15px;
+        line-height: 1.25;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        max-width: 760px;
+        line-height: 1.45;
+      }
+
+      .settings,
+      .workflow {
+        display: grid;
+        gap: 12px;
+      }
+
+      .settings {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        align-items: end;
+        margin-bottom: 16px;
+      }
+
+      .workflow {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
+      .step {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 10px 11px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      textarea {
+        min-height: 132px;
+        resize: vertical;
+        line-height: 1.45;
+      }
+
+      button {
+        border: 0;
+        border-radius: 6px;
+        padding: 10px 13px;
+        background: var(--blue);
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.65;
+      }
+
+      .secondary {
+        background: #e8eef6;
+        color: #16436f;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .result {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 11px;
+        min-height: 74px;
+        background: #fbfcfe;
+        color: var(--ink);
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+
+      .result:empty::before {
+        content: "Waiting for this step.";
+        color: var(--muted);
+      }
+
+      .status {
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        padding: 12px 14px;
+        color: var(--muted);
+        font-size: 13px;
+        min-height: 42px;
+        overflow-wrap: anywhere;
+      }
+
+      .status strong {
+        color: var(--ink);
+      }
+
+      .ok {
+        color: var(--green);
+      }
+
+      .warn {
+        color: var(--amber);
+      }
+
+      .error {
+        color: var(--red);
+      }
+
+      ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+
+      li + li {
+        margin-top: 4px;
+      }
+
+      @media (max-width: 860px) {
+        main {
+          padding: 16px;
+        }
+
+        .settings,
+        .workflow,
+        .row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Dictation Coach</h1>
+          <p class="subtitle">
+            Run a text-first daily dictation loop: capture a word list, submit a
+            typed or pasted spelling attempt, prepare tomorrow practice, and
+            check the 7-day trend.
+          </p>
+        </div>
+      </header>
+
+      <section class="settings" aria-label="Connection settings">
+        <label>
+          API token
+          <input id="tokenInput" type="password" autocomplete="off" placeholder="Bearer token" />
+        </label>
+        <label>
+          Actor ID
+          <input id="actorInput" autocomplete="off" placeholder="User UUID" />
+        </label>
+        <label>
+          Space ID
+          <input id="spaceInput" autocomplete="off" placeholder="Cognitive Space UUID" />
+        </label>
+        <label>
+          Namespace
+          <select id="namespaceSelect">
+            <option value="child.english.spelling">child.english.spelling</option>
+            <option value="child.chinese.dictation">child.chinese.dictation</option>
+            <option value="child.english.sentence-dictation">
+              child.english.sentence-dictation
+            </option>
+          </select>
+        </label>
+      </section>
+
+      <section class="workflow" aria-label="Daily dictation workflow">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="step">Capture</p>
+              <h2>Today&apos;s word list</h2>
+            </div>
+            <button id="captureButton" type="button">Save list</button>
+          </div>
+          <div class="row">
+            <label>
+              List title
+              <input id="titleInput" value="Today&apos;s daily dictation" />
+            </label>
+            <label>
+              Input source
+              <select id="listSourceSelect">
+                <option value="typed">typed</option>
+                <option value="pasted">pasted</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            Words or sentences, one per line
+            <textarea id="wordListInput" spellcheck="false">because
+friend
+sentence</textarea>
+          </label>
+          <div id="captureResult" class="result" aria-live="polite"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="step">Performance</p>
+              <h2>Spelling attempt</h2>
+            </div>
+            <button id="attemptButton" type="button">Submit attempt</button>
+          </div>
+          <div class="row">
+            <label>
+              Attempt source
+              <select id="attemptSourceSelect">
+                <option value="typed">typed</option>
+                <option value="pasted">pasted</option>
+              </select>
+            </label>
+            <label>
+              Practice goal
+              <input id="goalInput" value="Find today&apos;s mistake type and next focus" />
+            </label>
+          </div>
+          <label>
+            Learner attempt, one answer per line
+            <textarea id="attemptInput" spellcheck="false">becuase
+friend
+sentence</textarea>
+          </label>
+          <div id="attemptResult" class="result" aria-live="polite"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="step">Planning</p>
+              <h2>Tomorrow practice</h2>
+            </div>
+            <button id="planButton" type="button">Generate practice</button>
+          </div>
+          <label>
+            Planning objective
+            <textarea id="objectiveInput">Prepare tomorrow practice for the learner in 10 minutes, focusing on one or two mistake types from the latest dictation attempt.</textarea>
+          </label>
+          <div id="planResult" class="result" aria-live="polite"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="step">Observation</p>
+              <h2>7-day trend</h2>
+            </div>
+            <button id="trendButton" type="button">Refresh trend</button>
+          </div>
+          <p class="subtitle">
+            Learner-safe summary for recent dictation practice. Technical
+            provenance appears only in the status line below.
+          </p>
+          <div id="trendResult" class="result" aria-live="polite"></div>
+        </article>
+      </section>
+
+      <div id="statusLine" class="status" role="status">
+        Ready for typed or pasted daily dictation text.
+      </div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const state = {
+        promptItems: [],
+        lastCaptureId: null,
+        lastAttemptTraceId: null,
+      };
+
+      function taskKindForNamespace(namespace) {
+        if (namespace === "child.chinese.dictation") return "chinese_dictation";
+        if (namespace === "child.english.sentence-dictation") {
+          return "english_sentence_dictation";
+        }
+        return "english_spelling";
+      }
+
+      function itemKindForNamespace(namespace, text) {
+        if (namespace === "child.chinese.dictation") {
+          return text.length > 1 ? "chinese_word" : "chinese_character";
+        }
+        if (namespace === "child.english.sentence-dictation") {
+          return "english_sentence";
+        }
+        return text.includes(" ") ? "english_phrase" : "english_word";
+      }
+
+      function selectedLocale(namespace) {
+        return namespace === "child.chinese.dictation" ? "zh-Hans" : "en-US";
+      }
+
+      function linesFrom(text) {
+        return text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+      }
+
+      function promptItemsFromList() {
+        const namespace = $("namespaceSelect").value;
+        return linesFrom($("wordListInput").value).map((expectedText) => ({
+          item_kind: itemKindForNamespace(namespace, expectedText),
+          expected_text: expectedText,
+          display_text: expectedText,
+          hint: null,
+          locale: selectedLocale(namespace),
+          metadata: {},
+        }));
+      }
+
+      function submittedItemsFromAttempt() {
+        return linesFrom($("attemptInput").value).map((actualText) => ({
+          actual_text: actualText,
+          metadata: {},
+        }));
+      }
+
+      function surfaceRequest(surface, action, payload, mode = "fast") {
+        const namespace = $("namespaceSelect").value;
+        return {
+          namespace,
+          surface,
+          action,
+          actor: $("actorInput").value.trim(),
+          adapter: "web",
+          payload: {
+            space_id: $("spaceInput").value.trim(),
+            ...payload,
+          },
+          context: {
+            mode,
+            locale: selectedLocale(namespace),
+            device: "web",
+            runtime_preference: "deterministic",
+          },
+        };
+      }
+
+      async function callSurface(surface, action, payload, mode) {
+        const token = $("tokenInput").value.trim();
+        const request = surfaceRequest(surface, action, payload, mode);
+        if (!token || !request.actor || !request.payload.space_id) {
+          throw new Error("Enter API token, actor ID, and Space ID first.");
+        }
+
+        const response = await fetch("/api/v1/surfaces", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(request),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || body.success === false) {
+          const message = body.error || body.message || `API error ${response.status}`;
+          throw new Error(message);
+        }
+        return body.data || body;
+      }
+
+      function setStatus(message, kind = "") {
+        $("statusLine").innerHTML = `<span class="${kind}">${escapeHtml(message)}</span>`;
+      }
+
+      function showResult(id, html) {
+        $(id).innerHTML = html;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function traceStatus(response) {
+        if (!response.generated_trace_id) return "";
+        return ` Technical Trace ID: ${response.generated_trace_id}`;
+      }
+
+      function renderAttempt(result) {
+        const evaluation = result?.evaluation || result;
+        const itemResults = evaluation?.item_results || [];
+        const correctCount = itemResults.filter((item) => item.status === "correct").length;
+        const reviewCount = itemResults.length - correctCount;
+        const mistakeTypes = new Set();
+        for (const item of itemResults) {
+          for (const mistake of item.mistake_types || []) mistakeTypes.add(mistake);
+        }
+        const mistakes = [...mistakeTypes];
+        return `
+          <strong>Attempt saved.</strong>
+          <div>${escapeHtml(correctCount)} correct, ${escapeHtml(reviewCount)} needs practice.</div>
+          <div>mistake type: ${escapeHtml(mistakes.join(", ") || "none detected")}</div>
+        `;
+      }
+
+      function renderPlan(result) {
+        const nextTask = result?.next_task || {};
+        const focus = result?.focus || result?.focus_areas || [];
+        return `
+          <strong>tomorrow practice:</strong>
+          <div>${escapeHtml(nextTask.prompt || result?.summary || "Short focused practice is ready.")}</div>
+          ${focus.length ? `<ul>${focus.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+        `;
+      }
+
+      function renderTrend(result) {
+        const observation = result?.dictation_observation || {};
+        const summary = observation.current_focus || result?.summary || "No 7-day trend yet.";
+        const recurring = observation.recurring_mistake_types || [];
+        const focus = observation.focus_areas || [];
+        return `
+          <strong>7-day trend:</strong>
+          <div>${escapeHtml(summary)}</div>
+          ${recurring.length ? `<div>recurring mistake type: ${escapeHtml(recurring.join(", "))}</div>` : ""}
+          ${observation.stability_signal ? `<div>stability: ${escapeHtml(observation.stability_signal)}</div>` : ""}
+          ${focus.length ? `<ul>${focus.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+        `;
+      }
+
+      async function withBusy(buttonId, action) {
+        const button = $(buttonId);
+        button.disabled = true;
+        try {
+          await action();
+        } catch (error) {
+          setStatus(error.message || String(error), "error");
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      $("captureButton").addEventListener("click", () =>
+        withBusy("captureButton", async () => {
+          const namespace = $("namespaceSelect").value;
+          const promptItems = promptItemsFromList();
+          if (!promptItems.length) throw new Error("Add at least one word or sentence.");
+          const response = await callSurface("capture", "capture_observation", {
+            title: $("titleInput").value.trim() || "Daily dictation",
+            content: promptItems.map((item) => item.expected_text).join("\n"),
+            task_kind: taskKindForNamespace(namespace),
+            source: $("listSourceSelect").value,
+            prompt_items: promptItems,
+            tags: ["dictation", "daily dictation", "word list"],
+            metadata: {
+              adapter_experience: "dictation_coach",
+              product_step: "word list",
+            },
+          });
+          state.promptItems = promptItems;
+          state.lastCaptureId = response.result?.memory_id || null;
+          showResult(
+            "captureResult",
+            `<strong>word list saved.</strong><div>${promptItems.length} item(s) ready for practice.</div>`,
+          );
+          setStatus(`Capture complete.${traceStatus(response)}`, "ok");
+        }),
+      );
+
+      $("attemptButton").addEventListener("click", () =>
+        withBusy("attemptButton", async () => {
+          const namespace = $("namespaceSelect").value;
+          const promptItems = state.promptItems.length ? state.promptItems : promptItemsFromList();
+          const submittedItems = submittedItemsFromAttempt();
+          if (!promptItems.length) throw new Error("Save or enter a word list first.");
+          if (!submittedItems.length) throw new Error("Enter the spelling attempt first.");
+          const response = await callSurface("performance", "submit_attempt", {
+            goal: $("goalInput").value.trim(),
+            task: $("titleInput").value.trim() || "Daily dictation",
+            task_kind: taskKindForNamespace(namespace),
+            source: $("attemptSourceSelect").value,
+            prompt_items: promptItems,
+            submitted_items: submittedItems,
+            metadata: {
+              adapter_experience: "dictation_coach",
+              product_step: "spelling attempt",
+              captured_word_list_id: state.lastCaptureId,
+            },
+          });
+          state.lastAttemptTraceId = response.generated_trace_id || null;
+          showResult("attemptResult", renderAttempt(response.result || {}));
+          setStatus(`Attempt submitted.${traceStatus(response)}`, "ok");
+        }),
+      );
+
+      $("planButton").addEventListener("click", () =>
+        withBusy("planButton", async () => {
+          const response = await callSurface(
+            "planning",
+            "generate_next_task",
+            {
+              objective: $("objectiveInput").value.trim(),
+              duration_minutes: 10,
+              metadata: {
+                adapter_experience: "dictation_coach",
+                product_step: "tomorrow practice",
+                recent_attempt_trace_id: state.lastAttemptTraceId,
+              },
+            },
+            "focused",
+          );
+          showResult("planResult", renderPlan(response.result || {}));
+          setStatus(`Tomorrow practice ready.${traceStatus(response)}`, "ok");
+        }),
+      );
+
+      $("trendButton").addEventListener("click", () =>
+        withBusy("trendButton", async () => {
+          const response = await callSurface(
+            "observation",
+            "get_state_summary",
+            {
+              timeframe: "7d",
+              summary_goal: "Show recent dictation trend and current focus",
+              metadata: {
+                adapter_experience: "dictation_coach",
+                product_step: "7-day trend",
+              },
+            },
+            "focused",
+          );
+          showResult("trendResult", renderTrend(response.result || {}));
+          setStatus(`Trend refreshed.${traceStatus(response)}`, "ok");
+        }),
+      );
+    </script>
+  </body>
+</html>
