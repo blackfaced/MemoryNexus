@@ -1,11 +1,16 @@
 # MemoryNexus
 
-MemoryNexus is a local-first, namespace-based long-term feedback engine for
-personal cognition and skill acquisition.
+MemoryNexus is a local-first long-term feedback engine for personal cognition
+and skill acquisition.
 
-它不是普通 AI memory app、second brain、agent memory store，也不和
+See [ADR-022](decisions/ADR-022-memorynexus-brand-semantics.md) for the current
+`MemoryNexus` brand semantics: the repository, binaries, MCP server, and release
+identity keep the Engine name, while product experiences can use separate names
+such as Dictation Coach.
+
+它不是泛化 AI 记忆、个人知识库、agent recall infrastructure，也不和
 Supermemory / Mem0 / OpenJarvis 直接竞争。MemoryNexus 的核心问题不是
-“AI 如何记住更多”，而是：
+“AI 如何保存或召回更多内容”，而是：
 
 ```text
 How can a system use long-term traces to generate better feedback and next
@@ -15,7 +20,7 @@ actions over time?
 中文理解：
 
 ```text
-MemoryNexus 把人的经验、表现、练习和对话转化为记忆、复盘、成长模型与下一步计划。
+本地优先的长期反馈引擎，用 Trace 驱动复盘、成长模型和下一步行动。
 ```
 
 MemoryNexus sits above raw memory/runtime layers:

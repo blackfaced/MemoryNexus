@@ -156,6 +156,55 @@ Dictation direction.
 - `docs/TODO.md`
 - `docs/issues.md`
 
+### Issue 1.6: Align Repository Metadata With MemoryNexus Brand Semantics
+
+**GitHub:** #197
+
+**Background:** ADR-022 keeps the project name `MemoryNexus` but redefines the
+brand semantics around long-term feedback, trace-driven learning, growth
+models, consolidation, and next actions. Public repository metadata and
+first-touch docs should not keep the older family-memory / second-brain
+interpretation alive.
+
+**Scope:**
+
+- Update the GitHub repository description to the ADR-022 wording.
+- Review first-touch metadata and copy: README first viewport, GitHub About
+  fields, release notes template, install-profile docs, and docs that introduce
+  the project.
+- Ensure product-facing names such as Dictation Coach stay separate from the
+  MemoryNexus Engine identity.
+- Link ADR-022 from docs that explain the project name or positioning.
+
+**Non-Goals:**
+
+- Do not rename the repository, crate, binaries, MCP server, release artifacts,
+  or package paths.
+- Do not replace MemoryNexus with Dictation Coach as the project name.
+- Do not introduce a new frontend or product surface.
+
+**Acceptance Criteria:**
+
+- GitHub repository description no longer says family photo/video memory
+  manager, second brain, or generic AI memory app.
+- First-touch copy uses: "Local-first long-term feedback engine for personal
+  cognition and skill acquisition."
+- Chinese description uses: "本地优先的长期反馈引擎，用 Trace
+  驱动复盘、成长模型和下一步行动。"
+- Docs preserve the naming split: MemoryNexus is the Engine/repo identity;
+  Dictation Coach is the first upstream product scenario.
+- ADR-005 points readers to ADR-022 for current brand semantics.
+
+**Possible Files:**
+
+- `decisions/ADR-022-memorynexus-brand-semantics.md`
+- `decisions/ADR-005-project-naming.md`
+- `decisions/README.md`
+- `README.md`
+- `docs/vision.md`
+- `.github/workflows/release.yml`
+- `docs/agent-self-install.md`
+
 ## Milestone 2: Core Domain Model
 
 ### Issue 2.1: Align Namespace Domain With Engine Vocabulary
@@ -596,18 +645,18 @@ dispatcher.
 
 **GitHub:** #177
 
-**Status:** Open on GitHub as #177. This is the current `priority:p0`
-infrastructure hardening task.
+**Status:** Closed on GitHub on 2026-06-30. This is now the completed
+PostgreSQL Surface integration CI foundation for the Surface Gateway MVP.
 
-**Background:** Surface Gateway work now depends on shared dispatcher behavior
-and PostgreSQL-backed integration tests. Unit CI alone is not enough evidence
-before additional shared-dispatcher Surface work stacks on the same contract.
+**Background:** Surface Gateway work depends on shared dispatcher behavior and
+PostgreSQL-backed integration tests. Unit CI alone was not enough evidence
+before additional shared-dispatcher Surface work could stack on the same
+contract.
 
 **Scope:**
 
 - Add a stable-name pull-request CI job for PostgreSQL-backed Surface
-  integration tests. The implementation PR may merge before branch protection
-  requires the new context.
+  integration tests.
 - Pin the PostgreSQL service to an exact patch tag or digest and use
   deterministic database isolation.
 - Dynamically enumerate `tests/surface_*_postgres_integration.rs`, convert file
@@ -623,9 +672,8 @@ before additional shared-dispatcher Surface work stacks on the same contract.
 - Use `cargo --locked` where applicable and cache dependencies without sharing
   mutable database state.
 - Document copy-pasteable local equivalent commands in `docs/development.md`.
-- Leave branch-protection enrollment to the Coordinator after stable evidence:
-  five consecutive eligible successful runs across at least two PRs and one
-  main push, with no flake reruns.
+- Record branch-protection evidence after stable runs make the check safe to
+  require.
 
 **Non-Goals:**
 
@@ -644,11 +692,8 @@ before additional shared-dispatcher Surface work stacks on the same contract.
   failure.
 - A deliberately failing temporary fixture/assertion blocks a PR run; removing
   it produces a passing rerun URL.
-- The implementation PR may merge with the stable context still non-required,
-  without the Worker changing branch protection.
-- After five consecutive eligible successful runs across at least two PRs and
-  one main push, with no flake rerun, an administrator makes the stable context
-  required and records branch-protection evidence before closing #177.
+- The stable context can be required after evidence is recorded by the
+  Coordinator or administrator.
 - `docs/development.md` contains copy-pasteable local commands.
 - No `qdrant:latest`, floating PostgreSQL major-only image, external provider
   credential, or network provider call is in the required job.
@@ -694,8 +739,12 @@ blocking foreground responses.
 
 **Background:** Capture and Performance Surface calls should emit events.
 
-**Scheduling:** Issue 4.2 / GitHub #150 may proceed in parallel with the
-Dictation critical path. It does not block the initial manual Agent smoke in
+**GitHub:** #150
+
+**Status:** Closed on GitHub on 2026-07-01.
+
+**Scheduling:** Issue 4.2 / GitHub #150 proceeded in parallel with the
+Dictation critical path. It did not block the initial manual Agent smoke in
 Issue 5.7 / GitHub #160.
 
 **Scope:**

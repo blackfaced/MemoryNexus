@@ -1,17 +1,20 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-30
+> Last updated: 2026-07-01
 > Source of truth for executable task definitions: GitHub Issues, with
 > [docs/issues.md](issues.md) as the planning mirror for the milestone shape.
 
 ## Current Direction
 
-MemoryNexus is a local-first, namespace-based long-term feedback engine for
-personal cognition and skill acquisition.
+MemoryNexus is a local-first long-term feedback engine for personal cognition
+and skill acquisition.
 
-It should not be framed as a generic AI memory app, second brain, agent memory
-store, connector platform, RAG profile service, or local AI runtime. Its core
-question is:
+See [ADR-022](../decisions/ADR-022-memorynexus-brand-semantics.md) for the
+current `MemoryNexus` brand semantics and the Engine/product naming split.
+
+It should not be framed as a generic recall product, personal knowledge vault,
+agent recall store, connector platform, RAG profile service, or local AI
+runtime. Its core question is:
 
 ```text
 How can a system use long-term traces to generate better feedback and next
@@ -54,20 +57,22 @@ The project still needs to close these gaps:
 - MCP now exposes generic Surface Gateway tools for Capture, Performance,
   Reflection, Planning, and Observation. Compatibility object-level APIs still
   exist and should be treated as legacy adapter paths where possible.
-- Event publishing is partial: Capture returns an `ObservationCaptured` event,
-  but `AttemptSubmitted` and stored/in-process event publication remain open.
+- Surface success event publication has landed for `ObservationCaptured` and
+  `AttemptSubmitted`; durable event storage and async processors remain future
+  work.
 - GrowthModel aggregation (#152), simple PracticePlan generation (#153),
-  Dictation next-practice (#158), seven-day Observation (#159), and the
-  text-first Agent smoke (#160) have landed. Event publication (#150) and the
-  PR-required PostgreSQL Surface integration gate (#177) remain open.
+  Dictation next-practice (#158), seven-day Observation (#159), the text-first
+  Agent smoke (#160), event publication (#150), and the PR-required PostgreSQL
+  Surface integration gate (#177) have landed.
 - `learning.stem` is a useful prior slice. Dictation Coach is now the first
   upstream product path with Engine + Agent smoke closeable; the independent
   Simple Practice App Adapter (#163) has not started.
 - Typed or pasted Dictation Capture/Attempt and media-derived confirmation
   validation have landed. OCR, ASR, media acquisition, descriptor persistence,
   and descriptor resolution remain Adapter/future-slice work.
-- No GitHub Release artifact is currently published, so Trial and Local
-  One-click binary-first profiles still need release validation.
+- GitHub Release artifact publication and Local One-click release validation
+  have landed. Trial Profile remains blocked on a real Trial API endpoint and
+  scoped token; Production Profile still needs a real deployment smoke.
 - Evaluation should measure growth and feedback usefulness, not just retrieval
   accuracy.
 
@@ -153,9 +158,8 @@ Goal: build the unified Engine entry point.
 
 Status: functionally complete for the MVP Surface set. `SurfaceRequest` /
 `SurfaceResponse`, Capture, Performance, Reflection (#146), Planning (#147),
-Observation (#148), and manual consolidation are implemented. The remaining
-P0 work is #177: make the PostgreSQL-backed Surface integration suite a stable
-pull-request gate before more shared-dispatcher work stacks on this surface.
+Observation (#148), manual consolidation, and the PostgreSQL-backed Surface
+integration pull-request gate (#177) are implemented.
 
 Completed sequence:
 
@@ -171,13 +175,10 @@ Completed sequence:
 
 Next:
 
-1. Implement #177 as a stable-name PR job for PostgreSQL-backed Surface
-   integration tests. Pin service versions, dynamically enumerate ignored
-   `tests/surface_*_postgres_integration.rs` targets, run them with `--ignored`
-   and serial threads where required, and fail if enumeration/execution sets
-   differ.
-2. Keep external-provider and Qdrant checks outside the deterministic required
+1. Keep external-provider and Qdrant checks outside the deterministic required
    merge gate unless a future issue explicitly scopes them.
+2. Use #177's stable PR gate as the baseline before expanding more shared
+   Surface dispatcher behavior.
 
 Non-goals:
 
@@ -188,21 +189,19 @@ Non-goals:
 
 Goal: make foreground paths fast and background paths deep.
 
-Status: partially complete. Engine Event types and manual SleepCycle trigger
-exist; event publication, GrowthModel aggregation, and PracticePlan generation
-remain open.
+Status: partially complete. Engine Event types, Surface success event
+publication (#150), manual SleepCycle trigger, GrowthModel aggregation (#152),
+and PracticePlan generation (#153) have landed. Durable event storage, async
+processors, scheduler behavior, and effectiveness evaluation remain future
+work.
 
 Recommended sequence:
 
-1. Define basic Engine Event model.
-2. Publish `ObservationCaptured` after Capture Surface calls.
-3. Publish `AttemptSubmitted` after Performance Surface calls.
-4. Implement manual SleepCycle trigger.
-5. Aggregate Trace evidence in SleepCycle.
-6. Generate a simple GrowthModel update.
-7. Generate a simple next PracticePlan.
-8. Record SleepCycle status and Trace.
-9. Add tests.
+1. Keep Surface event contracts stable after #150.
+2. Add durable event storage only when a follow-up issue needs replay or async
+   processors.
+3. Add scheduler behavior after manual SleepCycle behavior remains stable.
+4. Record effectiveness evidence for generated plans.
 
 Non-goals:
 
@@ -245,14 +244,13 @@ Execution dependency graph:
 | Initial #160 acceptance | #128, #129, and #130 distribution wave |
 
 Most of this graph has now been executed: #146, #147, #148, #152, #153,
-#155-#160, #162, and #175 are closed on GitHub. The remaining near-term edges
-are:
+#155-#160, #162, #175, and #177 are closed on GitHub. The remaining near-term
+edges are:
 
-1. Complete #177 before treating more shared Surface dispatcher work as
-   merge-safe.
-2. After #160's accepted Agent smoke, begin #163 Simple Practice App Adapter.
-3. Start the release/distribution wave #128 -> #129 -> #130 once the required
-   CI gate is under control.
+1. After #160's accepted Agent smoke, begin #163 Simple Practice App Adapter.
+2. Continue the release/distribution wave after #128's Local One-click offline
+   bundle; #129 Trial Profile and #130 Production Profile remain follow-up
+   distribution work.
 
 The accepted #160 smoke uses one learner and genuinely typed or pasted text. It
 does not require OCR, ASR, a tagged release, or a dedicated Dictation Coach App.
@@ -370,17 +368,20 @@ Likely mapping:
 - #120 manual SleepCycle API / CLI / MCP trigger -> Milestone 4.
 - #125 DreamCandidate effectiveness -> Milestone 7.
 - #61 / #62 / #63 lifecycle fixtures -> Milestone 2 / 7 prototype work.
-- #128 / #129 / #130 install and deployment issues -> post-#160 distribution
-  wave, not the initial Agent-smoke critical path.
-- #177 required PostgreSQL Surface integration CI -> current P0 Milestone 3
-  hardening task before more shared Surface dispatcher work.
+- #128 Local One-click offline release bundle -> completed distribution
+  foundation after #160.
+- #129 / #130 install and deployment issues -> remaining post-#160
+  distribution wave, not the initial Agent-smoke critical path.
+- #177 required PostgreSQL Surface integration CI -> completed Milestone 3
+  hardening foundation before more shared Surface dispatcher work.
 
 ## Supporting Distribution Track
 
-These start after the accepted #160 Agent smoke and are not on the #177 CI
-hardening path:
+These start after the accepted #160 Agent smoke and are not on the completed
+#177 CI hardening path:
 
-- #128 Publish first Local One-click offline release bundle.
+- #128 Publish first Local One-click offline release bundle. Completed on
+  GitHub on 2026-06-30.
 - #129 Make Trial Profile plug-and-play for agent demos.
 - #130 (P1) stand up a versioned Mac mini or equivalent Production Profile
   deployment with migration preflight, health smoke, and rollback.
