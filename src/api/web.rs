@@ -1,4 +1,4 @@
-//! Static Thought Review UI.
+//! Static Rust-served web UIs.
 
 use axum::{response::Html, routing::get, Router};
 
@@ -6,12 +6,14 @@ use crate::state::AppState;
 
 const THOUGHT_REVIEW_APP: &str = include_str!("../../web/thought_review.html");
 const LEARNING_STEM_APP: &str = include_str!("../../web/learning_stem.html");
+const DICTATION_COACH_APP: &str = include_str!("../../web/dictation_coach.html");
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(app))
         .route("/app", get(app))
         .route("/learning/stem", get(learning_stem_app))
+        .route("/dictation/coach", get(dictation_coach_app))
 }
 
 async fn app() -> Html<&'static str> {
@@ -22,10 +24,18 @@ async fn learning_stem_app() -> Html<&'static str> {
     Html(learning_stem_app_source())
 }
 
+async fn dictation_coach_app() -> Html<&'static str> {
+    Html(dictation_coach_app_source())
+}
+
 pub(crate) fn thought_review_app_source() -> &'static str {
     THOUGHT_REVIEW_APP
 }
 
 pub(crate) fn learning_stem_app_source() -> &'static str {
     LEARNING_STEM_APP
+}
+
+pub(crate) fn dictation_coach_app_source() -> &'static str {
+    DICTATION_COACH_APP
 }
