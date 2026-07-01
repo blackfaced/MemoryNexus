@@ -13,6 +13,15 @@ Gateway policy should authorize adapter access as allowed surfaces and actions;
 it must not turn product roles or interaction channels into Engine ownership
 boundaries.
 
+The Developer Dashboard is a special developer/admin/debug adapter, not a
+direct Engine browser. Its default path is Observation that is read-only with
+respect to inspected Engine debug objects; the Gateway may still write
+audit/provenance Trace for the dashboard request. Reflection and Planning
+require explicit review/planning workflows, and Capture or Performance are
+limited to controlled fixtures or smoke paths. See the
+[Developer Dashboard Adapter Contract](surfaces-and-adapters.md#developer-dashboard-adapter-contract)
+for the read-only debug visibility and visibility-label requirements.
+
 ## Responsibilities
 
 Surface Gateway owns:
@@ -104,7 +113,7 @@ SurfaceResponse {
 | `result` | Adapter-shaped result, not raw Engine internals by default. |
 | `generated_trace_id` | Trace ID for provenance and later feedback effectiveness. |
 | `follow_up_suggestions` | Optional next actions; may come from Planning Surface or deterministic defaults. |
-| `visibility` | Intended visibility: user, coach, debug, internal, or adapter-specific. |
+| `visibility` | Intended wire-contract visibility: user, coach, developer, debug, internal, or adapter-specific. Product copy may render `user` as learner-facing content. |
 
 The response `result` is intentionally shaped for the adapter. Raw Engine
 objects such as `MemoryAtom`, `CognitiveScene`, `GrowthModel`, or

@@ -211,13 +211,66 @@ Visibility levels:
 
 | Policy Area | Capability |
 | --- | --- |
-| Allowed Surfaces | Observation by default; Reflection and Planning only for explicit review/planning workflows; Capture and Performance only for controlled test fixtures or admin smoke paths. |
-| Representative Actions | `get_state_summary`, `review_evidence`, `generate_next_task`, and explicitly marked smoke-only `capture_observation` / `submit_attempt` calls when needed. |
-| Interaction Mode | Developer/admin/debug visibility for inspecting adapter behavior, Surface health, trends, and deterministic policy decisions. Not the primary learner product UI. |
-| Response Visibility | `developer` or `debug` by default. A dashboard may show richer provenance than product adapters, but it must label debug-only fields and keep learner-safe summaries separate from diagnostic views. |
-| Disallowed Internals | No arbitrary repository browser, cross-Space inspection, raw secret-bearing payloads, direct SleepCycle mutation, direct GrowthModel edits, or treating internal IDs as ordinary product contracts. |
+| Allowed Surfaces | Observation by default. Reflection and Planning only for explicit review or planning workflows. Capture and Performance only for controlled fixtures, demos, or smoke paths. |
+| Representative Actions | `get_state_summary` by default; `review_evidence` and `generate_next_task` only when the operator starts a review/planning workflow; smoke-only `capture_observation` and `submit_attempt` calls only in clearly marked fixture paths. |
+| Interaction Mode | Developer/admin/debug visibility for inspecting adapter behavior, Surface health, trends, validation, trace provenance, and deterministic policy decisions. Not the primary learner product UI. |
+| Response Visibility | `developer` or `debug` by default. Any learner-safe summaries must be rendered in a separate view or section from diagnostic/debug output. Debug-only fields must be explicitly labeled. |
+| Disallowed Internals | No arbitrary repository browser, cross-Space inspection, raw secret-bearing payloads, direct SleepCycle mutation, direct GrowthModel edits, direct repository mutation, or treating internal IDs as ordinary product contracts. |
 | Media Boundary | May display evidence descriptor validation status when authorized. It must not imply MemoryNexus can resolve, persist, OCR, transcribe, or ingest referenced media unless that capability exists in a separate contract. |
 | Dictation Notes | Useful for checking 7-day trend, mistake taxonomy output, and adapter request shaping. It should not become the Practice App, encode parent/child roles in Engine, or introduce a new frontend/backend stack without an ADR. |
+
+#### Developer Dashboard Adapter Contract
+
+The Developer Dashboard is a developer/admin/debug adapter over Surface
+Gateway. It is not a learner product, a broad operations console, or a direct
+Engine browser.
+
+The dashboard contract is read-only with respect to inspected Engine debug
+objects. Surface Gateway may still write audit/provenance Trace for dashboard
+requests, including Observation requests such as `get_state_summary`.
+
+- It may display shaped debug summaries for Trace, GrowthModel, SleepCycle,
+  PracticePlan, and Surface Gateway requests when those summaries are scoped to
+  the authorized `CognitiveSpace`.
+- It may display provenance handles such as generated Trace IDs, event IDs,
+  request IDs, namespace names, adapter names, Surface names, action names,
+  validation decisions, and selected diagnostic counters.
+- It must not expose raw Engine repository records as its product contract.
+- It must not mutate `Trace`, `GrowthModel`, `SleepCycle`, `FeedbackLoop`,
+  `PracticePlan`, `MemoryAtom`, `CognitiveScene`, Lens internals, or repository
+  rows directly.
+- It must not provide arbitrary repository browsing, cross-Space inspection,
+  direct GrowthModel edit flows, direct SleepCycle mutation flows, or raw
+  secret-bearing payload views.
+- It must not bypass `CognitiveSpace` membership checks, namespace routing, or
+  Surface Gateway validation.
+
+Allowed Surface Gateway use is intentionally narrow:
+
+| Surface | Dashboard Permission | Allowed Actions |
+| --- | --- | --- |
+| Observation | Default path for state, trend, provenance, and health inspection. Read-only means the inspected Engine debug objects are not mutated; Gateway audit/provenance Trace may still be written for the request. | `get_state_summary` and future shaped debug summary actions that do not mutate inspected objects. |
+| Reflection | Allowed only when the operator explicitly opens a review workflow for a scoped namespace or trace handle. | `review_evidence`; output must stay shaped and labeled as `developer` or `debug`. |
+| Planning | Allowed only when the operator explicitly opens a planning preview workflow. | `generate_next_task`; output is a preview unless a future product adapter separately confirms a plan. |
+| Capture | Not a normal dashboard capability. | `capture_observation` only for controlled fixtures, demos, or smoke tests, with the fixture/smoke path visibly labeled. |
+| Performance | Not a normal dashboard capability. | `submit_attempt` only for controlled fixtures, demos, or smoke tests, with the fixture/smoke path visibly labeled. |
+
+Dashboard visibility must keep diagnostic and user-safe content separate:
+
+- `developer` views may show envelopes, validation diagnostics, policy
+  decisions, generated IDs, and shaped debug summaries.
+- `debug` views may show narrow provenance and diagnostic details for explicit
+  troubleshooting, after authorization and with visible debug labeling.
+- `learner` or `coach` summaries may be embedded for comparison, but they must
+  be visually and contractually separate from developer/debug fields.
+- Raw secrets, credentials, signed URLs, media locators with credentials, or
+  rejected secret-bearing evidence descriptors must never be rendered, logged,
+  persisted, or returned as dashboard payloads.
+
+If a future static dashboard route is added, it should be Rust-served, minimal,
+and backed by the same Surface Gateway permissions described here. A static
+route must not become a second frontend stack, BFF, or direct repository
+interface.
 
 ## Dictation Coach Surface Contract
 
