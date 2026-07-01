@@ -1578,9 +1578,9 @@ the required Surface capabilities land.
 
 **Depends On:** Initial Issue 5.7 / GitHub #160 acceptance.
 
-**Status:** Ready to start after the accepted #160 Agent smoke. This remains an
-adapter/app slice and must not move product roles or memory ownership into the
-Engine.
+**Status:** Closed on GitHub as #163 on 2026-07-01. The accepted implementation
+is a minimal Rust-served Simple Practice App Adapter over Surface Gateway; it
+does not move product roles or memory ownership into the Engine.
 
 **Scope:**
 
@@ -1605,6 +1605,11 @@ Engine.
 ### Issue 6.4: Developer Dashboard Adapter
 
 **Background:** Developers need debug visibility into Trace, GrowthModel, and SleepCycle.
+
+**Status:** Closed on GitHub as #164 on 2026-07-01. The accepted implementation
+defines the Developer Dashboard as a developer/admin/debug adapter contract. It
+documents read-only inspected Engine debug visibility while allowing Gateway
+audit/provenance Trace writes for dashboard requests.
 
 **Scope:**
 

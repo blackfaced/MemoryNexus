@@ -65,8 +65,10 @@ The project still needs to close these gaps:
   Agent smoke (#160), event publication (#150), and the PR-required PostgreSQL
   Surface integration gate (#177) have landed.
 - `learning.stem` is a useful prior slice. Dictation Coach is now the first
-  upstream product path with Engine + Agent smoke closeable; the independent
-  Simple Practice App Adapter (#163) has not started.
+  upstream product path with accepted Engine + Agent smoke and a minimal
+  Rust-served Simple Practice App Adapter (#163). A separate standalone app
+  repository remains future work only if product needs outgrow the static
+  adapter.
 - Typed or pasted Dictation Capture/Attempt and media-derived confirmation
   validation have landed. OCR, ASR, media acquisition, descriptor persistence,
   and descriptor resolution remain Adapter/future-slice work.
@@ -189,11 +191,11 @@ Non-goals:
 
 Goal: make foreground paths fast and background paths deep.
 
-Status: partially complete. Engine Event types, Surface success event
-publication (#150), manual SleepCycle trigger, GrowthModel aggregation (#152),
-and PracticePlan generation (#153) have landed. Durable event storage, async
-processors, scheduler behavior, and effectiveness evaluation remain future
-work.
+Status: MVP complete and GitHub milestone closed. Engine Event types, Surface
+success event publication (#150), manual SleepCycle trigger, GrowthModel
+aggregation (#152), and PracticePlan generation (#153) have landed. Durable
+event storage, async processors, scheduler behavior, and effectiveness
+evaluation remain future work outside the M4 MVP.
 
 Recommended sequence:
 
@@ -213,8 +215,11 @@ Non-goals:
 
 Goal: validate the full loop with a daily dictation product scenario.
 
-Status: Engine + Agent smoke is accepted for the text-first path. The dedicated
-Simple Practice App Adapter (#163) has not started.
+Status: MVP complete and GitHub milestone closed. The text-first Dictation
+Coach path has landed through contract, typed/pasted Capture and Attempt,
+deterministic mistake classification, tomorrow practice, seven-day Observation,
+media-evidence validation, and the minimal Agent smoke (#154-#160, #175).
+The simple Rust-served Practice App Adapter landed separately in M6 as #163.
 
 Initial namespaces:
 
@@ -243,14 +248,11 @@ Execution dependency graph:
 | Initial #160 acceptance | #163 Simple Practice App Adapter |
 | Initial #160 acceptance | #128, #129, and #130 distribution wave |
 
-Most of this graph has now been executed: #146, #147, #148, #152, #153,
-#155-#160, #162, #175, and #177 are closed on GitHub. The remaining near-term
-edges are:
-
-1. After #160's accepted Agent smoke, begin #163 Simple Practice App Adapter.
-2. Continue the release/distribution wave after #128's Local One-click offline
-   bundle; #129 Trial Profile and #130 Production Profile remain follow-up
-   distribution work.
+This graph has now executed through the first app adapter: #146, #147, #148,
+#152, #153, #155-#160, #162, #163, #175, and #177 are closed on GitHub. The
+remaining adjacent edge is the release/distribution wave after #128's Local
+One-click offline bundle; #129 Trial Profile and #130 Production Profile remain
+follow-up distribution work.
 
 The accepted #160 smoke uses one learner and genuinely typed or pasted text. It
 does not require OCR, ASR, a tagged release, or a dedicated Dictation Coach App.
@@ -264,10 +266,10 @@ input. #162 maps the same field in the MCP/chat adapter without gaining Engine
 repository access. #160 owns only product-facing prompt/interaction mapping; no
 parent/child role enters the Engine.
 
-#163 is the deferred Simple Practice App Adapter. It belongs in a separate
-Dictation Coach App repository only after the initial #160 Agent loop is
-accepted. It remains a Surface Gateway / MCP client and does not own memory or
-access Engine internals.
+#163 delivered the minimal Simple Practice App Adapter as a Rust-served static
+Surface Gateway client. A separate Dictation Coach app repository should wait
+until product needs exceed the current static adapter; it still must not own
+memory or access Engine internals.
 
 Chinese mistake taxonomy:
 
@@ -304,23 +306,23 @@ Non-goals:
 
 Goal: validate one Engine through multiple interaction channels.
 
-Status: partially complete. MCP now exposes generic Surface Gateway tools over
-Capture, Performance, Reflection, Planning, and Observation (#162), and #160
-documents/proves the first text-first Dictation Agent loop over those tools.
-Adapter policy (#161), the Simple Practice App Adapter (#163), and dashboard
-adapter (#164) remain open.
+Status: complete and GitHub milestone closed. Adapter policy (#161), generic
+MCP/chat Surface tools (#162), the Rust-served Simple Practice App Adapter
+(#163), and Developer Dashboard Adapter contract (#164) are all closed. #160
+documents/proves the first text-first Dictation Agent loop over the generic
+Surface tools.
 
-Recommended adapter sequence:
+Completed adapter sequence:
 
 1. Define allowed surfaces per adapter (#161).
 2. Maintain #162 generic MCP/chat Surface tools for Capture, Performance,
    Reflection, Planning, and Observation.
 3. Treat #160 as the accepted product-facing Dictation Agent orchestration over
    generic Surface tools.
-4. Implement #163, the
-   deferred Simple Practice App Adapter for Performance, Planning, and limited
-   Observation, in its separate repository.
-5. Dashboard Adapter: read-only Trace, GrowthModel, SleepCycle, and debug views.
+4. Implement #163, the minimal Simple Practice App Adapter for Capture,
+   Performance, Planning, and limited Observation.
+5. Define #164 Dashboard Adapter policy for read-only inspected Engine debug
+   objects, with Gateway audit/provenance Trace still allowed.
 6. Ensure adapters do not directly access Engine internals.
 
 Non-goals:
