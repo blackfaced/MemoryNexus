@@ -1,7 +1,7 @@
 # MemoryNexus Architecture
 
-MemoryNexus is a Rust-first backend for a local-first, namespace-based
-long-term feedback engine.
+MemoryNexus is a Rust-first backend for a local-first long-term feedback engine
+for personal cognition and skill acquisition.
 
 The core ownership boundary is still `CognitiveSpace`. Users own memory through
 Spaces. Agents, apps, dashboards, CLIs, and voice assistants are adapters. They

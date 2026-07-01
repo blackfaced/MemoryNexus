@@ -1,13 +1,13 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-06-30
+> Last updated: 2026-07-01
 > Source of truth for executable task definitions: GitHub Issues, with
 > [docs/issues.md](issues.md) as the planning mirror for the milestone shape.
 
 ## Current Direction
 
-MemoryNexus is a local-first, namespace-based long-term feedback engine for
-personal cognition and skill acquisition.
+MemoryNexus is a local-first long-term feedback engine for personal cognition
+and skill acquisition.
 
 It should not be framed as a generic AI memory app, second brain, agent memory
 store, connector platform, RAG profile service, or local AI runtime. Its core
@@ -54,20 +54,22 @@ The project still needs to close these gaps:
 - MCP now exposes generic Surface Gateway tools for Capture, Performance,
   Reflection, Planning, and Observation. Compatibility object-level APIs still
   exist and should be treated as legacy adapter paths where possible.
-- Event publishing is partial: Capture returns an `ObservationCaptured` event,
-  but `AttemptSubmitted` and stored/in-process event publication remain open.
+- Surface success event publication has landed for `ObservationCaptured` and
+  `AttemptSubmitted`; durable event storage and async processors remain future
+  work.
 - GrowthModel aggregation (#152), simple PracticePlan generation (#153),
-  Dictation next-practice (#158), seven-day Observation (#159), and the
-  text-first Agent smoke (#160) have landed. Event publication (#150) and the
-  PR-required PostgreSQL Surface integration gate (#177) remain open.
+  Dictation next-practice (#158), seven-day Observation (#159), the text-first
+  Agent smoke (#160), event publication (#150), and the PR-required PostgreSQL
+  Surface integration gate (#177) have landed.
 - `learning.stem` is a useful prior slice. Dictation Coach is now the first
   upstream product path with Engine + Agent smoke closeable; the independent
   Simple Practice App Adapter (#163) has not started.
 - Typed or pasted Dictation Capture/Attempt and media-derived confirmation
   validation have landed. OCR, ASR, media acquisition, descriptor persistence,
   and descriptor resolution remain Adapter/future-slice work.
-- No GitHub Release artifact is currently published, so Trial and Local
-  One-click binary-first profiles still need release validation.
+- GitHub Release artifact publication and Local One-click release validation
+  have landed. Trial Profile remains blocked on a real Trial API endpoint and
+  scoped token; Production Profile still needs a real deployment smoke.
 - Evaluation should measure growth and feedback usefulness, not just retrieval
   accuracy.
 

@@ -156,6 +156,55 @@ Dictation direction.
 - `docs/TODO.md`
 - `docs/issues.md`
 
+### Issue 1.6: Align Repository Metadata With MemoryNexus Brand Semantics
+
+**GitHub:** #197
+
+**Background:** ADR-022 keeps the project name `MemoryNexus` but redefines the
+brand semantics around long-term feedback, trace-driven learning, growth
+models, consolidation, and next actions. Public repository metadata and
+first-touch docs should not keep the older family-memory / second-brain
+interpretation alive.
+
+**Scope:**
+
+- Update the GitHub repository description to the ADR-022 wording.
+- Review first-touch metadata and copy: README first viewport, GitHub About
+  fields, release notes template, install-profile docs, and docs that introduce
+  the project.
+- Ensure product-facing names such as Dictation Coach stay separate from the
+  MemoryNexus Engine identity.
+- Link ADR-022 from docs that explain the project name or positioning.
+
+**Non-Goals:**
+
+- Do not rename the repository, crate, binaries, MCP server, release artifacts,
+  or package paths.
+- Do not replace MemoryNexus with Dictation Coach as the project name.
+- Do not introduce a new frontend or product surface.
+
+**Acceptance Criteria:**
+
+- GitHub repository description no longer says family photo/video memory
+  manager, second brain, or generic AI memory app.
+- First-touch copy uses: "Local-first long-term feedback engine for personal
+  cognition and skill acquisition."
+- Chinese description uses: "本地优先的长期反馈引擎，用 Trace
+  驱动复盘、成长模型和下一步行动。"
+- Docs preserve the naming split: MemoryNexus is the Engine/repo identity;
+  Dictation Coach is the first upstream product scenario.
+- ADR-005 points readers to ADR-022 for current brand semantics.
+
+**Possible Files:**
+
+- `decisions/ADR-022-memorynexus-brand-semantics.md`
+- `decisions/ADR-005-project-naming.md`
+- `decisions/README.md`
+- `README.md`
+- `docs/vision.md`
+- `.github/workflows/release.yml`
+- `docs/agent-self-install.md`
+
 ## Milestone 2: Core Domain Model
 
 ### Issue 2.1: Align Namespace Domain With Engine Vocabulary

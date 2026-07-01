@@ -1,7 +1,7 @@
 # MemoryNexus Vision
 
-MemoryNexus is a local-first, namespace-based long-term feedback engine for
-personal cognition and skill acquisition.
+MemoryNexus is a local-first long-term feedback engine for personal cognition
+and skill acquisition.
 
 It should not be positioned as a generic AI memory app, second brain, agent
 memory store, connector platform, or RAG profile API. Those are crowded and
@@ -22,6 +22,9 @@ actions over time?
 ## Ecosystem Boundary
 
 MemoryNexus should be understood as the memory evolution and feedback layer.
+See [ADR-022](../decisions/ADR-022-memorynexus-brand-semantics.md) for the
+current brand semantics: MemoryNexus is the Engine/repository identity;
+Dictation Coach is the first upstream product scenario.
 
 | Layer | Role | MemoryNexus Boundary |
 | --- | --- | --- |
