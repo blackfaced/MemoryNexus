@@ -1,0 +1,61 @@
+{
+  "id": "dictbench.zh.insufficient-evidence-unclassified.v1",
+  "namespace": "child.chinese.dictation",
+  "locale": "zh-Hans",
+  "task_kind": "chinese_dictation",
+  "task": {
+    "id": "dictbench-task-zh-002",
+    "title": "Sparse Chinese dictation evidence gap",
+    "source": "test_fixture",
+    "prompt_items": [
+      {
+        "id": "zh-gap-word-1",
+        "item_kind": "chinese_word",
+        "expected_text": "明天",
+        "display_text": "明天",
+        "locale": "zh-Hans",
+        "order_index": 0,
+        "metadata": {}
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "id": "dictbench-attempt-zh-gap-001",
+      "submitted_at": "2026-06-30T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "zh-gap-word-1",
+          "actual_text": "青蛙",
+          "order_index": 0,
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "expected_mistake_patterns": [
+    {
+      "mistake_type": "unclassified",
+      "attempt_ids": ["dictbench-attempt-zh-gap-001"],
+      "prompt_item_ids": ["zh-gap-word-1"],
+      "recurrence": "insufficient_evidence",
+      "notes": "The difference is real, but one sparse unclassified attempt cannot support a recurring pattern or next plan."
+    }
+  ],
+  "expected_next_practice": {
+    "outcome": "evidence_gap",
+    "duration_minutes": null,
+    "target_mistake_types": [],
+    "expectations": [
+      "Collect more confirmed attempts before generating tomorrow practice.",
+      "Do not infer handwriting, pronunciation, OCR, ASR, or media intent.",
+      "Return an evidence gap instead of a plan."
+    ]
+  },
+  "deterministic_evaluation_notes": [
+    "This fixture intentionally has one sparse attempt and an unclassified difference.",
+    "Later runners should not invent a cause or target practice from this single evidence point.",
+    "The default baseline remains text-only and local-first."
+  ]
+}

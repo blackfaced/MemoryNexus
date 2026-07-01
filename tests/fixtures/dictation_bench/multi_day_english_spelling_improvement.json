@@ -1,0 +1,91 @@
+{
+  "id": "dictbench.en.multi-day-missing-letter-improves.v1",
+  "namespace": "child.english.spelling",
+  "locale": "en-US",
+  "task_kind": "english_spelling",
+  "task": {
+    "id": "dictbench-task-en-spelling-002",
+    "title": "English spelling multi-day improvement",
+    "source": "test_fixture",
+    "prompt_items": [
+      {
+        "id": "en-improve-word-1",
+        "item_kind": "english_word",
+        "expected_text": "because",
+        "display_text": "because",
+        "hint": "reason",
+        "locale": "en",
+        "order_index": 0,
+        "metadata": {}
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "id": "dictbench-attempt-en-improve-day1",
+      "submitted_at": "2026-06-24T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "en-improve-word-1",
+          "actual_text": "becaus",
+          "order_index": 0,
+          "metadata": {}
+        }
+      ]
+    },
+    {
+      "id": "dictbench-attempt-en-improve-day2",
+      "submitted_at": "2026-06-25T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "en-improve-word-1",
+          "actual_text": "becaus",
+          "order_index": 0,
+          "metadata": {}
+        }
+      ]
+    },
+    {
+      "id": "dictbench-attempt-en-improve-day3",
+      "submitted_at": "2026-06-26T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "en-improve-word-1",
+          "actual_text": "because",
+          "order_index": 0,
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "expected_mistake_patterns": [
+    {
+      "mistake_type": "missing_letter",
+      "attempt_ids": [
+        "dictbench-attempt-en-improve-day1",
+        "dictbench-attempt-en-improve-day2"
+      ],
+      "prompt_item_ids": ["en-improve-word-1"],
+      "recurrence": "improving",
+      "notes": "Two missing_letter attempts followed by a correct attempt should count as improving, not unstable."
+    }
+  ],
+  "expected_next_practice": {
+    "outcome": "plan",
+    "duration_minutes": 10,
+    "target_mistake_types": ["missing_letter"],
+    "expectations": [
+      "Generate 10-minute spelling practice.",
+      "Acknowledge improvement while keeping a short review of the recent missing_letter miss.",
+      "Use spell it slowly and chunk steps before one final spelling attempt."
+    ]
+  },
+  "deterministic_evaluation_notes": [
+    "This fixture is for later observation and effectiveness work, not provider scoring.",
+    "Later runners should see missing_letter on day 1 and day 2, then a correct day 3 attempt.",
+    "The case should support an improving pattern and a lighter next-practice recommendation."
+  ]
+}

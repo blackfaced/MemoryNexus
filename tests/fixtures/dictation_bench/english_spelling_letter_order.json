@@ -1,0 +1,99 @@
+{
+  "id": "dictbench.en.spelling-letter-order.v1",
+  "namespace": "child.english.spelling",
+  "locale": "en-US",
+  "task_kind": "english_spelling",
+  "task": {
+    "id": "dictbench-task-en-spelling-001",
+    "title": "English spelling with letter order error",
+    "source": "test_fixture",
+    "prompt_items": [
+      {
+        "id": "en-word-1",
+        "item_kind": "english_word",
+        "expected_text": "because",
+        "display_text": "because",
+        "hint": "reason",
+        "locale": "en",
+        "order_index": 0,
+        "metadata": {}
+      },
+      {
+        "id": "en-word-2",
+        "item_kind": "english_word",
+        "expected_text": "friend",
+        "display_text": "friend",
+        "locale": "en",
+        "order_index": 1,
+        "metadata": {}
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "id": "dictbench-attempt-en-spelling-001",
+      "submitted_at": "2026-06-26T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "en-word-1",
+          "actual_text": "becuase",
+          "order_index": 0,
+          "metadata": {}
+        },
+        {
+          "prompt_item_id": "en-word-2",
+          "actual_text": "friend",
+          "order_index": 1,
+          "metadata": {}
+        }
+      ]
+    },
+    {
+      "id": "dictbench-attempt-en-spelling-002",
+      "submitted_at": "2026-06-27T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "en-word-1",
+          "actual_text": "becuase",
+          "order_index": 0,
+          "metadata": {}
+        },
+        {
+          "prompt_item_id": "en-word-2",
+          "actual_text": "friend",
+          "order_index": 1,
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "expected_mistake_patterns": [
+    {
+      "mistake_type": "letter_order_error",
+      "attempt_ids": [
+        "dictbench-attempt-en-spelling-001",
+        "dictbench-attempt-en-spelling-002"
+      ],
+      "prompt_item_ids": ["en-word-1"],
+      "recurrence": "recurring",
+      "notes": "because versus becuase is the same letters with adjacent order swapped."
+    }
+  ],
+  "expected_next_practice": {
+    "outcome": "plan",
+    "duration_minutes": 10,
+    "target_mistake_types": ["letter_order_error"],
+    "expectations": [
+      "Generate 10-minute spelling practice.",
+      "Focus on the because spelling attempt and letter order.",
+      "Use chunking before the next spelling attempt."
+    ]
+  },
+  "deterministic_evaluation_notes": [
+    "This fixture reuses the existing minimal Agent demo vocabulary: because and friend.",
+    "Later runners should keep friend as correct evidence and target because for practice.",
+    "The baseline must be local-first and should not call a provider to infer intent."
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "id": "dictbench.en.sentence-missing-word.v1",
+  "namespace": "child.english.sentence-dictation",
+  "locale": "en-US",
+  "task_kind": "english_sentence_dictation",
+  "task": {
+    "id": "dictbench-task-en-sentence-001",
+    "title": "English sentence dictation with omitted word",
+    "source": "test_fixture",
+    "prompt_items": [
+      {
+        "id": "en-sentence-1",
+        "item_kind": "english_sentence",
+        "expected_text": "I have a good friend.",
+        "display_text": "I have a good friend.",
+        "locale": "en",
+        "order_index": 0,
+        "metadata": {}
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "id": "dictbench-attempt-en-sentence-001",
+      "submitted_at": "2026-06-28T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "en-sentence-1",
+          "actual_text": "I have good friend.",
+          "order_index": 0,
+          "metadata": {}
+        }
+      ]
+    },
+    {
+      "id": "dictbench-attempt-en-sentence-002",
+      "submitted_at": "2026-06-29T20:00:00Z",
+      "source": "test_fixture",
+      "submitted_items": [
+        {
+          "prompt_item_id": "en-sentence-1",
+          "actual_text": "I have good friend.",
+          "order_index": 0,
+          "metadata": {}
+        }
+      ]
+    }
+  ],
+  "expected_mistake_patterns": [
+    {
+      "mistake_type": "missing_word",
+      "attempt_ids": [
+        "dictbench-attempt-en-sentence-001",
+        "dictbench-attempt-en-sentence-002"
+      ],
+      "prompt_item_ids": ["en-sentence-1"],
+      "recurrence": "recurring",
+      "notes": "Token alignment shows the expected word a is absent from both attempts."
+    }
+  ],
+  "expected_next_practice": {
+    "outcome": "plan",
+    "duration_minutes": 10,
+    "target_mistake_types": ["missing_word"],
+    "expectations": [
+      "Generate 10-minute sentence dictation.",
+      "Target missing_word rather than a broad grammar lesson.",
+      "Ask for listen, write, check, and a second sentence attempt."
+    ]
+  },
+  "deterministic_evaluation_notes": [
+    "The expected and actual sentence text is enough for deterministic token alignment.",
+    "Later runners should not require audio or transcript confidence.",
+    "The repeated missing_word evidence should produce a concrete next-practice plan."
+  ]
+}

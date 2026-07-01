@@ -106,3 +106,24 @@ Initial DictationBench should evaluate:
 Default evaluation must stay deterministic and local-first. Provider-backed
 cases can be optional later, but the baseline should not require external API
 credentials.
+
+## DictationBench Fixture Corpus
+
+The first deterministic DictationBench inputs live in
+`tests/fixtures/dictation_bench/*.json`. The corpus currently covers Chinese
+dictation, English spelling, English sentence dictation, multi-day improvement,
+and insufficient-evidence handling. Each fixture records the namespace, locale,
+task kind, prompt items and expected text, submitted attempts, expected mistake
+patterns, expected next-practice outcome, and local deterministic evaluation
+notes.
+
+Follow-up issues #166-#168 should consume these fixtures as plain local JSON.
+They should parse the structured fields, run deterministic classification /
+growth / planning checks against them, and report whether the expected mistake
+patterns, plan expectations, improvement signals, or evidence gaps are met.
+They should not treat fixture notes as scoring logic.
+
+The baseline rule is local-first and no-provider: the default DictationBench
+path must not require PostgreSQL, Qdrant, network access, OCR, ASR, media
+resolution, or provider API keys. Optional provider-backed evaluation can be
+added later only outside the default deterministic gate.
