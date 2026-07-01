@@ -7,6 +7,12 @@ External apps and agents should call Surface Gateway capabilities instead of
 directly manipulating Engine objects such as Trace, MemoryAtom, CognitiveScene,
 GrowthModel, SleepCycle, or PracticePlan.
 
+Adapter-specific allowances are defined in
+[Surfaces And Adapters](surfaces-and-adapters.md#adapter-capability-policy).
+Gateway policy should authorize adapter access as allowed surfaces and actions;
+it must not turn product roles or interaction channels into Engine ownership
+boundaries.
+
 ## Responsibilities
 
 Surface Gateway owns:
