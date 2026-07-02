@@ -9,13 +9,28 @@ MemoryNexus includes a small deterministic evaluation harness for Lens quality.
 It is intentionally local-first: it does not require PostgreSQL, Qdrant, network
 access, or provider API keys.
 
-Run it with:
+Run all default deterministic evaluations with:
 
 ```bash
 cargo run --bin memorynexus-eval
 ```
 
-The command prints a JSON report:
+The command prints a JSON report with separate sections:
+
+```json
+{
+  "lens_eval": {},
+  "dictation_bench_recurring_errors": {}
+}
+```
+
+To run only the Lens evaluation:
+
+```bash
+cargo run --bin memorynexus-eval -- lens
+```
+
+The Lens section keeps the existing report shape:
 
 ```json
 {
@@ -127,3 +142,43 @@ The baseline rule is local-first and no-provider: the default DictationBench
 path must not require PostgreSQL, Qdrant, network access, OCR, ASR, media
 resolution, or provider API keys. Optional provider-backed evaluation can be
 added later only outside the default deterministic gate.
+
+### Recurring Error Benchmark
+
+Run the first local DictationBench recurring-error pass with:
+
+```bash
+cargo run --bin memorynexus-eval -- dictation-bench-recurring-errors
+```
+
+This path loads the local #165 JSON fixture corpus, classifies each submitted
+attempt through the deterministic dictation classifier, and reports detected
+mistake types against each expected pattern. It does not require PostgreSQL,
+Qdrant, network access, OCR, ASR, media resolution, or provider API keys.
+
+The report includes:
+
+- `total_fixture_count`
+- `total_expected_pattern_count`
+- `passed_pattern_count`
+- `failed_pattern_count`
+- per-fixture `pattern_results`
+- per-pattern expected mistake type, recurrence label, attempt IDs, prompt item
+  IDs, detected mistake types, pass/fail status, and notes
+
+Recurrence labels are interpreted narrowly for #166:
+
+- `recurring`: the expected mistake type must appear across repeated relevant
+  attempts.
+- `single`: the expected mistake type should appear once and not be treated as
+  recurring.
+- `improving`: repeated pattern evidence must be detected, but improvement
+  quality is not scored here.
+- `insufficient_evidence`: no recurring plan-worthy pattern is expected; sparse
+  or unclassified evidence should not fail the recurring-error pass.
+
+Follow-up #167 should build on the same fixture and detected-pattern report to
+score next-practice quality: target mistake type alignment, ten-minute practice
+shape, and evidence-gap behavior. Follow-up #168 should score multi-day
+improvement quality separately, especially whether later correct attempts
+change feedback intensity without erasing earlier repeated evidence.
