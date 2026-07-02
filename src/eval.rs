@@ -8,8 +8,12 @@ use crate::domain::dictation::{
     build_dictation_attempt, DictationAttemptInput, DictationItemKind, DictationSource,
     DictationTaskKind, PromptItemInput, SubmittedItemInput,
 };
+use crate::domain::growth_model::{aggregate_growth_model, EvidenceId, GrowthEvidenceRecord};
+use crate::domain::practice_plan::PracticePlanGeneration;
+use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LensEvalCase {
@@ -344,6 +348,7 @@ pub struct DictationBenchFixture {
     pub task: DictationBenchTask,
     pub attempts: Vec<DictationBenchAttempt>,
     pub expected_mistake_patterns: Vec<DictationBenchExpectedPattern>,
+    pub expected_next_practice: DictationBenchExpectedNextPractice,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -394,6 +399,14 @@ pub struct DictationBenchExpectedPattern {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchExpectedNextPractice {
+    pub outcome: String,
+    pub duration_minutes: Option<u16>,
+    pub target_mistake_types: Vec<String>,
+    pub expectations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DictationBenchRecurringErrorReport {
     pub total_fixture_count: usize,
     pub total_expected_pattern_count: usize,
@@ -420,6 +433,45 @@ pub struct DictationBenchPatternResult {
     pub detected_mistake_types: Vec<String>,
     pub passed: bool,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchNextPracticeReport {
+    pub total_fixture_count: usize,
+    pub useful_count: usize,
+    pub neutral_count: usize,
+    pub bad_count: usize,
+    pub fixture_results: Vec<DictationBenchNextPracticeFixtureResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchNextPracticeFixtureResult {
+    pub fixture_id: String,
+    pub namespace: String,
+    pub task_kind: String,
+    pub expected_outcome: String,
+    pub generated_outcome: DictationBenchNextPracticeGeneratedOutcome,
+    pub quality: DictationBenchNextPracticeQuality,
+    pub expected_target_mistake_types: Vec<String>,
+    pub generated_summary: String,
+    pub evidence_ids: Vec<EvidenceId>,
+    pub evidence_count: usize,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DictationBenchNextPracticeGeneratedOutcome {
+    Plan,
+    EvidenceGap,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DictationBenchNextPracticeQuality {
+    Useful,
+    Neutral,
+    Bad,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -500,6 +552,38 @@ pub fn evaluate_dictation_bench_recurring_errors(
     }
 }
 
+pub fn evaluate_dictation_bench_next_practice(
+    fixtures: &[DictationBenchFixture],
+) -> DictationBenchNextPracticeReport {
+    let fixture_results = fixtures
+        .iter()
+        .enumerate()
+        .map(|(fixture_index, fixture)| {
+            evaluate_dictation_bench_next_practice_fixture(fixture_index, fixture)
+        })
+        .collect::<Vec<_>>();
+    let useful_count = fixture_results
+        .iter()
+        .filter(|fixture| fixture.quality == DictationBenchNextPracticeQuality::Useful)
+        .count();
+    let neutral_count = fixture_results
+        .iter()
+        .filter(|fixture| fixture.quality == DictationBenchNextPracticeQuality::Neutral)
+        .count();
+    let bad_count = fixture_results
+        .iter()
+        .filter(|fixture| fixture.quality == DictationBenchNextPracticeQuality::Bad)
+        .count();
+
+    DictationBenchNextPracticeReport {
+        total_fixture_count: fixture_results.len(),
+        useful_count,
+        neutral_count,
+        bad_count,
+        fixture_results,
+    }
+}
+
 fn evaluate_dictation_bench_fixture(
     fixture: &DictationBenchFixture,
 ) -> DictationBenchFixtureResult {
@@ -520,6 +604,178 @@ fn evaluate_dictation_bench_fixture(
         task_kind: fixture.task_kind.clone(),
         passed,
         pattern_results,
+    }
+}
+
+fn evaluate_dictation_bench_next_practice_fixture(
+    fixture_index: usize,
+    fixture: &DictationBenchFixture,
+) -> DictationBenchNextPracticeFixtureResult {
+    let detected = detect_dictation_mistakes(fixture);
+    let evidence_records = growth_evidence_records_for_fixture(fixture_index, fixture, &detected);
+    let space_id = deterministic_uuid(fixture_index, 1, 0);
+    let namespace_id = deterministic_uuid(fixture_index, 2, 0);
+    let generation_trace_id = deterministic_uuid(fixture_index, 3, 0);
+    let aggregation = aggregate_growth_model(
+        space_id,
+        namespace_id,
+        evidence_records,
+        Utc.with_ymd_and_hms(2026, 7, 1, 21, 0, 0).unwrap(),
+    );
+    let generated =
+        PracticePlanGeneration::from_growth_model(&aggregation.model, generation_trace_id);
+
+    score_next_practice_generation(fixture, generated, aggregation.evidence_gaps)
+}
+
+fn growth_evidence_records_for_fixture(
+    fixture_index: usize,
+    fixture: &DictationBenchFixture,
+    detected: &[DetectedMistake],
+) -> Vec<GrowthEvidenceRecord> {
+    let space_id = deterministic_uuid(fixture_index, 1, 0);
+    let namespace_id = deterministic_uuid(fixture_index, 2, 0);
+    let mut records = Vec::new();
+
+    for (pattern_index, pattern) in fixture.expected_mistake_patterns.iter().enumerate() {
+        for (mistake_index, mistake) in detected.iter().enumerate() {
+            if !pattern
+                .attempt_ids
+                .iter()
+                .any(|attempt_id| attempt_id == &mistake.attempt_id)
+                || !pattern
+                    .prompt_item_ids
+                    .iter()
+                    .any(|prompt_item_id| prompt_item_id == &mistake.prompt_item_id)
+                || !mistake
+                    .mistake_types
+                    .iter()
+                    .any(|mistake_type| mistake_type == &pattern.mistake_type)
+            {
+                continue;
+            }
+
+            records.push(GrowthEvidenceRecord {
+                space_id,
+                namespace_id,
+                evidence_id: EvidenceId::Trace(deterministic_uuid(
+                    fixture_index,
+                    10 + pattern_index,
+                    mistake_index,
+                )),
+                signal_labels: vec![pattern.mistake_type.clone()],
+                explanation: Some(format!(
+                    "{}:{} showed {}",
+                    mistake.attempt_id, mistake.prompt_item_id, pattern.mistake_type
+                )),
+            });
+        }
+    }
+
+    records
+}
+
+fn score_next_practice_generation(
+    fixture: &DictationBenchFixture,
+    generated: PracticePlanGeneration,
+    evidence_gaps: Vec<String>,
+) -> DictationBenchNextPracticeFixtureResult {
+    let expected = &fixture.expected_next_practice;
+    let mut notes = Vec::new();
+
+    let (
+        generated_outcome,
+        generated_summary,
+        evidence_ids,
+        outcome_matches,
+        duration_matches,
+        target_matches,
+    ) = match generated {
+        PracticePlanGeneration::Plan(plan) => {
+            let generated_text = [
+                plan.target_pattern.as_deref().unwrap_or_default(),
+                plan.content.as_str(),
+                plan.expected_effect.as_deref().unwrap_or_default(),
+            ]
+            .join(" ");
+            let duration_matches = match expected.duration_minutes {
+                Some(minutes) => {
+                    generated_text.contains(&format!("{minutes}-minute"))
+                        || generated_text.contains(&format!("{minutes} minutes"))
+                }
+                None => true,
+            };
+            let target_matches = expected.target_mistake_types.iter().all(|mistake_type| {
+                generated_text.contains(mistake_type)
+                    || generated_text.contains(&mistake_type.replace('_', " "))
+                    || generated_text.contains(&mistake_type.replace('_', "-"))
+            });
+
+            if expected.outcome == "plan" {
+                notes.push("matched expected plan outcome".to_string());
+            } else {
+                notes.push("generated a plan where fixture expected evidence_gap".to_string());
+            }
+            if !duration_matches {
+                notes.push("generated plan did not match expected duration shape".to_string());
+            }
+            if !target_matches {
+                notes.push(
+                    "generated plan did not visibly target expected mistake types".to_string(),
+                );
+            }
+
+            (
+                DictationBenchNextPracticeGeneratedOutcome::Plan,
+                generated_text,
+                plan.evidence_ids.clone(),
+                expected.outcome == "plan",
+                duration_matches,
+                target_matches,
+            )
+        }
+        PracticePlanGeneration::EvidenceGap(gap) => {
+            if expected.outcome == "evidence_gap" {
+                notes.push("matched expected evidence_gap outcome".to_string());
+            } else {
+                notes.push("generated evidence_gap where fixture expected plan".to_string());
+            }
+            for evidence_gap in evidence_gaps {
+                notes.push(format!("growth evidence gap: {evidence_gap}"));
+            }
+
+            (
+                DictationBenchNextPracticeGeneratedOutcome::EvidenceGap,
+                gap.reason,
+                gap.evidence_ids,
+                expected.outcome == "evidence_gap",
+                expected.duration_minutes.is_none(),
+                expected.target_mistake_types.is_empty(),
+            )
+        }
+    };
+    let evidence_count = evidence_ids.len();
+
+    let quality = if outcome_matches && duration_matches && target_matches {
+        DictationBenchNextPracticeQuality::Useful
+    } else if outcome_matches {
+        DictationBenchNextPracticeQuality::Neutral
+    } else {
+        DictationBenchNextPracticeQuality::Bad
+    };
+
+    DictationBenchNextPracticeFixtureResult {
+        fixture_id: fixture.id.clone(),
+        namespace: fixture.namespace.clone(),
+        task_kind: fixture.task_kind.clone(),
+        expected_outcome: expected.outcome.clone(),
+        generated_outcome,
+        quality,
+        expected_target_mistake_types: expected.target_mistake_types.clone(),
+        generated_summary,
+        evidence_ids,
+        evidence_count,
+        notes,
     }
 }
 
@@ -693,6 +949,15 @@ fn has_recurring_plan_worthy_pattern(detected: &[DetectedMistake]) -> bool {
     attempts_by_type
         .values()
         .any(|attempt_ids| attempt_ids.len() >= 2)
+}
+
+fn deterministic_uuid(fixture_index: usize, group: usize, item_index: usize) -> Uuid {
+    Uuid::from_u128(
+        0x1670_0000_0000_0000_0000_0000_0000_0000
+            + ((fixture_index as u128) << 32)
+            + ((group as u128) << 16)
+            + item_index as u128,
+    )
 }
 
 fn parse_task_kind(task_kind: &str) -> DictationTaskKind {

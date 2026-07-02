@@ -20,7 +20,8 @@ The command prints a JSON report with separate sections:
 ```json
 {
   "lens_eval": {},
-  "dictation_bench_recurring_errors": {}
+  "dictation_bench_recurring_errors": {},
+  "dictation_bench_next_practice": {}
 }
 ```
 
@@ -182,3 +183,47 @@ score next-practice quality: target mistake type alignment, ten-minute practice
 shape, and evidence-gap behavior. Follow-up #168 should score multi-day
 improvement quality separately, especially whether later correct attempts
 change feedback intensity without erasing earlier repeated evidence.
+
+### Next-Practice Benchmark
+
+Run the first local DictationBench next-practice pass with:
+
+```bash
+cargo run --bin memorynexus-eval -- dictation-bench-next-practice
+```
+
+This path reuses the #165 fixture corpus and the #166 deterministic dictation
+classification path. For each fixture it converts repeated expected/detected
+mistake evidence into `GrowthEvidenceRecord` values, calls
+`aggregate_growth_model`, then calls
+`PracticePlanGeneration::from_growth_model`.
+
+The report includes:
+
+- `total_fixture_count`
+- `useful_count`
+- `neutral_count`
+- `bad_count`
+- per-fixture expected outcome
+- generated outcome: `plan` or `evidence_gap`
+- quality label: `useful`, `neutral`, or `bad`
+- expected target mistake types
+- generated target/content/effect summary
+- evidence IDs and evidence count
+- notes explaining outcome, duration, target, or evidence-gap mismatches
+
+The scoring is intentionally semantic and stable rather than prose-snapshot
+based. A useful plan must match the expected plan/evidence-gap outcome, keep
+the expected ten-minute MVP duration shape when one is present, visibly target
+the expected mistake types through the target pattern, content, or expected
+effect, and retain evidence linkage. An evidence-gap fixture should return an
+`EvidenceGap` instead of inventing a targeted plan.
+
+Bad or irrelevant plans stay visible as per-fixture `bad` results and in the
+top-level `bad_count`; the benchmark does not hide them behind an overall pass.
+
+Follow-up #168 should build on this benchmark by scoring multi-day improvement
+quality. In particular, it should evaluate whether later correct attempts lower
+feedback intensity or change practice wording while preserving earlier repeated
+evidence, instead of treating improvement as either a fresh failure or erased
+history.
