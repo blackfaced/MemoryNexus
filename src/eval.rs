@@ -1,6 +1,15 @@
-//! Deterministic Lens quality evaluation fixtures.
+//! Deterministic quality evaluation fixtures.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
+
+use crate::domain::dictation::{
+    build_dictation_attempt, DictationAttemptInput, DictationItemKind, DictationSource,
+    DictationTaskKind, PromptItemInput, SubmittedItemInput,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LensEvalCase {
@@ -323,5 +332,387 @@ fn provider_fallback(case: &LensEvalCase) -> f64 {
         1.0
     } else {
         0.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchFixture {
+    pub id: String,
+    pub namespace: String,
+    pub locale: String,
+    pub task_kind: String,
+    pub task: DictationBenchTask,
+    pub attempts: Vec<DictationBenchAttempt>,
+    pub expected_mistake_patterns: Vec<DictationBenchExpectedPattern>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchTask {
+    pub id: String,
+    pub source: String,
+    pub prompt_items: Vec<DictationBenchPromptItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchPromptItem {
+    pub id: String,
+    pub item_kind: String,
+    pub expected_text: String,
+    pub order_index: usize,
+    #[serde(default)]
+    pub display_text: Option<String>,
+    #[serde(default)]
+    pub hint: Option<String>,
+    #[serde(default)]
+    pub locale: Option<String>,
+    #[serde(default)]
+    pub metadata: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchAttempt {
+    pub id: String,
+    pub source: String,
+    pub submitted_items: Vec<DictationBenchSubmittedItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchSubmittedItem {
+    pub prompt_item_id: Option<String>,
+    pub actual_text: String,
+    pub order_index: usize,
+    #[serde(default)]
+    pub metadata: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchExpectedPattern {
+    pub mistake_type: String,
+    pub attempt_ids: Vec<String>,
+    pub prompt_item_ids: Vec<String>,
+    pub recurrence: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchRecurringErrorReport {
+    pub total_fixture_count: usize,
+    pub total_expected_pattern_count: usize,
+    pub passed_pattern_count: usize,
+    pub failed_pattern_count: usize,
+    pub fixture_results: Vec<DictationBenchFixtureResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchFixtureResult {
+    pub fixture_id: String,
+    pub namespace: String,
+    pub task_kind: String,
+    pub passed: bool,
+    pub pattern_results: Vec<DictationBenchPatternResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchPatternResult {
+    pub expected_mistake_type: String,
+    pub recurrence: String,
+    pub attempt_ids: Vec<String>,
+    pub prompt_item_ids: Vec<String>,
+    pub detected_mistake_types: Vec<String>,
+    pub passed: bool,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DictationBenchLoadError(String);
+
+impl std::fmt::Display for DictationBenchLoadError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DictationBenchLoadError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DetectedMistake {
+    attempt_id: String,
+    prompt_item_id: String,
+    mistake_types: Vec<String>,
+}
+
+pub fn load_dictation_bench_fixtures(
+    fixture_dir: &Path,
+) -> Result<Vec<DictationBenchFixture>, DictationBenchLoadError> {
+    let mut entries = fs::read_dir(fixture_dir)
+        .map_err(|err| {
+            DictationBenchLoadError(format!("failed to read {}: {err}", fixture_dir.display()))
+        })?
+        .map(|entry| {
+            entry
+                .map(|entry| entry.path())
+                .map_err(|err| DictationBenchLoadError(format!("failed to read entry: {err}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    entries.retain(|path| {
+        path.extension()
+            .is_some_and(|extension| extension == "json")
+    });
+    entries.sort();
+
+    entries
+        .into_iter()
+        .map(|path| {
+            let contents = fs::read_to_string(&path).map_err(|err| {
+                DictationBenchLoadError(format!("failed to read {}: {err}", path.display()))
+            })?;
+            serde_json::from_str(&contents).map_err(|err| {
+                DictationBenchLoadError(format!("failed to parse {}: {err}", path.display()))
+            })
+        })
+        .collect()
+}
+
+pub fn evaluate_dictation_bench_recurring_errors(
+    fixtures: &[DictationBenchFixture],
+) -> DictationBenchRecurringErrorReport {
+    let fixture_results = fixtures
+        .iter()
+        .map(evaluate_dictation_bench_fixture)
+        .collect::<Vec<_>>();
+    let total_expected_pattern_count = fixture_results
+        .iter()
+        .map(|fixture| fixture.pattern_results.len())
+        .sum();
+    let passed_pattern_count = fixture_results
+        .iter()
+        .flat_map(|fixture| &fixture.pattern_results)
+        .filter(|pattern| pattern.passed)
+        .count();
+    let failed_pattern_count = total_expected_pattern_count - passed_pattern_count;
+
+    DictationBenchRecurringErrorReport {
+        total_fixture_count: fixture_results.len(),
+        total_expected_pattern_count,
+        passed_pattern_count,
+        failed_pattern_count,
+        fixture_results,
+    }
+}
+
+fn evaluate_dictation_bench_fixture(
+    fixture: &DictationBenchFixture,
+) -> DictationBenchFixtureResult {
+    let detected = detect_dictation_mistakes(fixture);
+    let has_recurring_plan_worthy_pattern = has_recurring_plan_worthy_pattern(&detected);
+    let pattern_results = fixture
+        .expected_mistake_patterns
+        .iter()
+        .map(|pattern| {
+            evaluate_dictation_bench_pattern(pattern, &detected, has_recurring_plan_worthy_pattern)
+        })
+        .collect::<Vec<_>>();
+    let passed = pattern_results.iter().all(|pattern| pattern.passed);
+
+    DictationBenchFixtureResult {
+        fixture_id: fixture.id.clone(),
+        namespace: fixture.namespace.clone(),
+        task_kind: fixture.task_kind.clone(),
+        passed,
+        pattern_results,
+    }
+}
+
+fn detect_dictation_mistakes(fixture: &DictationBenchFixture) -> Vec<DetectedMistake> {
+    let task_kind = parse_task_kind(&fixture.task_kind);
+    let prompt_items = fixture
+        .task
+        .prompt_items
+        .iter()
+        .map(|item| (item.id.as_str(), item))
+        .collect::<BTreeMap<_, _>>();
+    let mut detected = Vec::new();
+
+    for attempt in &fixture.attempts {
+        for submitted in &attempt.submitted_items {
+            let Some(prompt_item_id) = submitted.prompt_item_id.as_deref() else {
+                continue;
+            };
+            let Some(prompt_item) = prompt_items.get(prompt_item_id) else {
+                continue;
+            };
+            let Ok(attempt_result) = build_dictation_attempt(DictationAttemptInput {
+                namespace: fixture.namespace.clone(),
+                task_kind,
+                source: DictationSource::Typed,
+                task: Some(fixture.task.id.clone()),
+                goal: None,
+                prompt_items: vec![PromptItemInput {
+                    item_kind: parse_item_kind(&prompt_item.item_kind),
+                    expected_text: prompt_item.expected_text.clone(),
+                    display_text: prompt_item.display_text.clone(),
+                    hint: prompt_item.hint.clone(),
+                    locale: prompt_item.locale.clone(),
+                    metadata: prompt_item.metadata.clone(),
+                }],
+                submitted_items: vec![SubmittedItemInput {
+                    actual_text: submitted.actual_text.clone(),
+                    metadata: submitted.metadata.clone(),
+                }],
+                input_confirmation: None,
+                evidence_refs: Vec::new(),
+                metadata: json!({
+                    "fixture_id": fixture.id,
+                    "attempt_id": attempt.id,
+                    "prompt_item_id": prompt_item_id,
+                }),
+            }) else {
+                continue;
+            };
+            let Some(item_result) = attempt_result.evaluation.item_results.first() else {
+                continue;
+            };
+            detected.push(DetectedMistake {
+                attempt_id: attempt.id.clone(),
+                prompt_item_id: prompt_item_id.to_string(),
+                mistake_types: item_result.mistake_types.clone(),
+            });
+        }
+    }
+
+    detected
+}
+
+fn evaluate_dictation_bench_pattern(
+    pattern: &DictationBenchExpectedPattern,
+    detected: &[DetectedMistake],
+    has_recurring_plan_worthy_pattern: bool,
+) -> DictationBenchPatternResult {
+    let relevant = detected
+        .iter()
+        .filter(|mistake| {
+            pattern
+                .attempt_ids
+                .iter()
+                .any(|attempt_id| attempt_id == &mistake.attempt_id)
+                && pattern
+                    .prompt_item_ids
+                    .iter()
+                    .any(|prompt_item_id| prompt_item_id == &mistake.prompt_item_id)
+        })
+        .collect::<Vec<_>>();
+    let detected_mistake_types = detected_mistake_types(&relevant);
+    let matched_attempt_count = relevant
+        .iter()
+        .filter(|mistake| {
+            mistake
+                .mistake_types
+                .iter()
+                .any(|mistake_type| mistake_type == &pattern.mistake_type)
+        })
+        .map(|mistake| mistake.attempt_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let matched_occurrence_count = relevant
+        .iter()
+        .filter(|mistake| {
+            mistake
+                .mistake_types
+                .iter()
+                .any(|mistake_type| mistake_type == &pattern.mistake_type)
+        })
+        .count();
+    let mut notes = Vec::new();
+
+    let passed = match pattern.recurrence.as_str() {
+        "recurring" => {
+            notes.push("expected repeated relevant attempts to show this pattern".to_string());
+            matched_attempt_count >= 2
+        }
+        "single" => {
+            notes.push("expected one relevant occurrence, not a recurring pattern".to_string());
+            matched_occurrence_count == 1
+        }
+        "improving" => {
+            notes.push(
+                "improving label scores repeated pattern evidence only; quality belongs to #168"
+                    .to_string(),
+            );
+            matched_attempt_count >= 2
+        }
+        "insufficient_evidence" => {
+            notes.push(
+                "insufficient evidence is not scored as recurring or plan-worthy".to_string(),
+            );
+            matched_occurrence_count <= 1 && !has_recurring_plan_worthy_pattern
+        }
+        _ => {
+            notes.push(format!(
+                "unsupported recurrence label {}",
+                pattern.recurrence
+            ));
+            false
+        }
+    };
+
+    DictationBenchPatternResult {
+        expected_mistake_type: pattern.mistake_type.clone(),
+        recurrence: pattern.recurrence.clone(),
+        attempt_ids: pattern.attempt_ids.clone(),
+        prompt_item_ids: pattern.prompt_item_ids.clone(),
+        detected_mistake_types,
+        passed,
+        notes,
+    }
+}
+
+fn detected_mistake_types(relevant: &[&DetectedMistake]) -> Vec<String> {
+    relevant
+        .iter()
+        .flat_map(|mistake| mistake.mistake_types.iter().cloned())
+        .filter(|mistake_type| mistake_type != "correct")
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn has_recurring_plan_worthy_pattern(detected: &[DetectedMistake]) -> bool {
+    let mut attempts_by_type = BTreeMap::<&str, BTreeSet<&str>>::new();
+    for mistake in detected {
+        for mistake_type in &mistake.mistake_types {
+            if matches!(mistake_type.as_str(), "correct" | "unclassified") {
+                continue;
+            }
+            attempts_by_type
+                .entry(mistake_type.as_str())
+                .or_default()
+                .insert(mistake.attempt_id.as_str());
+        }
+    }
+
+    attempts_by_type
+        .values()
+        .any(|attempt_ids| attempt_ids.len() >= 2)
+}
+
+fn parse_task_kind(task_kind: &str) -> DictationTaskKind {
+    match task_kind {
+        "chinese_dictation" => DictationTaskKind::ChineseDictation,
+        "english_spelling" => DictationTaskKind::EnglishSpelling,
+        "english_sentence_dictation" => DictationTaskKind::EnglishSentenceDictation,
+        other => panic!("unsupported DictationBench task kind {other}"),
+    }
+}
+
+fn parse_item_kind(item_kind: &str) -> DictationItemKind {
+    match item_kind {
+        "chinese_character" => DictationItemKind::ChineseCharacter,
+        "chinese_word" => DictationItemKind::ChineseWord,
+        "chinese_phrase" => DictationItemKind::ChinesePhrase,
+        "chinese_sentence" => DictationItemKind::ChineseSentence,
+        "english_word" => DictationItemKind::EnglishWord,
+        "english_phrase" => DictationItemKind::EnglishPhrase,
+        "english_sentence" => DictationItemKind::EnglishSentence,
+        other => panic!("unsupported DictationBench item kind {other}"),
     }
 }
