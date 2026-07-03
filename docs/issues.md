@@ -1727,3 +1727,52 @@ audit/provenance Trace writes for dashboard requests.
 - `tests/fixtures/dictation_bench/multi_day.json`
 - `src/domain/growth_model.rs`
 - `docs/evaluation.md`
+
+### Issue 7.5: Add Optional LoCoMo / LongMemEval Retrieval Baseline
+
+**GitHub:** #195
+
+**Background:** GrowthBench / DictationBench remain the primary MemoryNexus
+evaluation line because MemoryNexus is a long-term feedback engine, not a pure
+retrieval benchmark project. LoCoMo / LongMemEval-style tasks can still provide
+secondary evidence about context gathering, citation provenance, and retrieval
+scoping over long text histories.
+
+**Scope:**
+
+- Define a locally reproducible text-only micro-corpus inspired by LoCoMo QA and
+  LongMemEval memory categories.
+- Map benchmark records into MemoryNexus `CognitiveSpace`, namespace,
+  Trace-style fixture evidence, and retrieved context outputs.
+- Keep retrieval/context metrics separate from feedback-loop metrics.
+- Document what the baseline does and does not prove.
+
+**Non-Goals:**
+
+- Do not replace GrowthBench or DictationBench.
+- Do not optimize the roadmap around pure retrieval accuracy.
+- Do not require cloud model credentials, external benchmark services, Qdrant,
+  PostgreSQL, OCR, ASR, or media resolution in the default local path.
+- Do not introduce a new agent memory runtime.
+- Do not change Engine schema or Surface contracts in the first slice.
+
+**Acceptance Criteria:**
+
+- Evaluation docs identify the exact subset:
+  `locomo_text_qa_micro` with 6 text-only QA cases and
+  `longmemeval_core_memory_micro` with 6 text-only QA cases.
+- Fixture shape is documented for
+  `tests/fixtures/retrieval_baseline/locomo_longmemeval_micro.json`.
+- Planned local command is documented:
+  `cargo run --bin memorynexus-eval -- retrieval-baseline --fixture tests/fixtures/retrieval_baseline/locomo_longmemeval_micro.json`.
+- Metrics are framed as secondary retrieval/context evidence.
+- GrowthBench / DictationBench are explicitly preserved as primary.
+- No Engine schema or Surface contract changes are required.
+
+**Possible Files:**
+
+- `docs/evaluation.md`
+- `docs/issues.md`
+- `tests/fixtures/retrieval_baseline/locomo_longmemeval_micro.json` in a future
+  executable slice
+- `src/bin/memorynexus-eval.rs` in a future executable slice

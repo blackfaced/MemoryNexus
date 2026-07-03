@@ -277,3 +277,235 @@ Later evaluation work can add optional provider-backed or longitudinal
 benchmarks, but those should stay outside the default local deterministic gate.
 Future #195 LoCoMo / LongMemEval work should be added as a separate evaluation
 track rather than folded into DictationBench improvement labels.
+
+## Optional Retrieval / Context Baseline
+
+Issue #195 adds a P2 docs-first plan for a LoCoMo / LongMemEval-style retrieval
+baseline. This track is secondary evidence only. GrowthBench / DictationBench
+remain the primary MemoryNexus evaluation line because they measure repeated
+pattern detection, next-practice usefulness, local ratio, improvement signals,
+and feedback-loop behavior over time.
+
+The baseline should answer a narrower question:
+
+```text
+Can MemoryNexus gather the right compact context from long text histories while
+preserving CognitiveSpace ownership, namespace routing, and trace provenance?
+```
+
+It must not answer the broader product-quality question of whether the system
+helps a learner improve or produces useful next actions. Those claims belong to
+GrowthBench / DictationBench.
+
+### Benchmark Subset
+
+The first slice should use a local micro-corpus inspired by the text-only QA
+parts of LoCoMo and LongMemEval:
+
+- `locomo_text_qa_micro`: 6 text-only dialogue-history cases based on LoCoMo's
+  long-term conversation QA shape. Include 3 single-hop factual recall cases and
+  3 multi-session temporal / event-update cases. Exclude image-grounded turns,
+  event summarization, and dialogue generation.
+- `longmemeval_core_memory_micro`: 6 text-only chat-memory QA cases based on
+  LongMemEval's core ability categories. Include 1 information-extraction case,
+  1 multi-session reasoning case, 1 temporal-reasoning case, 2 knowledge-update
+  cases, and 1 abstention case. Exclude answer generation judged by an LLM.
+
+This exact 12-case micro-corpus is intentionally smaller than the public
+benchmarks. It is locally reproducible, deterministic, and credential-free. It
+tests context gathering and citation behavior before any optional full public
+benchmark adapter is considered.
+
+The fixture content should be hand-authored or checked into the repository
+under:
+
+```text
+tests/fixtures/retrieval_baseline/locomo_longmemeval_micro.json
+```
+
+Do not download a benchmark at runtime, call an external benchmark service, or
+require provider credentials in the default path. If maintainers later add a
+converter for public LoCoMo / LongMemEval records, that converter should be a
+separate optional import step and should emit the same local fixture shape.
+
+### Fixture Shape
+
+Use one JSON file with a top-level version and case list:
+
+```json
+{
+  "schema_version": 1,
+  "suite": "locomo_longmemeval_micro",
+  "cases": [
+    {
+      "id": "locomo_text_qa_micro_001",
+      "source_style": "locomo",
+      "ability": "single_hop_fact",
+      "space": {
+        "id": "retrieval-baseline-space-001",
+        "name": "Retrieval Baseline Fixture Space"
+      },
+      "namespace": "benchmark.retrieval.locomo",
+      "history": [
+        {
+          "id": "turn-001",
+          "session_id": "session-01",
+          "turn_index": 1,
+          "speaker": "user",
+          "occurred_at": "2026-01-03T09:00:00Z",
+          "text": "I moved my piano lesson to Thursday because Tuesday is full."
+        }
+      ],
+      "query": {
+        "id": "question-001",
+        "text": "Which day did the user move the piano lesson to?",
+        "expected_answer": "Thursday",
+        "answerable": true
+      },
+      "expected_context": {
+        "must_include_history_ids": ["turn-001"],
+        "must_exclude_history_ids": [],
+        "required_terms": ["piano lesson", "Thursday"]
+      },
+      "expected_mapping": {
+        "trace_kind": "conversation_turn",
+        "surface": "observation",
+        "adapter": "eval_fixture",
+        "context_output": "retrieved_context"
+      }
+    }
+  ]
+}
+```
+
+Field rules:
+
+- `source_style` is `locomo` or `longmemeval`; it records inspiration, not a
+  runtime dependency.
+- `ability` is one of `single_hop_fact`, `multi_session_reasoning`,
+  `temporal_reasoning`, `knowledge_update`, or `abstention`.
+- `space` represents one `CognitiveSpace`. The baseline may include multiple
+  spaces, but records from one case must never retrieve context from another
+  space.
+- `namespace` is a domain partition inside the space, for example
+  `benchmark.retrieval.locomo` or `benchmark.retrieval.longmemeval`. It is not a
+  permission boundary.
+- `history` entries are local text evidence. They map to Trace-style fixture
+  records and, when using existing Lens/search plumbing, may also be converted
+  into memory records for retrieval. The conversion must preserve the original
+  history IDs as citation/source IDs.
+- `query.answerable=false` marks abstention cases. These should reward empty or
+  low-confidence context and penalize spurious context.
+- `expected_context` scores retrieval/context gathering only. It does not score
+  final natural-language answer quality.
+- `expected_mapping` documents how the adapter projects the record into
+  MemoryNexus concepts; it must not require new Engine schema or Surface
+  contract fields.
+
+### MemoryNexus Mapping
+
+The baseline adapter should map benchmark records without changing ownership
+boundaries:
+
+- Create or simulate the declared `CognitiveSpace` for the case.
+- Route all LoCoMo-style records to `benchmark.retrieval.locomo` and all
+  LongMemEval-style records to `benchmark.retrieval.longmemeval`.
+- Treat each `history` item as confirmed local text evidence from the
+  `eval_fixture` adapter. A future executable version may write Trace records
+  through the Surface Gateway, but the first fixture-only evaluator can simulate
+  Trace IDs deterministically.
+- Feed context gathering through existing space-scoped retrieval / Lens-style
+  paths. Retrieval must stay scoped to the case space and namespace filter when
+  the fixture provides one.
+- Return a `retrieved_context` list containing source IDs, snippets, rank,
+  retrieval mode, namespace, and trace/source provenance.
+- Do not create new Engine-owned agent memory, global benchmark memory, or
+  benchmark-specific ownership model.
+
+This mapping preserves ADR-019: the benchmark runner is an Adapter, retrieval
+or Observation is the Surface intent, and MemoryNexus Engine objects remain
+owned by `CognitiveSpace`.
+
+### Local Run Command
+
+The planned local command is:
+
+```bash
+cargo run --bin memorynexus-eval -- retrieval-baseline \
+  --fixture tests/fixtures/retrieval_baseline/locomo_longmemeval_micro.json
+```
+
+The command should be optional and outside the default `cargo run --bin
+memorynexus-eval` report until an executable slice lands. It must not require
+PostgreSQL, Qdrant, network access, OCR, ASR, media resolution, provider API
+keys, or a downloaded benchmark service. A first implementation can use the
+same deterministic in-memory fixture style as the Lens and DictationBench
+evaluators.
+
+The eventual report should be separate from DictationBench:
+
+```json
+{
+  "retrieval_baseline": {
+    "suite": "locomo_longmemeval_micro",
+    "total_case_count": 12,
+    "hit_at_1": 0.0,
+    "hit_at_3": 0.0,
+    "citation_recall": 0.0,
+    "citation_precision": 0.0,
+    "abstention_precision": 0.0,
+    "cross_space_leak_count": 0,
+    "local_ratio": 1.0,
+    "estimated_cost_usd": 0.0,
+    "case_results": []
+  }
+}
+```
+
+### Metrics
+
+Report retrieval/context metrics separately from GrowthBench / DictationBench
+feedback-loop metrics:
+
+- `hit_at_1` and `hit_at_3`: whether required source IDs appear in the top
+  ranked retrieved context.
+- `citation_recall`: required source IDs retrieved divided by required source
+  IDs.
+- `citation_precision`: retrieved cited source IDs that are expected or
+  explicitly allowed.
+- `required_term_coverage`: required fixture terms present in retrieved
+  snippets.
+- `abstention_precision`: answerable-false cases that return no required
+  context or an explicit insufficient-context result.
+- `cross_space_leak_count`: retrieved items whose `space.id` differs from the
+  case space. This must be zero.
+- `cross_namespace_leak_count`: retrieved items outside the requested namespace
+  when a namespace filter is specified.
+- `context_token_count`: approximate token count of gathered context.
+- `local_ratio`, `estimated_cost_usd`, and deterministic simulated latency,
+  following the DictationBench reporting convention.
+
+Do not mix these with DictationBench metrics such as useful feedback rate,
+next-practice quality, improvement labels, or repeated mistake detection.
+
+### What This Proves
+
+This baseline can provide secondary evidence that MemoryNexus can:
+
+- keep retrieval scoped to a `CognitiveSpace`;
+- preserve namespace and source provenance in compact context;
+- retrieve supporting text for simple long-history QA shapes;
+- avoid spurious context in abstention cases;
+- report local deterministic retrieval behavior without cloud credentials.
+
+It does not prove:
+
+- that MemoryNexus is a better general-purpose agent memory runtime;
+- that the roadmap should optimize around pure retrieval accuracy;
+- that feedback, growth, or next-practice quality improved;
+- that multimodal LoCoMo tasks are supported;
+- that public LongMemEval scores are comparable to external leaderboard runs;
+- that a cloud LLM can answer the retrieved context correctly.
+
+Any future full LoCoMo / LongMemEval adapter should remain optional P2 evidence
+and should not replace the GrowthBench / DictationBench acceptance line.
