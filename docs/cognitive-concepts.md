@@ -97,7 +97,7 @@ new Trace
 Memory 是材料，
 MemoryAtom 是可追踪的认知原子，
 CognitiveScene 是长期主题场，
-Lens 是看法，
+Lens 是解释策略，
 CognitiveProjection 是某个 Lens 下重构出的当前上下文，
 Reflection 是解释，
 Concept 是模式，
@@ -835,22 +835,24 @@ SurfaceGateway 回答的问题是：
 
 ## Lens
 
-Lens 是认知视角，也是一种 interpretation strategy。
+Lens 是 interpretation strategy：稳定命名的解释策略引用，用来说明系统本次
+如何读取、筛选、组织和解释 CognitiveSpace 中的证据。
 
-它不是 Agent，也不只是 prompt。Lens 决定系统如何看 Memory，关注什么、忽略什么、如何组织意义、如何处理矛盾。
+Lens 不是 Agent persona、说话身份、角色扮演人物或 prompt framework。Lens metadata
+不应包含“我是谁”“我会如何说话”“扮演什么角色”之类的身份设定；它只描述解释策略，
+例如关注异常、结构、学习反馈或项目上下文。
 
 例子：
 
-- Detective Lens: 关注异常、遗漏、权力关系和隐性动机。
-- Emotional Lens: 关注情绪、感受、需求和创伤。
-- Systems Lens: 关注结构、反馈、循环和机制。
-- Narrative Lens: 关注故事、身份连续性和人生主题。
-- Philosopher Lens: 关注意义、价值、存在方式和世界观。
+- `risk_review`: 关注风险、矛盾、遗漏和需要后续确认的证据。
+- `learning_review`: 关注练习表现、错因模式、反馈循环和下一步练习。
+- `project_context`: 关注项目方向、约束、依赖和当前决策背景。
+- `systems_review`: 关注结构、反馈、循环和机制。
 
 Lens 回答的问题是：
 
 ```text
-系统正在以什么方式看待这段 memory？
+这次 Reflection / Projection 使用了哪一种解释策略？
 ```
 
 ## CognitiveEvent

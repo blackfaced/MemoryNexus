@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::LensStrategyRef;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceRefKind {
@@ -27,6 +29,7 @@ pub struct ReflectionRequest {
     pub space_id: Uuid,
     pub namespace_id: Uuid,
     pub namespace: String,
+    pub lens_strategy: Option<LensStrategyRef>,
     pub question: Option<String>,
     pub evidence: Vec<ReflectionEvidence>,
 }
@@ -43,6 +46,7 @@ pub struct ReflectionInsight {
     pub space_id: Uuid,
     pub namespace_id: Uuid,
     pub namespace: String,
+    pub lens_strategy: Option<LensStrategyRef>,
     pub evidence_count: usize,
     pub confidence: String,
     pub summary: String,
@@ -95,6 +99,7 @@ pub fn build_reflection_insight(request: &ReflectionRequest) -> ReflectionInsigh
         space_id: request.space_id,
         namespace_id: request.namespace_id,
         namespace: request.namespace.clone(),
+        lens_strategy: request.lens_strategy.clone(),
         evidence_count,
         confidence: confidence.to_string(),
         summary,

@@ -1,3 +1,4 @@
+use memorynexus::domain::LensStrategyRef;
 use memorynexus::eval::{evaluate_cases, lens_eval_fixtures};
 
 #[test]
@@ -47,4 +48,13 @@ fn lens_eval_has_a_risk_case_that_requires_unresolved_contradictions() {
         .expect("risk fixture should exist");
 
     assert_eq!(risk.dimension_scores.contradiction_signal, 1.0);
+}
+
+#[test]
+fn lens_eval_strategy_names_round_trip_through_lens_strategy_ref() {
+    for case in lens_eval_fixtures() {
+        let reference = LensStrategyRef::new(case.lens_strategy.clone());
+
+        assert_eq!(reference.name(), case.lens_strategy);
+    }
 }

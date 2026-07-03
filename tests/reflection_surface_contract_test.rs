@@ -1,6 +1,7 @@
 use memorynexus::domain::reflection::{
     build_reflection_insight, EvidenceRef, EvidenceRefKind, ReflectionEvidence, ReflectionRequest,
 };
+use memorynexus::domain::LensStrategyRef;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -12,6 +13,7 @@ fn reflection_insight_is_stable_and_evidence_backed() {
         space_id,
         namespace_id,
         namespace: "child.english.spelling".to_string(),
+        lens_strategy: None,
         question: Some("Explain what this means".to_string()),
         evidence: vec![
             ReflectionEvidence {
@@ -60,6 +62,7 @@ fn reflection_insight_is_stable_and_evidence_backed() {
             "space_id": space_id,
             "namespace_id": namespace_id,
             "namespace": "child.english.spelling",
+            "lens_strategy": null,
             "evidence_count": 2,
             "confidence": "medium",
             "summary": "Explain what this means: reviewing 2 evidence items in child.english.spelling: Target: because Submitted: becuase",
@@ -90,6 +93,7 @@ fn reflection_question_changes_deterministic_summary() {
         space_id: Uuid::nil(),
         namespace_id: Uuid::from_u128(1),
         namespace: "child.english.spelling".to_string(),
+        lens_strategy: None,
         question: Some("Review the mistake pattern".to_string()),
         evidence: vec![ReflectionEvidence {
             source: EvidenceRef {
@@ -114,6 +118,7 @@ fn reflection_insight_handles_missing_evidence_without_fabricated_certainty() {
         space_id: Uuid::nil(),
         namespace_id: Uuid::from_u128(1),
         namespace: "personal.thoughts".to_string(),
+        lens_strategy: None,
         question: None,
         evidence: Vec::new(),
     });
@@ -126,4 +131,46 @@ fn reflection_insight_handles_missing_evidence_without_fabricated_certainty() {
         "No evidence was provided for reflection in personal.thoughts."
     );
     assert!(insight.evidence_summaries.is_empty());
+}
+
+#[test]
+fn lens_strategy_ref_serializes_with_stable_name() {
+    let lens_strategy = LensStrategyRef::new("project_context");
+
+    assert_eq!(lens_strategy.name(), "project_context");
+    assert_eq!(
+        serde_json::to_value(&lens_strategy).unwrap(),
+        json!({ "name": "project_context" })
+    );
+}
+
+#[test]
+fn reflection_request_and_response_can_carry_lens_strategy_ref() {
+    let lens_strategy = LensStrategyRef::new("learning_review");
+    let request = ReflectionRequest {
+        space_id: Uuid::nil(),
+        namespace_id: Uuid::from_u128(1),
+        namespace: "child.english.spelling".to_string(),
+        lens_strategy: Some(lens_strategy.clone()),
+        question: Some("Review the mistake pattern".to_string()),
+        evidence: vec![ReflectionEvidence {
+            source: EvidenceRef {
+                kind: EvidenceRefKind::Trace,
+                id: Uuid::from_u128(11),
+            },
+            summary: "Target: because Submitted: becuase".to_string(),
+        }],
+    };
+
+    let insight = build_reflection_insight(&request);
+
+    assert_eq!(insight.lens_strategy, Some(lens_strategy));
+    assert_eq!(
+        insight.summary,
+        "Review the mistake pattern: reviewing 1 evidence items in child.english.spelling: Target: because Submitted: becuase"
+    );
+    assert_eq!(
+        serde_json::to_value(&insight).unwrap()["lens_strategy"],
+        json!({ "name": "learning_review" })
+    );
 }
