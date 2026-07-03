@@ -83,11 +83,14 @@ without exposing Engine internals:
 | `capture` | `capture_observation` |
 | `performance` | `submit_attempt` |
 | `reflection` | `review_evidence` |
-| `planning` | `generate_next_task` |
+| `planning` | `generate_next_task`; `adjust_plan` |
 | `observation` | `get_state_summary` |
 
 Requests must use an action that belongs to the selected surface. For example,
 `submit_attempt` is valid for `performance` and invalid for `capture`.
+`planning/adjust_plan` adjusts an adapter-proposed plan from generic evidence
+and constraints, returns a response-only draft, and does not persist or expose a
+`PracticePlan` ID.
 
 ## SurfaceResponse
 

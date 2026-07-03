@@ -419,6 +419,12 @@ fn tools_list_result() -> Value {
                 "generate_next_task",
             ),
             surface_tool_schema(
+                "surface_adjust_plan",
+                "Adjust a generic proposed plan through Surface Gateway.",
+                "planning",
+                "adjust_plan",
+            ),
+            surface_tool_schema(
                 "surface_get_state_summary",
                 "Get a generic namespace state summary through Surface Gateway.",
                 "observation",
@@ -607,6 +613,12 @@ const SURFACE_TOOL_SPECS: &[SurfaceToolSpec] = &[
         name: "surface_generate_next_task",
         surface: "planning",
         action: "generate_next_task",
+        accepts_evidence_refs: false,
+    },
+    SurfaceToolSpec {
+        name: "surface_adjust_plan",
+        surface: "planning",
+        action: "adjust_plan",
         accepts_evidence_refs: false,
     },
     SurfaceToolSpec {
@@ -1598,6 +1610,7 @@ mod tests {
                 "surface_submit_attempt",
                 "surface_review_evidence",
                 "surface_generate_next_task",
+                "surface_adjust_plan",
                 "surface_get_state_summary",
                 "learning_math_create_practice_session",
                 "learning_math_record_attempt",
@@ -1632,7 +1645,7 @@ mod tests {
     }
 
     #[test]
-    fn surface_tools_map_all_five_generic_actions_to_surface_gateway() {
+    fn surface_tools_map_generic_actions_to_surface_gateway() {
         let config = config_with_token();
         let cases = [
             (
@@ -1668,6 +1681,17 @@ mod tests {
                 json!({
                     "space_id": "22222222-2222-2222-2222-222222222222",
                     "objective": "Review spelling pattern"
+                }),
+            ),
+            (
+                "surface_adjust_plan",
+                "planning",
+                "adjust_plan",
+                json!({
+                    "space_id": "22222222-2222-2222-2222-222222222222",
+                    "proposed_plan": {"title": "Draft practice"},
+                    "evidence": [],
+                    "constraints": ["keep it short"]
                 }),
             ),
             (

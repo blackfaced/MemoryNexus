@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 use super::dream_candidate::{
@@ -41,6 +42,46 @@ pub struct NextTask {
     pub runtime: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdjustPlanRequest {
+    pub space_id: SpaceId,
+    pub namespace_id: NamespaceId,
+    pub namespace: String,
+    pub proposed_plan: Value,
+    pub evidence: Vec<Value>,
+    pub constraints: Vec<String>,
+    pub objective: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdjustedPlan {
+    pub status: String,
+    pub space_id: SpaceId,
+    pub namespace_id: NamespaceId,
+    pub namespace: String,
+    pub plan_kind: String,
+    pub persistence: String,
+    pub proposed_plan: Value,
+    pub adjusted_plan: AdjustedPlanDraft,
+    pub evidence_summary: AdjustedPlanEvidenceSummary,
+    pub changes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdjustedPlanDraft {
+    pub title: String,
+    pub prompt: String,
+    pub constraints_applied: usize,
+    pub runtime: String,
+    pub rationale: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdjustedPlanEvidenceSummary {
+    pub record_count: usize,
+    pub constraint_count: usize,
+}
+
 pub fn build_next_task_plan(request: &PlanningRequest) -> NextTaskPlan {
     let namespace = compact_whitespace(&request.namespace);
     let namespace = if namespace.is_empty() {
@@ -73,6 +114,59 @@ pub fn build_next_task_plan(request: &PlanningRequest) -> NextTaskPlan {
                     .to_string(),
             runtime: "deterministic".to_string(),
         },
+    }
+}
+
+pub fn build_adjusted_plan(request: &AdjustPlanRequest) -> AdjustedPlan {
+    let namespace = compact_whitespace(&request.namespace);
+    let namespace = if namespace.is_empty() {
+        "active namespace".to_string()
+    } else {
+        namespace
+    };
+    let prompt = request
+        .objective
+        .as_deref()
+        .map(compact_whitespace)
+        .filter(|objective| !objective.is_empty())
+        .unwrap_or_else(|| format!("Adjust the proposed plan for {namespace}."));
+    let constraint_count = request
+        .constraints
+        .iter()
+        .filter(|constraint| !compact_whitespace(constraint).is_empty())
+        .count();
+    let changes = if constraint_count == 0 && request.evidence.is_empty() {
+        vec!["Kept the proposed plan shape and clarified the next action.".to_string()]
+    } else {
+        vec![format!(
+            "Adjusted from {} evidence record(s) and {} constraint(s).",
+            request.evidence.len(),
+            constraint_count
+        )]
+    };
+
+    AdjustedPlan {
+        status: "adjusted_plan_ready".to_string(),
+        space_id: request.space_id,
+        namespace_id: request.namespace_id,
+        namespace: namespace.clone(),
+        plan_kind: "response_only_adjustment".to_string(),
+        persistence: "not_persisted".to_string(),
+        proposed_plan: request.proposed_plan.clone(),
+        adjusted_plan: AdjustedPlanDraft {
+            title: format!("Adjusted plan for {namespace}"),
+            prompt,
+            constraints_applied: constraint_count,
+            runtime: "deterministic".to_string(),
+            rationale:
+                "Deterministic Planning adjusts adapter-provided plan JSON from evidence and constraints only."
+                    .to_string(),
+        },
+        evidence_summary: AdjustedPlanEvidenceSummary {
+            record_count: request.evidence.len(),
+            constraint_count,
+        },
+        changes,
     }
 }
 

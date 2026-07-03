@@ -82,6 +82,11 @@ Example actions:
 - `generateNextTask(namespace)`
 - `adjustPlan(namespace, feedback)`
 
+Current Gateway actions are `generate_next_task` and `adjust_plan`.
+`adjust_plan` accepts a proposed plan, generic evidence records, constraints,
+and an optional objective; it returns a response-only adjusted plan draft and
+does not create or expose a persisted `PracticePlan` ID.
+
 ### Observation Surface
 
 Answers:
@@ -164,7 +169,7 @@ Visibility levels:
 | Policy Area | Capability |
 | --- | --- |
 | Allowed Surfaces | Capture, Performance, Reflection, Planning, Observation. |
-| Representative Actions | `capture_observation`, `submit_attempt`, `review_evidence`, `generate_next_task`, `get_state_summary`. |
+| Representative Actions | `capture_observation`, `submit_attempt`, `review_evidence`, `generate_next_task`, `adjust_plan`, `get_state_summary`. |
 | Interaction Mode | Conversational orchestration. Usually `fast` for capture/submission, `focused` for review and planning, and `deep` only when the user explicitly asks for a deeper review. |
 | Response Visibility | `learner` or `coach` by default, depending on adapter copy. May include concise provenance such as `generated_trace_id` only when useful for follow-up or troubleshooting. |
 | Disallowed Internals | No direct Trace editing, GrowthModel mutation, SleepCycle triggering beyond Gateway-supported actions, repository reads, or raw Memory/Lens object exposure. |
@@ -176,7 +181,7 @@ Visibility levels:
 | Policy Area | Capability |
 | --- | --- |
 | Allowed Surfaces | Capture, Performance, Reflection, Planning, Observation. |
-| Representative Actions | Generic Surface MCP tools map one-to-one to `capture_observation`, `submit_attempt`, `review_evidence`, `generate_next_task`, and `get_state_summary`. |
+| Representative Actions | Generic Surface MCP tools map one-to-one to `capture_observation`, `submit_attempt`, `review_evidence`, `generate_next_task`, `adjust_plan`, and `get_state_summary`. |
 | Interaction Mode | Tool-call adapter for agents and automation. Defaults should be deterministic/local where possible and should keep product semantics in tool arguments, not in Engine entry points. |
 | Response Visibility | `developer` for tool diagnostics and integration traces; `learner`/`coach` only when the calling agent is relaying shaped product content to a user. |
 | Disallowed Internals | No product-specific Engine tools, direct database/repository access, arbitrary Trace insertion, GrowthModel patching, SleepCycle object mutation, or raw internal object dumps as normal MCP responses. |
@@ -188,7 +193,7 @@ Visibility levels:
 | Policy Area | Capability |
 | --- | --- |
 | Allowed Surfaces | Capture, Performance, Reflection, Planning, Observation; additionally may expose explicit developer smoke or migration aids that are documented as non-product workflows. |
-| Representative Actions | `capture_observation`, `submit_attempt`, `review_evidence`, `generate_next_task`, `get_state_summary`, and explicit health/smoke commands. |
+| Representative Actions | `capture_observation`, `submit_attempt`, `review_evidence`, `generate_next_task`, `adjust_plan`, `get_state_summary`, and explicit health/smoke commands. |
 | Interaction Mode | Developer and local operator workflow. CLI may be scriptable and verbose, but product-level examples should still demonstrate Surface Gateway access. |
 | Response Visibility | `developer` by default. CLI may show generated Trace IDs, request validation errors, and debug summaries, but should label debug-only fields clearly. |
 | Disallowed Internals | No CLI command should become the ordinary way for product adapters to bypass Surface Gateway, mutate Engine repositories, or expose raw private records across Spaces. |
@@ -200,7 +205,7 @@ Visibility levels:
 | Policy Area | Capability |
 | --- | --- |
 | Allowed Surfaces | Capture, Performance, Reflection, Planning, limited Observation. |
-| Representative Actions | `capture_observation` for word/sentence lists, `submit_attempt` for dictation answers, `review_evidence` for immediate explanation, `generate_next_task` for tomorrow practice, `get_state_summary` for learner-safe trend summaries. |
+| Representative Actions | `capture_observation` for word/sentence lists, `submit_attempt` for dictation answers, `review_evidence` for immediate explanation, `generate_next_task` for tomorrow practice, `adjust_plan` when a proposed practice draft needs constraint-based revision, `get_state_summary` for learner-safe trend summaries. |
 | Interaction Mode | Product UI for repeated practice. Foreground interactions should be low-latency: capture list, submit attempt, show feedback, fetch next practice or recent trend. |
 | Response Visibility | `learner` by default. `coach` summaries may exist in adapter copy, but the Engine response remains role-neutral. Show friendly task, mistake, focus, and trend language instead of Engine terms. |
 | Disallowed Internals | No raw Trace timeline, GrowthModel document, SleepCycle state, PracticePlan internals, repository IDs, or Engine debug fields as ordinary product UI. No adapter-side role should become an Engine permission model. |
@@ -212,7 +217,7 @@ Visibility levels:
 | Policy Area | Capability |
 | --- | --- |
 | Allowed Surfaces | Observation by default. Reflection and Planning only for explicit review or planning workflows. Capture and Performance only for controlled fixtures, demos, or smoke paths. |
-| Representative Actions | `get_state_summary` by default; `review_evidence` and `generate_next_task` only when the operator starts a review/planning workflow; smoke-only `capture_observation` and `submit_attempt` calls only in clearly marked fixture paths. |
+| Representative Actions | `get_state_summary` by default; `review_evidence`, `generate_next_task`, and `adjust_plan` only when the operator starts a review/planning workflow; smoke-only `capture_observation` and `submit_attempt` calls only in clearly marked fixture paths. |
 | Interaction Mode | Developer/admin/debug visibility for inspecting adapter behavior, Surface health, trends, validation, trace provenance, and deterministic policy decisions. Not the primary learner product UI. |
 | Response Visibility | `developer` or `debug` by default. Any learner-safe summaries must be rendered in a separate view or section from diagnostic/debug output. Debug-only fields must be explicitly labeled. |
 | Disallowed Internals | No arbitrary repository browser, cross-Space inspection, raw secret-bearing payloads, direct SleepCycle mutation, direct GrowthModel edits, direct repository mutation, or treating internal IDs as ordinary product contracts. |
@@ -251,7 +256,7 @@ Allowed Surface Gateway use is intentionally narrow:
 | --- | --- | --- |
 | Observation | Default path for state, trend, provenance, and health inspection. Read-only means the inspected Engine debug objects are not mutated; Gateway audit/provenance Trace may still be written for the request. | `get_state_summary` and future shaped debug summary actions that do not mutate inspected objects. |
 | Reflection | Allowed only when the operator explicitly opens a review workflow for a scoped namespace or trace handle. | `review_evidence`; output must stay shaped and labeled as `developer` or `debug`. |
-| Planning | Allowed only when the operator explicitly opens a planning preview workflow. | `generate_next_task`; output is a preview unless a future product adapter separately confirms a plan. |
+| Planning | Allowed only when the operator explicitly opens a planning preview workflow. | `generate_next_task` and `adjust_plan`; output is a preview unless a future product adapter separately confirms a plan. |
 | Capture | Not a normal dashboard capability. | `capture_observation` only for controlled fixtures, demos, or smoke tests, with the fixture/smoke path visibly labeled. |
 | Performance | Not a normal dashboard capability. | `submit_attempt` only for controlled fixtures, demos, or smoke tests, with the fixture/smoke path visibly labeled. |
 
@@ -327,7 +332,8 @@ semantics; Gateway actions use the generic `SurfaceAction` vocabulary.
 | Capture | `capture_observation` | Record today's dictation list. | `practice` | Confirmed text task plus optional media provenance and Trace. |
 | Performance | `submit_attempt` | Submit confirmed dictation result. | `practice` | Confirmed text attempt, deterministic evaluation, optional media provenance, and immediate feedback. |
 | Reflection | `review_evidence` | Explain current mistakes. | `feedback` | Mistake explanation, recurring patterns, and evidence IDs. |
-| Planning | `generate_next_task` | Generate tomorrow practice. | `planning` | 10-minute `PracticePlan` targeting one or two mistake patterns. |
+| Planning | `generate_next_task` | Generate tomorrow practice. | `planning` | Response-only next-task draft targeting one or two mistake patterns. |
+| Planning | `adjust_plan` | Adjust a proposed practice plan from evidence and constraints. | `planning` | Response-only adjusted plan draft; no persisted `PracticePlan` ID. |
 | Observation | `get_state_summary` | Show 7-day trend. | `review` | 7-day trend summary with recurring errors and evidence IDs. |
 
 The full product contract is in
