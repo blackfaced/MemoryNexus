@@ -1,5 +1,5 @@
 use memorynexus::eval::{
-    evaluate_cases, evaluate_dictation_bench_next_practice,
+    evaluate_cases, evaluate_dictation_bench_improvement, evaluate_dictation_bench_next_practice,
     evaluate_dictation_bench_recurring_errors, lens_eval_fixtures, load_dictation_bench_fixtures,
 };
 use serde_json::json;
@@ -14,6 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "lens_eval": evaluate_cases(&lens_eval_fixtures()),
                 "dictation_bench_recurring_errors": dictation_bench_recurring_error_report()?,
                 "dictation_bench_next_practice": dictation_bench_next_practice_report()?,
+                "dictation_bench_improvement": dictation_bench_improvement_report()?,
             });
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
@@ -29,9 +30,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let report = dictation_bench_next_practice_report()?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
+        "dictation-bench-improvement" => {
+            let report = dictation_bench_improvement_report()?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
         other => {
             return Err(format!(
-                "unsupported eval mode {other}; use all, lens, dictation-bench-recurring-errors, or dictation-bench-next-practice"
+                "unsupported eval mode {other}; use all, lens, dictation-bench-recurring-errors, dictation-bench-next-practice, or dictation-bench-improvement"
             )
             .into());
         }
@@ -50,6 +55,12 @@ fn dictation_bench_next_practice_report(
 ) -> Result<memorynexus::eval::DictationBenchNextPracticeReport, Box<dyn std::error::Error>> {
     let fixtures = load_default_dictation_bench_fixtures()?;
     Ok(evaluate_dictation_bench_next_practice(&fixtures))
+}
+
+fn dictation_bench_improvement_report(
+) -> Result<memorynexus::eval::DictationBenchImprovementReport, Box<dyn std::error::Error>> {
+    let fixtures = load_default_dictation_bench_fixtures()?;
+    Ok(evaluate_dictation_bench_improvement(&fixtures))
 }
 
 fn load_default_dictation_bench_fixtures(

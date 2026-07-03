@@ -377,6 +377,8 @@ pub struct DictationBenchPromptItem {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DictationBenchAttempt {
     pub id: String,
+    #[serde(default)]
+    pub submitted_at: Option<String>,
     pub source: String,
     pub submitted_items: Vec<DictationBenchSubmittedItem>,
 }
@@ -474,6 +476,80 @@ pub enum DictationBenchNextPracticeQuality {
     Bad,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchImprovementReport {
+    pub total_fixture_count: usize,
+    pub improved_count: usize,
+    pub repeated_count: usize,
+    pub skipped_count: usize,
+    pub insufficient_evidence_count: usize,
+    pub metrics: DictationBenchImprovementMetricSummary,
+    pub fixture_results: Vec<DictationBenchImprovementFixtureResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchImprovementMetricSummary {
+    pub total_trace_count: usize,
+    pub total_evidence_count: usize,
+    pub local_evidence_count: usize,
+    pub local_ratio: f64,
+    pub total_latency_ms: u64,
+    pub average_latency_ms: f64,
+    pub estimated_cost: f64,
+    pub cost_currency: String,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchImprovementFixtureResult {
+    pub fixture_id: String,
+    pub namespace: String,
+    pub task_kind: String,
+    pub pattern_results: Vec<DictationBenchImprovementPatternResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchImprovementPatternResult {
+    pub expected_mistake_type: String,
+    pub expected_recurrence: String,
+    pub label: DictationBenchImprovementLabel,
+    pub passed: bool,
+    pub attempt_ids: Vec<String>,
+    pub prompt_item_ids: Vec<String>,
+    pub attempt_timeline: Vec<DictationBenchAttemptTimelineEntry>,
+    pub notes: Vec<String>,
+}
+
+/// Deterministic DictationBench signal labels.
+///
+/// These labels describe fixture-local signal quality only. They do not claim
+/// clinical or educational causality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DictationBenchImprovementLabel {
+    /// Repeated earlier relevant mistakes are followed by a later correct
+    /// relevant attempt for the same prompt item.
+    Improved,
+    /// Repeated relevant mistakes remain present with no later correct
+    /// relevant attempt in the fixture window.
+    Repeated,
+    /// Expected relevant attempts or prompt items are absent or cannot be
+    /// evaluated.
+    Skipped,
+    /// Sparse or unclassified evidence is not treated as improvement or
+    /// repeated failure.
+    InsufficientEvidence,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationBenchAttemptTimelineEntry {
+    pub attempt_id: String,
+    pub submitted_at: Option<String>,
+    pub prompt_item_id: String,
+    pub detected_mistake_types: Vec<String>,
+    pub correct: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DictationBenchLoadError(String);
 
@@ -488,8 +564,11 @@ impl std::error::Error for DictationBenchLoadError {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DetectedMistake {
     attempt_id: String,
+    submitted_at: Option<String>,
     prompt_item_id: String,
     mistake_types: Vec<String>,
+    correct: bool,
+    sequence_index: usize,
 }
 
 pub fn load_dictation_bench_fixtures(
@@ -584,6 +663,46 @@ pub fn evaluate_dictation_bench_next_practice(
     }
 }
 
+pub fn evaluate_dictation_bench_improvement(
+    fixtures: &[DictationBenchFixture],
+) -> DictationBenchImprovementReport {
+    let fixture_results = fixtures
+        .iter()
+        .map(evaluate_dictation_bench_improvement_fixture)
+        .collect::<Vec<_>>();
+
+    let mut improved_count = 0;
+    let mut repeated_count = 0;
+    let mut skipped_count = 0;
+    let mut insufficient_evidence_count = 0;
+    let mut total_evidence_count = 0;
+
+    for pattern in fixture_results
+        .iter()
+        .flat_map(|fixture| fixture.pattern_results.iter())
+    {
+        total_evidence_count += pattern.attempt_timeline.len();
+        match pattern.label {
+            DictationBenchImprovementLabel::Improved => improved_count += 1,
+            DictationBenchImprovementLabel::Repeated => repeated_count += 1,
+            DictationBenchImprovementLabel::Skipped => skipped_count += 1,
+            DictationBenchImprovementLabel::InsufficientEvidence => {
+                insufficient_evidence_count += 1;
+            }
+        }
+    }
+
+    DictationBenchImprovementReport {
+        total_fixture_count: fixture_results.len(),
+        improved_count,
+        repeated_count,
+        skipped_count,
+        insufficient_evidence_count,
+        metrics: improvement_metric_summary(total_evidence_count),
+        fixture_results,
+    }
+}
+
 fn evaluate_dictation_bench_fixture(
     fixture: &DictationBenchFixture,
 ) -> DictationBenchFixtureResult {
@@ -626,6 +745,24 @@ fn evaluate_dictation_bench_next_practice_fixture(
         PracticePlanGeneration::from_growth_model(&aggregation.model, generation_trace_id);
 
     score_next_practice_generation(fixture, generated, aggregation.evidence_gaps)
+}
+
+fn evaluate_dictation_bench_improvement_fixture(
+    fixture: &DictationBenchFixture,
+) -> DictationBenchImprovementFixtureResult {
+    let detected = detect_dictation_mistakes(fixture);
+    let pattern_results = fixture
+        .expected_mistake_patterns
+        .iter()
+        .map(|pattern| evaluate_dictation_bench_improvement_pattern(fixture, pattern, &detected))
+        .collect::<Vec<_>>();
+
+    DictationBenchImprovementFixtureResult {
+        fixture_id: fixture.id.clone(),
+        namespace: fixture.namespace.clone(),
+        task_kind: fixture.task_kind.clone(),
+        pattern_results,
+    }
 }
 
 fn growth_evidence_records_for_fixture(
@@ -673,6 +810,200 @@ fn growth_evidence_records_for_fixture(
     }
 
     records
+}
+
+fn evaluate_dictation_bench_improvement_pattern(
+    fixture: &DictationBenchFixture,
+    pattern: &DictationBenchExpectedPattern,
+    detected: &[DetectedMistake],
+) -> DictationBenchImprovementPatternResult {
+    let mut notes =
+        vec!["labels are deterministic fixture signals, not causal learning claims".to_string()];
+    let attempt_ids = fixture
+        .attempts
+        .iter()
+        .map(|attempt| attempt.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let prompt_item_ids = fixture
+        .task
+        .prompt_items
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<BTreeSet<_>>();
+
+    for attempt_id in &pattern.attempt_ids {
+        if !attempt_ids.contains(attempt_id.as_str()) {
+            notes.push(format!("missing expected attempt {attempt_id}"));
+        }
+    }
+    for prompt_item_id in &pattern.prompt_item_ids {
+        if !prompt_item_ids.contains(prompt_item_id.as_str()) {
+            notes.push(format!("missing expected prompt item {prompt_item_id}"));
+        }
+    }
+
+    let mut relevant = detected
+        .iter()
+        .filter(|item| {
+            pattern
+                .prompt_item_ids
+                .iter()
+                .any(|prompt_item_id| prompt_item_id == &item.prompt_item_id)
+        })
+        .collect::<Vec<_>>();
+    relevant.sort_by(|left, right| {
+        left.submitted_at
+            .cmp(&right.submitted_at)
+            .then(left.sequence_index.cmp(&right.sequence_index))
+    });
+
+    for attempt_id in &pattern.attempt_ids {
+        for prompt_item_id in &pattern.prompt_item_ids {
+            let has_relevant_entry = relevant.iter().any(|item| {
+                &item.attempt_id == attempt_id && &item.prompt_item_id == prompt_item_id
+            });
+            if !has_relevant_entry {
+                notes.push(format!(
+                    "expected attempt {attempt_id} has no evaluatable item for {prompt_item_id}"
+                ));
+            }
+        }
+    }
+
+    let label = if notes.iter().any(|note| {
+        note.starts_with("missing expected") || note.contains("has no evaluatable item for")
+    }) {
+        DictationBenchImprovementLabel::Skipped
+    } else if has_later_correct_after_repeated_mistakes(&relevant, pattern) {
+        notes.push(
+            "repeated earlier mistakes were followed by a later correct relevant attempt"
+                .to_string(),
+        );
+        DictationBenchImprovementLabel::Improved
+    } else {
+        let matching_attempt_count = matching_mistake_attempt_count(&relevant, pattern);
+        if matching_attempt_count >= 2 {
+            notes.push(
+                "repeated relevant mistakes have no later correct relevant attempt".to_string(),
+            );
+            DictationBenchImprovementLabel::Repeated
+        } else {
+            notes.push(
+                "not enough deterministic evidence for improvement or repeated failure".to_string(),
+            );
+            DictationBenchImprovementLabel::InsufficientEvidence
+        }
+    };
+
+    let passed = label == expected_improvement_label(&pattern.recurrence);
+    if !passed {
+        notes.push(format!(
+            "expected recurrence {} mapped to {:?}",
+            pattern.recurrence,
+            expected_improvement_label(&pattern.recurrence)
+        ));
+    }
+
+    DictationBenchImprovementPatternResult {
+        expected_mistake_type: pattern.mistake_type.clone(),
+        expected_recurrence: pattern.recurrence.clone(),
+        label,
+        passed,
+        attempt_ids: pattern.attempt_ids.clone(),
+        prompt_item_ids: pattern.prompt_item_ids.clone(),
+        attempt_timeline: relevant
+            .into_iter()
+            .map(|item| DictationBenchAttemptTimelineEntry {
+                attempt_id: item.attempt_id.clone(),
+                submitted_at: item.submitted_at.clone(),
+                prompt_item_id: item.prompt_item_id.clone(),
+                detected_mistake_types: item.mistake_types.clone(),
+                correct: item.correct,
+            })
+            .collect(),
+        notes,
+    }
+}
+
+fn has_later_correct_after_repeated_mistakes(
+    relevant: &[&DetectedMistake],
+    pattern: &DictationBenchExpectedPattern,
+) -> bool {
+    pattern.prompt_item_ids.iter().any(|prompt_item_id| {
+        let mut mistake_count = 0;
+        for item in relevant
+            .iter()
+            .filter(|item| &item.prompt_item_id == prompt_item_id)
+        {
+            if item
+                .mistake_types
+                .iter()
+                .any(|mistake_type| mistake_type == &pattern.mistake_type)
+            {
+                mistake_count += 1;
+            } else if item.correct && mistake_count >= 2 {
+                return true;
+            }
+        }
+        false
+    })
+}
+
+fn matching_mistake_attempt_count(
+    relevant: &[&DetectedMistake],
+    pattern: &DictationBenchExpectedPattern,
+) -> usize {
+    relevant
+        .iter()
+        .filter(|item| {
+            item.mistake_types
+                .iter()
+                .any(|mistake_type| mistake_type == &pattern.mistake_type)
+        })
+        .map(|item| item.attempt_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
+fn expected_improvement_label(recurrence: &str) -> DictationBenchImprovementLabel {
+    match recurrence {
+        "improving" => DictationBenchImprovementLabel::Improved,
+        "recurring" => DictationBenchImprovementLabel::Repeated,
+        "insufficient_evidence" => DictationBenchImprovementLabel::InsufficientEvidence,
+        "single" => DictationBenchImprovementLabel::InsufficientEvidence,
+        _ => DictationBenchImprovementLabel::Skipped,
+    }
+}
+
+fn improvement_metric_summary(
+    total_evidence_count: usize,
+) -> DictationBenchImprovementMetricSummary {
+    const SIMULATED_LATENCY_MS_PER_EVIDENCE: u64 = 7;
+
+    let total_latency_ms = total_evidence_count as u64 * SIMULATED_LATENCY_MS_PER_EVIDENCE;
+    let average_latency_ms = if total_evidence_count == 0 {
+        0.0
+    } else {
+        total_latency_ms as f64 / total_evidence_count as f64
+    };
+
+    DictationBenchImprovementMetricSummary {
+        total_trace_count: total_evidence_count,
+        total_evidence_count,
+        local_evidence_count: total_evidence_count,
+        local_ratio: 1.0,
+        total_latency_ms,
+        average_latency_ms,
+        estimated_cost: 0.0,
+        cost_currency: "USD".to_string(),
+        notes: vec![
+            "fixture-derived traces are simulated local evidence; no provider, database, OCR, ASR, or vector index is used".to_string(),
+            format!(
+                "simulated deterministic latency uses {SIMULATED_LATENCY_MS_PER_EVIDENCE}ms per evaluated timeline item, not wall-clock time"
+            ),
+            "estimated cost remains zero for the local deterministic path".to_string(),
+        ],
+    }
 }
 
 fn score_next_practice_generation(
@@ -789,8 +1120,11 @@ fn detect_dictation_mistakes(fixture: &DictationBenchFixture) -> Vec<DetectedMis
         .collect::<BTreeMap<_, _>>();
     let mut detected = Vec::new();
 
+    let mut sequence_index = 0;
     for attempt in &fixture.attempts {
         for submitted in &attempt.submitted_items {
+            let current_sequence_index = sequence_index;
+            sequence_index += 1;
             let Some(prompt_item_id) = submitted.prompt_item_id.as_deref() else {
                 continue;
             };
@@ -830,8 +1164,11 @@ fn detect_dictation_mistakes(fixture: &DictationBenchFixture) -> Vec<DetectedMis
             };
             detected.push(DetectedMistake {
                 attempt_id: attempt.id.clone(),
+                submitted_at: attempt.submitted_at.clone(),
                 prompt_item_id: prompt_item_id.to_string(),
                 mistake_types: item_result.mistake_types.clone(),
+                correct: item_result.status == "correct",
+                sequence_index: current_sequence_index,
             });
         }
     }

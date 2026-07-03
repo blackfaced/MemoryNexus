@@ -21,7 +21,8 @@ The command prints a JSON report with separate sections:
 {
   "lens_eval": {},
   "dictation_bench_recurring_errors": {},
-  "dictation_bench_next_practice": {}
+  "dictation_bench_next_practice": {},
+  "dictation_bench_improvement": {}
 }
 ```
 
@@ -227,3 +228,52 @@ quality. In particular, it should evaluate whether later correct attempts lower
 feedback intensity or change practice wording while preserving earlier repeated
 evidence, instead of treating improvement as either a fresh failure or erased
 history.
+
+### Multi-Day Improvement Signal Benchmark
+
+Run the first local DictationBench multi-day improvement pass with:
+
+```bash
+cargo run --bin memorynexus-eval -- dictation-bench-improvement
+```
+
+This benchmark reuses the #165 fixture corpus and the #166 deterministic
+dictation classification path. It evaluates each expected mistake pattern over
+an ordered attempt timeline, preserving fixture `submitted_at` values when they
+are present. The report is a deterministic signal-quality check over local
+fixtures only; `improved` does not claim clinical or educational causality.
+
+The report includes:
+
+- `total_fixture_count`
+- `improved_count`
+- `repeated_count`
+- `skipped_count`
+- `insufficient_evidence_count`
+- per-fixture and per-pattern results
+- attempt timelines with attempt IDs, optional submitted dates, prompt item IDs,
+  detected mistake types, and correctness
+- metric summary for local ratio, evidence/trace count, deterministic simulated
+  latency, and zero estimated cost
+
+Improvement labels are interpreted narrowly:
+
+- `improved`: repeated earlier relevant mistakes are followed by a later correct
+  relevant attempt for the same prompt item.
+- `repeated`: repeated relevant mistakes remain present with no later correct
+  relevant attempt in the fixture window.
+- `skipped`: expected relevant attempts or prompt items are absent or cannot be
+  evaluated, even though the fixture asks for a pattern.
+- `insufficient_evidence`: sparse or unclassified evidence is not treated as
+  improvement or repeated failure.
+
+Trace-style metrics are simulated from local fixture evidence. The current
+deterministic path treats each evaluated timeline item as local Trace-style
+evidence, reports a `local_ratio` of `1.0`, and keeps estimated cost at `0 USD`.
+Latency is a fixed deterministic per-evidence value for repeatable evaluation,
+not wall-clock measurement.
+
+Later evaluation work can add optional provider-backed or longitudinal
+benchmarks, but those should stay outside the default local deterministic gate.
+Future #195 LoCoMo / LongMemEval work should be added as a separate evaluation
+track rather than folded into DictationBench improvement labels.
