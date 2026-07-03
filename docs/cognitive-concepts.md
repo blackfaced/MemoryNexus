@@ -182,15 +182,19 @@ MemoryAtom 回答的问题是：
 - `space_id`
 - `namespace_id?`
 - `source_memory_ids`
-- `atom_type`: observation / claim / emotion / pattern_signal / practice_signal
+- `kind`: observation / claim / emotion / pattern_signal / practice_signal
 - `content`
 - `confidence`
 - `salience`
 - `state`: candidate / accepted / merged / rejected
-- `provenance`
+- `provenance`: source trace IDs, deterministic / fixture method, extractor label,
+  and rationale
 
-第一阶段应保持 prototype-only，用 fixture 验证 atom extraction 是否真的改善
-CognitiveProjection；不要在没有具体验收场景前直接铺开持久化 schema。
+第一版 Rust contract 只定义可序列化、可追溯的 lifecycle object：`MemoryAtom`
+属于一个 `CognitiveSpace`，`namespace_id` 只是 Space 内的可选分类，不是权限边界。
+第一阶段应保持 deterministic / fixture-only，用 fixture 验证 atom extraction 是否真的
+改善 CognitiveProjection；不要在没有具体验收场景前直接铺开持久化 schema，也不要把
+它理解为已经存在自动抽取 pipeline。
 
 ## CognitiveScene
 
