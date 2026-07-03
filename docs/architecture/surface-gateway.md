@@ -119,6 +119,11 @@ The response `result` is intentionally shaped for the adapter. Raw Engine
 objects such as `MemoryAtom`, `CognitiveScene`, `GrowthModel`, or
 `PracticePlan` should not be returned by default.
 
+Reflection results may carry a stable Lens strategy reference when the request
+needs to preserve which interpretation strategy was used. That reference is
+adapter-neutral metadata such as `{ "name": "learning_review" }`; it is not an
+agent persona, speaking role, prompt template, or role-play identity.
+
 ## Sync vs Async
 
 Surface Gateway decides whether a request is synchronous or asynchronous.

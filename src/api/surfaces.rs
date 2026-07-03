@@ -36,6 +36,7 @@ use crate::domain::surface::{
     RuntimePreference, Surface, SurfaceAction, SurfaceAdapter, SurfaceRequest, SurfaceResponse,
     SurfaceVisibility,
 };
+use crate::domain::LensStrategyRef;
 use crate::error::{ApiResponse, AppError};
 use crate::state::AppState;
 
@@ -111,6 +112,7 @@ struct ManualConsolidationPayload {
 #[derive(Debug, Deserialize)]
 struct ReviewEvidencePayload {
     space_id: Uuid,
+    lens_strategy: Option<LensStrategyRef>,
     question: Option<String>,
     #[serde(default)]
     evidence: Vec<ReflectionEvidence>,
@@ -861,6 +863,7 @@ async fn review_evidence(
         space_id: payload.space_id,
         namespace_id: namespace.id,
         namespace: request.namespace.clone(),
+        lens_strategy: payload.lens_strategy.clone(),
         question: payload.question.clone(),
         evidence: payload.evidence.clone(),
     });
@@ -1741,6 +1744,40 @@ mod tests {
         assert_eq!(
             deterministic_consolidation_summary(0),
             "No Trace evidence found in the selected window"
+        );
+    }
+
+    #[test]
+    fn review_evidence_payload_preserves_lens_strategy_in_response_shape() {
+        let payload: ReviewEvidencePayload = serde_json::from_value(json!({
+            "space_id": Uuid::nil(),
+            "lens_strategy": { "name": "learning_review" },
+            "question": "Review the mistake pattern",
+            "evidence": [
+                {
+                    "source": {
+                        "kind": "trace",
+                        "id": Uuid::from_u128(11)
+                    },
+                    "summary": "Target: because Submitted: becuase"
+                }
+            ]
+        }))
+        .unwrap();
+
+        let insight = build_reflection_insight(&ReflectionRequest {
+            space_id: payload.space_id,
+            namespace_id: Uuid::from_u128(1),
+            namespace: "child.english.spelling".to_string(),
+            lens_strategy: payload.lens_strategy.clone(),
+            question: payload.question.clone(),
+            evidence: payload.evidence.clone(),
+        });
+
+        let response = serde_json::to_value(insight).unwrap();
+        assert_eq!(
+            response["lens_strategy"],
+            json!({"name": "learning_review"})
         );
     }
 

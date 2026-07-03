@@ -78,6 +78,21 @@ pub enum LensKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LensStrategyRef {
+    pub name: String,
+}
+
+impl LensStrategyRef {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AttentionSignal {
     Anomaly,
     FeedbackLoop,
