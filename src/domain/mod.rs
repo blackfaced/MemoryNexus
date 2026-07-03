@@ -11,6 +11,7 @@ pub mod dream_candidate;
 pub mod event;
 pub mod evidence;
 pub mod growth_model;
+pub mod memory_atom;
 pub mod practice_plan;
 pub mod reflection;
 pub mod surface;
