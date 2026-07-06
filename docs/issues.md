@@ -1776,3 +1776,164 @@ scoping over long text histories.
 - `tests/fixtures/retrieval_baseline/locomo_longmemeval_micro.json` in a future
   executable slice
 - `src/bin/memorynexus-eval.rs` in a future executable slice
+
+## Milestone 8: Namespace Knowledge Refresh
+
+### Issue 8.1: Define Namespace Knowledge Refresh Contracts
+
+**GitHub:** #200
+
+**Background:** ADR-023 defines Namespace Knowledge Refresh as an Engine
+contract boundary: external Skills, Agents, or Adapters discover and extract
+source candidates, while MemoryNexus validates scoped inputs, approval state,
+provenance, quality, and downstream links.
+
+**Scope:**
+
+- Define docs-first contracts for `KnowledgeSourceCandidate`,
+  `KnowledgeSourcePolicy`, `KnowledgeContext`, and `AcquisitionTrace`.
+- Keep every object scoped to `CognitiveSpace` and Namespace.
+- Model candidate states: proposed, approved, rejected, expired.
+- Model source policy states: active, paused, revoked, expired.
+- Require `AcquisitionTrace` for external submissions.
+- Require opt-in proof when private context was used.
+- Specify V1 storage boundaries: structured claims, provenance,
+  quality/expiry signals, short evidence snippets, and no full corpus storage
+  by default.
+
+**Non-Goals:**
+
+- Do not implement network fetching, crawling, RSS, web search, or provider
+  APIs.
+- Do not persist full external articles or raw provider payloads.
+- Do not add a scheduler.
+- Do not add a Knowledge Surface.
+- Do not wire KnowledgeContext into SleepCycle / Dreaming yet.
+
+**Acceptance Criteria:**
+
+- Contracts clearly separate external discovery/extraction from Engine
+  validation.
+- Contracts preserve Space ownership and Namespace partitioning.
+- Private Trace-derived discovery without opt-in proof is invalid input.
+- `KnowledgeContext` requires structured claims, provenance, quality signals,
+  and expiry/freshness fields.
+- Docs state that external knowledge is not user Memory and cannot directly
+  update GrowthModel or PracticePlan.
+
+**Possible Files:**
+
+- `decisions/ADR-023-namespace-knowledge-refresh.md`
+- `docs/knowledge-refresh-contract.md`
+- `docs/issues.md`
+
+### Issue 8.2: Add Capture and Observation Path for KnowledgeContext
+
+**GitHub:** #199
+
+**Background:** After ADR-023 and the Knowledge Refresh contracts exist,
+MemoryNexus needs a narrow Surface Gateway path for accepting proposed source
+candidates and approved KnowledgeContext inputs from external Skills, Agents,
+or Adapters. V1 reuses existing Surfaces instead of adding a Knowledge Surface.
+
+**Depends On:**
+
+- #200 Namespace Knowledge Refresh contracts.
+
+**Scope:**
+
+- Add Capture Surface contract cases for `KnowledgeSourceCandidateInput` and
+  `KnowledgeContextInput`.
+- Validate that every submission is scoped to the current Space and Namespace.
+- Reject KnowledgeContext submissions from unapproved sources.
+- Reject private Trace-derived submissions without opt-in proof in
+  `AcquisitionTrace`.
+- Add Observation Surface contract cases for source candidate / source policy /
+  KnowledgeContext state.
+- Keep external discovery, fetching, and extraction outside Engine.
+
+**Non-Goals:**
+
+- Do not implement a crawler, search provider, RSS reader, or research agent.
+- Do not add a Knowledge Surface.
+- Do not run scheduled refresh.
+- Do not wire KnowledgeContext into PracticePlan changes.
+- Do not store full external source documents.
+
+**Acceptance Criteria:**
+
+- Capture contract accepts valid candidate and context inputs and rejects unsafe
+  or unapproved inputs.
+- Observation contract can show source approval and KnowledgeContext state
+  without exposing raw external payloads.
+- Surface responses preserve trace/provenance identifiers.
+- Tests or fixtures cover missing `AcquisitionTrace`, missing opt-in proof,
+  unapproved source policy, expired source policy, and cross-Space /
+  cross-Namespace submissions.
+
+**Possible Files:**
+
+- `src/domain/surface.rs`
+- `src/api/surfaces.rs`
+- `docs/knowledge-refresh-contract.md`
+- `tests/*knowledge_refresh*`
+- `tests/*surface_*`
+
+### Issue 8.3: Use KnowledgeContext in Manual SleepCycle Dreaming
+
+**GitHub:** #198
+
+**Background:** ADR-023 allows KnowledgeContext to inform manual SleepCycle /
+Dreaming, but only as candidate-only input. Local Trace and GrowthModel
+evidence remain the default source of truth when external claims conflict with
+local evidence.
+
+**Depends On:**
+
+- #200 Namespace Knowledge Refresh contracts.
+- #199 Capture / Observation contract path for KnowledgeContext.
+
+**Scope:**
+
+- Allow manual SleepCycle / Dreaming to read approved, non-expired
+  KnowledgeContext for the target Space and Namespace.
+- Generate only candidate outputs: DreamCandidate, review question, knowledge
+  gap, plan suggestion, conflict / hypothesis / experiment candidate.
+- Require Dreaming outputs to cite `knowledge_context_id`.
+- Treat local Trace / GrowthModel evidence as higher priority than external
+  claims.
+- Represent conflicts as candidate hypotheses or experiments, not direct model
+  overwrites.
+- Keep any PracticePlan update behind Planning Surface policy, traceability, and
+  rollback constraints.
+
+**Non-Goals:**
+
+- Do not automatically update GrowthModel from KnowledgeContext.
+- Do not directly mutate PracticePlan from Dreaming.
+- Do not mark old PracticePlans obsolete solely because external knowledge
+  changed.
+- Do not add scheduler-driven refresh.
+- Do not use unapproved, expired, or provenance-incomplete KnowledgeContext.
+
+**Acceptance Criteria:**
+
+- Manual SleepCycle / Dreaming can include approved KnowledgeContext in
+  candidate generation.
+- Every generated candidate cites the source `knowledge_context_id`.
+- Conflict cases preserve local-evidence priority and produce
+  conflict/hypothesis/experiment candidates.
+- Expired, rejected, unapproved, cross-Space, or cross-Namespace
+  KnowledgeContext is ignored or rejected.
+- Tests demonstrate that external knowledge cannot directly overwrite
+  GrowthModel or PracticePlan.
+
+**Possible Files:**
+
+- `src/domain/sleep_cycle.rs`
+- `src/domain/dream_candidate.rs`
+- `src/domain/practice_plan.rs`
+- `docs/sleep-cycle-contract.md`
+- `docs/knowledge-refresh-contract.md`
+- `tests/*sleep*`
+- `tests/*dream*`

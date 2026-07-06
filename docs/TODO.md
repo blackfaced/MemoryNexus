@@ -131,8 +131,10 @@ Deliverables:
 
 Goal: define core domain types and schema without LLM integration or complex UI.
 
-Status: mostly complete; remaining open issues include the MemoryAtom and
-CognitiveScene drafts plus #142 Minimal Lens / Reflection Surface Structures.
+Status: complete and GitHub milestone closed. Namespace, Trace, MemoryAtom,
+CognitiveScene, GrowthModel, SleepCycle, PracticePlan / DreamCandidate, and
+minimal Lens / Reflection structures are all represented by domain contracts or
+MVP implementation slices.
 
 Recommended sequence:
 
@@ -335,7 +337,13 @@ Non-goals:
 
 Goal: build MemoryNexus' GrowthBench / DictationBench.
 
-Recommended sequence:
+Status: complete and GitHub milestone closed. DictationBench fixtures,
+recurring error detection, next-practice evaluation, multi-day improvement
+signals, and the optional LoCoMo / LongMemEval-style retrieval/context baseline
+plan have landed. The retrieval baseline remains secondary evidence, not the
+primary product-quality metric.
+
+Completed sequence:
 
 1. Define DictationBench fixtures.
 2. Evaluate recurring error detection.
@@ -352,32 +360,35 @@ Non-goals:
 - Do not claim causality beyond available evidence.
 - Do not require external AI credentials for baseline evaluation.
 
-## Existing GitHub Issues To Reconcile
+## Milestone 8: Namespace Knowledge Refresh
 
-Existing open issues should be mapped to the new milestones rather than blindly
-continued under the old Phase 5 wording.
+Goal: let external Skills, Agents, or Adapters propose and submit approved
+KnowledgeContext while MemoryNexus keeps the Engine boundary, provenance,
+privacy opt-in, and downstream candidate semantics.
 
-Likely mapping:
+Status: next open Engine roadmap milestone on GitHub.
 
-- #58 Namespace filters and FeedbackLoop provenance threading -> Milestone 2.
-- #99 Trace schema and repository foundation -> Milestone 2.
-- #100 Trace for Lens Run and MCP calls -> Milestone 3 / compatibility bridge.
-- #97 ObserveMode runtime metrics -> Milestone 2 / 3.
-- #95 local/cloud routing policy -> Milestone 3 / 4.
-- #119 SleepCycle contract -> completed by `docs/sleep-cycle-contract.md`, verify
-  and close if accepted.
-- #117 deterministic daily sleep consolidation -> Milestone 4.
-- #123 deterministic DreamCandidates for `learning.stem` -> adapt or supersede
-  with PracticePlan / Dictation Coach issue.
-- #120 manual SleepCycle API / CLI / MCP trigger -> Milestone 4.
-- #125 DreamCandidate effectiveness -> Milestone 7.
-- #61 / #62 / #63 lifecycle fixtures -> Milestone 2 / 7 prototype work.
-- #128 Local One-click offline release bundle -> completed distribution
-  foundation after #160.
-- #129 / #130 install and deployment issues -> remaining post-#160
-  distribution wave, not the initial Agent-smoke critical path.
-- #177 required PostgreSQL Surface integration CI -> completed Milestone 3
-  hardening foundation before more shared Surface dispatcher work.
+Recommended sequence:
+
+1. #200 Define Namespace Knowledge Refresh contracts.
+2. #199 Add Capture and Observation path for KnowledgeContext.
+3. #198 Use KnowledgeContext in manual SleepCycle Dreaming.
+
+Non-goals:
+
+- Do not add a Knowledge Surface in V1.
+- Do not implement crawling, web search, RSS, provider fetchers, or schedulers
+  inside the Engine.
+- Do not store full external source documents by default.
+- Do not let external knowledge directly overwrite GrowthModel or PracticePlan.
+
+## Current Open GitHub Issues
+
+- #129 Trial Profile plug-and-play remains blocked on one real Trial API URL and
+  scoped token.
+- #130 Mac mini Local Lab / private self-use deployment can provide the real
+  endpoint evidence needed for #129 if token policy allows it.
+- #198, #199, and #200 are the M8 Namespace Knowledge Refresh sequence.
 
 ## Supporting Distribution Track
 
