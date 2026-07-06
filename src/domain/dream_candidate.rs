@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::SpaceId;
+use super::{cognitive_scene::CognitiveSceneId, SpaceId};
 
 pub type SleepCycleId = Uuid;
 pub type ConsolidationResultId = Uuid;
@@ -10,7 +10,6 @@ pub type DreamCandidateId = Uuid;
 pub type NamespaceId = Uuid;
 pub type TraceId = Uuid;
 pub type FeedbackLoopId = Uuid;
-pub type CognitiveSceneId = Uuid;
 pub type GrowthModelId = Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

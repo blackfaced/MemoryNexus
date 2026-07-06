@@ -227,7 +227,7 @@ CognitiveScene 回答的问题是：
 哪些认知信号正在形成一个长期主题、问题场或练习场？
 ```
 
-最小候选字段：
+第一版 Rust contract 只定义一个可序列化、可追溯的 domain draft。当前字段是：
 
 - `id`
 - `space_id`
@@ -235,20 +235,23 @@ CognitiveScene 回答的问题是：
 - `title`
 - `scene_type`: theme / practice_field / contradiction_field / project_field
 - `source_atom_ids`
-- `source_memory_ids`
-- `related_reflection_ids`
-- `related_concept_ids`
-- `related_belief_ids`
-- `related_contradiction_ids`
 - `summary`
-- `salience`
+- `active_patterns`
 - `state`: candidate / active / dormant / superseded / archived
-- `provenance`
+- `provenance`: source trace IDs, fixture / deterministic / manual-review method,
+  builder label, and rationale
+- `created_at`
+- `updated_at`
 
-CognitiveScene 仍然从属于 `CognitiveSpace` 权限边界。它可以引用 Reflection、
-Concept、Belief 和 Contradiction，但不拥有 Memory，也不替代 Namespace。
-第一阶段应先通过小型 MemoryNexus project-note fixture 验证 scene consolidation，
-再决定是否落库。
+`CognitiveScene` 仍然从属于 `CognitiveSpace` 权限边界。`namespace_id` 只是 Space
+内的可选分类，不是权限边界。第一版 Rust helper 只在从 `MemoryAtom` records 构造
+scene 时校验所有 source atoms 属于同一个 `CognitiveSpace`，然后把它们记录为
+`source_atom_ids`；它不拥有 Memory，也不替代 Namespace。
+
+这仍然是 domain draft，不表示已经存在自动 consolidation pipeline、持久化 schema、
+API route、scheduler 或模型生成路径。第一阶段应先用 fixture / deterministic
+路径验证 scene grouping 是否能改善后续 projection 和 feedback，再决定是否落库或扩展
+related Reflection / Concept / Belief / Contradiction 引用。
 
 ## CognitiveProjection
 
