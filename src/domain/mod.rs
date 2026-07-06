@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod cognitive_scene;
 pub mod dictation;
 pub mod dictation_agent_demo;
 pub mod dictation_observation;
