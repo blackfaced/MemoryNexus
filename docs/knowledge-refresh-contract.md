@@ -1,7 +1,8 @@
 # Namespace Knowledge Refresh Contract
 
-Namespace Knowledge Refresh defines the V1 contract for using external
-knowledge as scoped context for a `CognitiveSpace` and Namespace.
+Namespace Knowledge Refresh defines the V1 contract from
+[ADR-023](../decisions/ADR-023-namespace-knowledge-refresh.md) for using
+external knowledge as scoped context for a `CognitiveSpace` and Namespace.
 
 External Skills, Agents, and Adapters may discover sources, fetch them, extract
 candidate claims, and prepare summaries. MemoryNexus does not do that work in

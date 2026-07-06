@@ -45,6 +45,11 @@
   Adapter；MemoryNexus 保持 text-first，只接收用户确认后的 normalized text，并允许
   Surface 请求携带可选、provider-neutral 的 `EvidenceRefInput` 追溯原始媒体。第一版仅
   建立描述符验证契约，不表示已有 `EvidenceRef` 持久化、resolver 或媒体处理能力。
+- Namespace Knowledge Refresh 边界见 ADR-023：外部 Skill / Agent / Adapter 可以发现和抽取
+  source candidate；MemoryNexus 只校验 Space/Namespace scope、approval、provenance、
+  quality、freshness、privacy opt-in 和 downstream links。V1 不加 Knowledge Surface、
+  crawler、scheduler 或 full corpus storage；外部知识不是用户 Memory，不能直接更新
+  GrowthModel 或 PracticePlan。
 - EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
   agent memory retrieval 系统。当前边界是：EverMemOS 偏 memory for agent reasoning；
   MemoryNexus 偏 user-owned cognitive perspective and feedback loops。
@@ -69,6 +74,8 @@
   `decisions/ADR-020-dictation-coach-first-upstream-product.md`。
 - 外部媒体证据引用边界见
   `decisions/ADR-021-external-media-evidence-references.md`。
+- Namespace Knowledge Refresh 边界见
+  `decisions/ADR-023-namespace-knowledge-refresh.md`。
 
 ## 开发规则
 
