@@ -1798,8 +1798,8 @@ provenance, quality, and downstream links.
 - Require `AcquisitionTrace` for external submissions.
 - Require opt-in proof when private context was used.
 - Specify V1 storage boundaries: structured claims, provenance,
-  quality/expiry signals, short evidence snippets, and no full corpus storage
-  by default.
+  quality/expiry/freshness signals, short evidence snippets, source-policy
+  linkage, downstream links, and no full corpus storage by default.
 
 **Non-Goals:**
 
@@ -1817,7 +1817,7 @@ provenance, quality, and downstream links.
 - Contracts preserve Space ownership and Namespace partitioning.
 - Private Trace-derived discovery without opt-in proof is invalid input.
 - `KnowledgeContext` requires structured claims, provenance, quality signals,
-  and expiry/freshness fields.
+  expiry/freshness fields, source-policy linkage, and downstream links.
 - Docs state that external knowledge is not user Memory and cannot directly
   update GrowthModel or PracticePlan.
 
