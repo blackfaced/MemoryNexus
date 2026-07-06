@@ -564,6 +564,7 @@ from the completed Capture/Performance baseline. Reflection-domain workers own
 **Background:** Planning answers "what should happen next?".
 
 **Status:** Closed on GitHub as #147 on 2026-06-23.
+Follow-up #180 added the generic `planning/adjust_plan` Surface action.
 
 **Depends On:** Issue 3.4 / GitHub #146.
 
@@ -576,7 +577,8 @@ dispatcher.
 
 **Scope:**
 
-- Add plan/generateNextTask/adjustPlan mock actions.
+- Add `generate_next_task`; #180 later adds `adjust_plan` for adjusting an
+  adapter-proposed plan from evidence and constraints.
 - Return deterministic next action.
 - Write Trace.
 

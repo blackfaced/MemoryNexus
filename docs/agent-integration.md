@@ -49,14 +49,16 @@ The generic Surface MCP tools are:
 | `surface_submit_attempt` | Performance | `submit_attempt` |
 | `surface_review_evidence` | Reflection | `review_evidence` |
 | `surface_generate_next_task` | Planning | `generate_next_task` |
+| `surface_adjust_plan` | Planning | `adjust_plan` |
 | `surface_get_state_summary` | Observation | `get_state_summary` |
 
 Each tool maps to `/api/v1/surfaces` with `adapter: "mcp"`, the requested
 `namespace`, the authenticated `actor`, a generic `payload`, and `context`.
 Dictation wording belongs in payload semantics and agent copy; the Engine action
-names stay generic. Performance, Reflection, Planning, and Observation payloads
-must include the current `payload.space_id` required by the HTTP Surface
-contract.
+names stay generic. `adjust_plan` adjusts a proposed plan from generic evidence
+and constraints and returns a response-only draft. Performance, Reflection,
+Planning, and Observation payloads must include the current `payload.space_id`
+required by the HTTP Surface contract.
 
 Typed and pasted inputs must use `payload.source` or `payload.input_source` as
 `typed` or `pasted` and must not include media descriptor fields. Media-derived
@@ -309,9 +311,9 @@ Use `run_lens` when the agent needs interpretation, not just retrieval:
 Recommended order for Claw/Hermes:
 
 1. Use `surface_capture_observation`, `surface_submit_attempt`,
-   `surface_review_evidence`, `surface_generate_next_task`, and
-   `surface_get_state_summary` for new Capture -> Performance -> Reflection ->
-   Planning -> Observation feedback-loop flows.
+   `surface_review_evidence`, `surface_generate_next_task`,
+   `surface_adjust_plan`, and `surface_get_state_summary` for new Capture ->
+   Performance -> Reflection -> Planning -> Observation feedback-loop flows.
 2. `route_agent_context` when the correct MemoryNexus action is not obvious.
 3. `get_profile` for compact working context.
 4. `list_reminders` with `due_only=true` to surface scheduled recall.
@@ -360,11 +362,12 @@ The response should include the tool list, a successful memory creation, a
 persisted profile snapshot, a routing recommendation, at least one search result
 from the same `CognitiveSpace`, and any due reminders.
 
-For a generic Surface Gateway smoke, use the five `surface_*` tools in order:
+For a generic Surface Gateway smoke, use the `surface_*` tools in order:
 capture a typed word list, submit a typed attempt, request reflection, generate
-a next task, and observe the namespace summary. Include `payload.space_id` for
-the Performance, Reflection, Planning, and Observation calls. Each successful
-API response should include generated Trace provenance such as
+a next task, optionally adjust a proposed plan, and observe the namespace
+summary. Include `payload.space_id` for the Performance, Reflection, Planning,
+and Observation calls. Each successful API response should include generated
+Trace provenance such as
 `generated_trace_id` where the Surface returns it.
 
 ## Current Gaps

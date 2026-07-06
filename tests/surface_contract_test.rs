@@ -84,6 +84,7 @@ fn invalid_surface_action_combinations_are_rejected() {
         (Surface::Performance, SurfaceAction::CaptureObservation),
         (Surface::Reflection, SurfaceAction::GenerateNextTask),
         (Surface::Planning, SurfaceAction::GetStateSummary),
+        (Surface::Observation, SurfaceAction::AdjustPlan),
         (Surface::Observation, SurfaceAction::ReviewEvidence),
     ];
 
@@ -102,6 +103,7 @@ fn valid_surface_action_combinations_are_accepted() {
         (Surface::Performance, SurfaceAction::SubmitAttempt),
         (Surface::Reflection, SurfaceAction::ReviewEvidence),
         (Surface::Planning, SurfaceAction::GenerateNextTask),
+        (Surface::Planning, SurfaceAction::AdjustPlan),
         (Surface::Observation, SurfaceAction::GetStateSummary),
         (Surface::Observation, SurfaceAction::RequestConsolidation),
     ] {

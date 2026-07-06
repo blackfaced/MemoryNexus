@@ -110,6 +110,7 @@ checkout. Skip the build step only when the MCP config uses `cargo run`. Rebuild
 | `surface_submit_attempt` | Generic Surface Gateway Performance action `submit_attempt` |
 | `surface_review_evidence` | Generic Surface Gateway Reflection action `review_evidence` |
 | `surface_generate_next_task` | Generic Surface Gateway Planning action `generate_next_task` |
+| `surface_adjust_plan` | Generic Surface Gateway Planning action `adjust_plan` |
 | `surface_get_state_summary` | Generic Surface Gateway Observation action `get_state_summary` |
 | `learning_math_create_practice_session` | Compatibility: create a parent-assisted `learning.math` practice session |
 | `learning_math_record_attempt` | Compatibility: record a learner's answer or reasoning for a `learning.math` practice session |
@@ -248,11 +249,15 @@ The MCP adapter fills in the generic Surface fields:
 | `surface_submit_attempt` | `performance` | `submit_attempt` |
 | `surface_review_evidence` | `reflection` | `review_evidence` |
 | `surface_generate_next_task` | `planning` | `generate_next_task` |
+| `surface_adjust_plan` | `planning` | `adjust_plan` |
 | `surface_get_state_summary` | `observation` | `get_state_summary` |
 
 Capture can derive the target Space from the namespace resolved by the API.
 Performance, Reflection, Planning, and Observation follow the current HTTP
 Surface contract and require `payload.space_id`.
+For `surface_adjust_plan`, the payload contains `proposed_plan`, optional
+generic `evidence`, optional `constraints`, and optional `objective`; the
+response is not a persisted PracticePlan.
 
 Typed or pasted requests are text-first. When `payload.source` or
 `payload.input_source` is `typed` or `pasted`, the adapter rejects

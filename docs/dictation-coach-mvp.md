@@ -430,7 +430,8 @@ Gateway `SurfaceAction` enum.
 | Record today's dictation list | Capture | `capture_observation` | `practice` | `DictationTask` plus generated Trace. |
 | Submit confirmed dictation result | Performance | `submit_attempt` | `practice` | `DictationAttempt`, `DictationEvaluation`, immediate feedback, generated Trace. |
 | Explain current mistakes | Reflection | `review_evidence` | `feedback` | Item explanations and recurring pattern hints. |
-| Generate tomorrow practice | Planning | `generate_next_task` | `planning` | 10-minute `PracticePlan` linked to evidence IDs. |
+| Generate tomorrow practice | Planning | `generate_next_task` | `planning` | Response-only next-task draft linked to evidence summaries. |
+| Adjust proposed practice | Planning | `adjust_plan` | `planning` | Response-only adjusted draft from evidence and constraints. |
 | Show 7-day trend | Observation | `get_state_summary` | `review` | Trend summary with recurring errors, stability, and evidence IDs. |
 
 ### Capture Surface
@@ -559,7 +560,7 @@ Minimum response:
 
 ```text
 {
-  practice_plan,
+  next_task,
   target_patterns,
   evidence_ids,
   generated_trace_id
@@ -568,6 +569,9 @@ Minimum response:
 
 The first practice plan should be short and concrete. It should target one or
 two recurring mistake patterns rather than generating a broad curriculum.
+The generic Surface contract also supports `planning/adjust_plan` for adjusting
+an adapter-proposed practice draft from evidence and constraints. That response
+is a draft and does not imply a persisted `PracticePlan` ID.
 
 ### Observation Surface
 

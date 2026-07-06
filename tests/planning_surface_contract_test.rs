@@ -1,4 +1,7 @@
-use memorynexus::domain::practice_plan::{build_next_task_plan, PlanningRequest};
+use memorynexus::domain::practice_plan::{
+    build_adjusted_plan, build_next_task_plan, AdjustPlanRequest, PlanningRequest,
+};
+use serde_json::json;
 use uuid::Uuid;
 
 #[test]
@@ -49,4 +52,46 @@ fn deterministic_next_task_plan_uses_generic_fallback_without_product_roles() {
     );
     assert!(!plan.next_task.prompt.contains("parent"));
     assert!(!plan.next_task.prompt.contains("child"));
+}
+
+#[test]
+fn deterministic_adjust_plan_is_generic_response_only_and_evidence_shaped() {
+    let space_id = Uuid::new_v4();
+    let namespace_id = Uuid::new_v4();
+    let adjusted = build_adjusted_plan(&AdjustPlanRequest {
+        space_id,
+        namespace_id,
+        namespace: "personal.thoughts".to_string(),
+        proposed_plan: json!({
+            "title": "Draft weekly review",
+            "steps": ["review notes", "pick one follow-up"]
+        }),
+        evidence: vec![json!({
+            "kind": "trace_summary",
+            "summary": "Three reviews mention fragmented focus."
+        })],
+        constraints: vec!["keep it under 10 minutes".to_string()],
+        objective: Some("Make the plan fit a short evening review".to_string()),
+    });
+    let serialized = serde_json::to_value(&adjusted).unwrap();
+
+    assert_eq!(serialized["status"], "adjusted_plan_ready");
+    assert_eq!(serialized["space_id"], space_id.to_string());
+    assert_eq!(serialized["namespace_id"], namespace_id.to_string());
+    assert_eq!(serialized["namespace"], "personal.thoughts");
+    assert_eq!(serialized["plan_kind"], "response_only_adjustment");
+    assert_eq!(serialized["persistence"], "not_persisted");
+    assert_eq!(serialized["proposed_plan"]["title"], "Draft weekly review");
+    assert_eq!(
+        serialized["adjusted_plan"]["title"],
+        "Adjusted plan for personal.thoughts"
+    );
+    assert_eq!(
+        serialized["adjusted_plan"]["prompt"],
+        "Make the plan fit a short evening review"
+    );
+    assert_eq!(serialized["adjusted_plan"]["constraints_applied"], 1);
+    assert_eq!(serialized["evidence_summary"]["record_count"], 1);
+    assert_eq!(serialized.get("practice_plan_id"), None);
+    assert_eq!(serialized.get("engine_objects"), None);
 }

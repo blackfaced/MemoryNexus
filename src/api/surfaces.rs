@@ -27,7 +27,9 @@ use crate::domain::event::{
 };
 use crate::domain::evidence::{validate_evidence_request, InputConfirmation};
 use crate::domain::growth_model::{EvidenceId, GrowthEvidenceRecord};
-use crate::domain::practice_plan::{build_next_task_plan, PlanningRequest};
+use crate::domain::practice_plan::{
+    build_adjusted_plan, build_next_task_plan, AdjustPlanRequest, PlanningRequest,
+};
 use crate::domain::reflection::{
     build_reflection_insight, EvidenceRef, EvidenceRefKind, ReflectionEvidence, ReflectionRequest,
 };
@@ -125,6 +127,17 @@ struct GenerateNextTaskPayload {
 }
 
 #[derive(Debug, Deserialize)]
+struct AdjustPlanPayload {
+    space_id: Uuid,
+    proposed_plan: Value,
+    #[serde(default)]
+    evidence: Vec<Value>,
+    #[serde(default)]
+    constraints: Vec<String>,
+    objective: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct GetStateSummaryPayload {
     space_id: Uuid,
 }
@@ -155,6 +168,9 @@ pub async fn handle(
         }
         (Surface::Planning, SurfaceAction::GenerateNextTask) => {
             generate_next_task(&state, auth_user.user_id, request).await
+        }
+        (Surface::Planning, SurfaceAction::AdjustPlan) => {
+            adjust_plan(&state, auth_user.user_id, request).await
         }
         (Surface::Observation, SurfaceAction::GetStateSummary) => {
             get_state_summary(&state, auth_user.user_id, request).await
@@ -381,6 +397,99 @@ async fn generate_next_task(
         result,
         trace.id,
         vec!["Submit the next task through Performance Surface after it is attempted.".to_string()],
+        SurfaceVisibility::User,
+    );
+
+    Ok((StatusCode::OK, Json(ApiResponse::success(response))))
+}
+
+async fn adjust_plan(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let started_at = Utc::now();
+    let payload: AdjustPlanPayload = serde_json::from_value(request.payload.clone())
+        .map_err(|error| AppError::BadRequest(format!("invalid adjustPlan payload: {error}")))?;
+
+    require_space_writer(state, payload.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+
+    let adjusted = build_adjusted_plan(&AdjustPlanRequest {
+        space_id: payload.space_id,
+        namespace_id: namespace.id,
+        namespace: request.namespace.clone(),
+        proposed_plan: payload.proposed_plan.clone(),
+        evidence: payload.evidence.clone(),
+        constraints: payload.constraints.clone(),
+        objective: payload.objective.clone(),
+    });
+    let output_summary = format!(
+        "Adjusted response-only plan for {}: {}",
+        adjusted.namespace, adjusted.adjusted_plan.prompt
+    );
+
+    let completed_at = Utc::now();
+    let trace = state
+        .repositories
+        .traces
+        .create_completed(CreateCompletedTrace {
+            space_id: payload.space_id,
+            namespace_id: Some(namespace.id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Planning,
+            mode: trace_mode(request.context.mode.as_deref())?,
+            runtime: deterministic_trace_runtime(request.context.runtime_preference),
+            input_summary: Some(format!(
+                "Planning adjustPlan in namespace {}",
+                request.namespace
+            )),
+            output_summary: Some(output_summary),
+            started_at,
+            completed_at,
+            latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: Vec::new(),
+            user_feedback: payload
+                .objective
+                .map(|objective| json!({"objective": objective})),
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "surface": request.surface,
+                "action": request.action,
+                "adapter": request.adapter,
+                "namespace": request.namespace,
+                "deterministic": true,
+                "plan_kind": adjusted.plan_kind.clone(),
+                "persistence": adjusted.persistence.clone(),
+                "evidence_record_count": adjusted.evidence_summary.record_count,
+                "constraint_count": adjusted.evidence_summary.constraint_count,
+            }),
+        })
+        .await
+        .map_err(AppError::Database)?;
+
+    let result = serde_json::to_value(adjusted)
+        .map_err(|error| AppError::Internal(format!("planning response failed: {error}")))?;
+    let response = SurfaceResponse::new(
+        Surface::Planning,
+        SurfaceAction::AdjustPlan,
+        result,
+        trace.id,
+        vec![
+            "Submit the adjusted task through Performance Surface after it is attempted."
+                .to_string(),
+        ],
         SurfaceVisibility::User,
     );
 
@@ -1807,6 +1916,7 @@ mod tests {
         for action in [
             SurfaceAction::ReviewEvidence,
             SurfaceAction::GenerateNextTask,
+            SurfaceAction::AdjustPlan,
             SurfaceAction::GetStateSummary,
             SurfaceAction::RequestConsolidation,
         ] {

@@ -147,6 +147,135 @@ async fn planning_surface_generates_next_task_and_writes_planning_trace() {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn planning_surface_adjusts_plan_and_writes_planning_trace() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+
+    let response = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace": "child.english.spelling",
+            "surface": "planning",
+            "action": "adjust_plan",
+            "actor": fixture.owner_user_id,
+            "adapter": "mcp",
+            "payload": {
+                "space_id": fixture.space_id,
+                "objective": "Fit tomorrow practice into one short review",
+                "proposed_plan": {
+                    "title": "Tomorrow practice",
+                    "steps": ["review because", "review friend", "write five sentences"]
+                },
+                "evidence": [
+                    {
+                        "kind": "attempt_summary",
+                        "summary": "because was misspelled twice"
+                    }
+                ],
+                "constraints": ["keep it under 10 minutes"]
+            },
+            "context": {
+                "mode": "focused",
+                "locale": "en-US",
+                "runtime_preference": "deterministic"
+            }
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("response should be json");
+    let trace_id = uuid_field(&body, "/data/generated_trace_id");
+
+    assert_eq!(
+        body.pointer("/data/surface").and_then(Value::as_str),
+        Some("planning")
+    );
+    assert_eq!(
+        body.pointer("/data/action").and_then(Value::as_str),
+        Some("adjust_plan")
+    );
+    assert_eq!(
+        body.pointer("/data/result/status").and_then(Value::as_str),
+        Some("adjusted_plan_ready")
+    );
+    assert_eq!(
+        body.pointer("/data/result/plan_kind")
+            .and_then(Value::as_str),
+        Some("response_only_adjustment")
+    );
+    assert_eq!(
+        body.pointer("/data/result/persistence")
+            .and_then(Value::as_str),
+        Some("not_persisted")
+    );
+    assert_eq!(
+        body.pointer("/data/result/adjusted_plan/prompt")
+            .and_then(Value::as_str),
+        Some("Fit tomorrow practice into one short review")
+    );
+    assert_eq!(
+        body.pointer("/data/result/evidence_summary/record_count")
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(body.pointer("/data/result/practice_plan_id"), None);
+
+    let trace: PlanningTraceRow = sqlx::query_as(
+        r#"
+        SELECT
+            space_id,
+            namespace_id,
+            source_type,
+            task_type,
+            mode,
+            runtime,
+            model_provider,
+            output_summary,
+            metadata
+        FROM traces
+        WHERE id = $1
+        "#,
+    )
+    .bind(trace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("planning trace should exist");
+
+    assert_eq!(trace.space_id, fixture.space_id);
+    assert_eq!(trace.namespace_id, Some(fixture.namespace_id));
+    assert_eq!(trace.source_type, "mcp");
+    assert_eq!(trace.task_type, "planning");
+    assert_eq!(trace.mode, "focused");
+    assert_eq!(trace.runtime, "deterministic");
+    assert_eq!(trace.model_provider.as_deref(), Some("deterministic"));
+    assert_eq!(
+        trace.output_summary.as_deref(),
+        Some("Adjusted response-only plan for child.english.spelling: Fit tomorrow practice into one short review")
+    );
+    assert_eq!(trace.metadata["surface"], json!("planning"));
+    assert_eq!(trace.metadata["action"], json!("adjust_plan"));
+    assert_eq!(trace.metadata["adapter"], json!("mcp"));
+    assert_eq!(trace.metadata["deterministic"], json!(true));
+    assert_eq!(
+        trace.metadata["plan_kind"],
+        json!("response_only_adjustment")
+    );
+    assert_eq!(trace.metadata["persistence"], json!("not_persisted"));
+    assert_eq!(trace.metadata["evidence_record_count"], json!(1));
+    assert_eq!(trace.metadata["constraint_count"], json!(1));
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
 async fn planning_surface_rejects_missing_auth_actor_mismatch_and_viewer_writes() {
     let pool = postgres_pool().await;
     db::run_migrations(&pool)

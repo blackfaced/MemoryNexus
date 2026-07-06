@@ -65,9 +65,9 @@ Surfaces express intent, not UI or role.
 | --- | --- | --- |
 | Capture | What happened? | `capture_observation` |
 | Performance | How did the attempt go? | `submit_attempt` |
-| Reflection | What does this mean? | `review_evidence` (pending) |
-| Planning | What should happen next? | `generate_next_task` (pending) |
-| Observation | How is long-term state changing? | `request_consolidation`; `get_state_summary` (pending) |
+| Reflection | What does this mean? | `review_evidence` |
+| Planning | What should happen next? | `generate_next_task`; `adjust_plan` |
+| Observation | How is long-term state changing? | `request_consolidation`; `get_state_summary` |
 
 Adapters decide how people or agents interact. Surface Gateway decides how a
 request becomes an Engine operation.
