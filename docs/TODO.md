@@ -343,6 +343,8 @@ Recommended sequence:
 4. Evaluate multi-day error reduction.
 5. Record latency, cost, local ratio, and useful feedback rate.
 6. Report GrowthBench results.
+7. Optionally add #195 as a separate P2 LoCoMo / LongMemEval-style
+   retrieval/context baseline, reported outside GrowthBench / DictationBench.
 
 Non-goals:
 
