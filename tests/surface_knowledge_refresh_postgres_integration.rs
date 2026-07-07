@@ -234,6 +234,10 @@ async fn capture_rejects_unsafe_knowledge_context_without_trace_or_persistence_s
     let fixture = seed_fixture(&pool).await;
     let candidate_id =
         seed_candidate(&pool, fixture.space_id, fixture.namespace_id, "approved").await;
+    let proposed_candidate_id =
+        seed_candidate(&pool, fixture.space_id, fixture.namespace_id, "proposed").await;
+    let rejected_candidate_id =
+        seed_candidate(&pool, fixture.space_id, fixture.namespace_id, "rejected").await;
     let active_policy_id = seed_policy(
         &pool,
         fixture.space_id,
@@ -248,6 +252,70 @@ async fn capture_rejects_unsafe_knowledge_context_without_trace_or_persistence_s
         fixture.namespace_id,
         candidate_id,
         "paused",
+    )
+    .await;
+    let expired_policy_id = seed_policy(
+        &pool,
+        fixture.space_id,
+        fixture.namespace_id,
+        candidate_id,
+        "expired",
+    )
+    .await;
+    let proposed_candidate_policy_id = seed_policy(
+        &pool,
+        fixture.space_id,
+        fixture.namespace_id,
+        proposed_candidate_id,
+        "active",
+    )
+    .await;
+    let rejected_candidate_policy_id = seed_policy(
+        &pool,
+        fixture.space_id,
+        fixture.namespace_id,
+        rejected_candidate_id,
+        "active",
+    )
+    .await;
+    let other_namespace_id = seed_named_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "child.english.sentence-dictation",
+    )
+    .await;
+    let cross_namespace_candidate_id =
+        seed_candidate(&pool, fixture.space_id, other_namespace_id, "approved").await;
+    let cross_namespace_policy_id = seed_policy(
+        &pool,
+        fixture.space_id,
+        other_namespace_id,
+        cross_namespace_candidate_id,
+        "active",
+    )
+    .await;
+    let other_space_id = seed_space(
+        &pool,
+        fixture.owner_user_id,
+        &format!("Surface Knowledge Other {}", Uuid::new_v4()),
+    )
+    .await;
+    let cross_space_namespace_id = seed_named_namespace(
+        &pool,
+        other_space_id,
+        fixture.owner_user_id,
+        "child.english.spelling",
+    )
+    .await;
+    let cross_space_candidate_id =
+        seed_candidate(&pool, other_space_id, cross_space_namespace_id, "approved").await;
+    let cross_space_policy_id = seed_policy(
+        &pool,
+        other_space_id,
+        cross_space_namespace_id,
+        cross_space_candidate_id,
+        "active",
     )
     .await;
     let base_url = spawn_api(pool.clone()).await;
@@ -288,6 +356,61 @@ async fn capture_rejects_unsafe_knowledge_context_without_trace_or_persistence_s
                 fixture.namespace_id,
                 candidate_id,
                 paused_policy_id,
+                Uuid::new_v4(),
+            ),
+        ),
+        (
+            "expired policy",
+            valid_context_payload(
+                Uuid::new_v4(),
+                fixture.space_id,
+                fixture.namespace_id,
+                candidate_id,
+                expired_policy_id,
+                Uuid::new_v4(),
+            ),
+        ),
+        (
+            "proposed source candidate",
+            valid_context_payload(
+                Uuid::new_v4(),
+                fixture.space_id,
+                fixture.namespace_id,
+                proposed_candidate_id,
+                proposed_candidate_policy_id,
+                Uuid::new_v4(),
+            ),
+        ),
+        (
+            "rejected source candidate",
+            valid_context_payload(
+                Uuid::new_v4(),
+                fixture.space_id,
+                fixture.namespace_id,
+                rejected_candidate_id,
+                rejected_candidate_policy_id,
+                Uuid::new_v4(),
+            ),
+        ),
+        (
+            "cross-namespace policy",
+            valid_context_payload(
+                Uuid::new_v4(),
+                fixture.space_id,
+                fixture.namespace_id,
+                cross_namespace_candidate_id,
+                cross_namespace_policy_id,
+                Uuid::new_v4(),
+            ),
+        ),
+        (
+            "cross-space policy",
+            valid_context_payload(
+                Uuid::new_v4(),
+                fixture.space_id,
+                fixture.namespace_id,
+                cross_space_candidate_id,
+                cross_space_policy_id,
                 Uuid::new_v4(),
             ),
         ),
@@ -583,14 +706,19 @@ async fn seed_space(pool: &PgPool, user_id: Uuid, name: &str) -> Uuid {
 }
 
 async fn seed_namespace(pool: &PgPool, space_id: Uuid, created_by: Uuid) -> Uuid {
+    seed_named_namespace(pool, space_id, created_by, "child.english.spelling").await
+}
+
+async fn seed_named_namespace(pool: &PgPool, space_id: Uuid, created_by: Uuid, name: &str) -> Uuid {
     sqlx::query_scalar(
         r#"
         INSERT INTO namespaces (space_id, name, kind, created_by)
-        VALUES ($1, 'child.english.spelling', 'skill', $2)
+        VALUES ($1, $2, 'skill', $3)
         RETURNING id
         "#,
     )
     .bind(space_id)
+    .bind(name)
     .bind(created_by)
     .fetch_one(pool)
     .await

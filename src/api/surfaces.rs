@@ -2586,7 +2586,7 @@ struct KnowledgeSourceCandidateObservationRow {
     quality_signals: Value,
     freshness: Value,
     expiry: DateTime<Utc>,
-    downstream_link_count: i64,
+    downstream_link_count: i32,
     decision: Option<Value>,
     surface_trace_id: Option<Uuid>,
     created_at: DateTime<Utc>,
@@ -2620,8 +2620,8 @@ struct KnowledgeContextObservationRow {
     source_policy_id: Uuid,
     source_candidate_id: Uuid,
     acquisition_trace_id: Uuid,
-    structured_claim_count: i64,
-    evidence_snippet_count: i64,
+    structured_claim_count: i32,
+    evidence_snippet_count: i32,
     quality_signals: Value,
     freshness: Value,
     expiry: DateTime<Utc>,
@@ -2656,6 +2656,7 @@ async fn load_knowledge_refresh_observation(
                 FROM traces trace
                 WHERE trace.space_id = candidate.space_id
                   AND trace.namespace_id = candidate.namespace_id
+                  AND trace.metadata #>> '{knowledge_refresh,kind}' = 'source_candidate'
                   AND trace.metadata #>> '{knowledge_refresh,source_candidate_id}' = candidate.id::text
                 ORDER BY trace.created_at DESC, trace.id DESC
                 LIMIT 1
