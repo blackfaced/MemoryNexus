@@ -142,6 +142,113 @@ struct GetStateSummaryPayload {
     space_id: Uuid,
 }
 
+#[derive(Debug, Deserialize)]
+struct KnowledgeSourceCandidateEnvelope {
+    knowledge_source_candidate: KnowledgeSourceCandidateInput,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeContextEnvelope {
+    knowledge_context: KnowledgeContextInput,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeSourceCandidateInput {
+    id: Uuid,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    state: String,
+    proposed_source: Value,
+    proposed_use: String,
+    proposer: String,
+    acquisition_trace: AcquisitionTraceInput,
+    private_context_used: bool,
+    opt_in_proof: Option<Value>,
+    provenance: Value,
+    quality_signals: Value,
+    freshness: Value,
+    expiry: DateTime<Utc>,
+    #[serde(default)]
+    downstream_link_candidates: Value,
+    decision: Option<Value>,
+    #[serde(default)]
+    metadata: Value,
+    source_policy: Option<KnowledgeSourcePolicyInput>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeSourcePolicyInput {
+    id: Uuid,
+    state: String,
+    source_descriptor: Value,
+    #[serde(default)]
+    allowed_use: Value,
+    #[serde(default)]
+    disallowed_use: Value,
+    #[serde(default)]
+    privacy_policy: Value,
+    #[serde(default)]
+    refresh_policy: Value,
+    #[serde(default)]
+    quality_thresholds: Value,
+    #[serde(default)]
+    freshness_requirements: Value,
+    expiry: DateTime<Utc>,
+    approved_by: String,
+    approved_at: DateTime<Utc>,
+    revoked_or_paused_reason: Option<String>,
+    #[serde(default)]
+    metadata: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeContextInput {
+    id: Uuid,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    source_policy_id: Uuid,
+    source_candidate_id: Uuid,
+    acquisition_trace: AcquisitionTraceInput,
+    state: String,
+    context_type: String,
+    structured_claims: Value,
+    provenance: Value,
+    quality_signals: Value,
+    freshness: Value,
+    expiry: DateTime<Utc>,
+    evidence_snippets: Value,
+    private_context_used: bool,
+    opt_in_proof: Option<Value>,
+    downstream_links: Value,
+    #[serde(default)]
+    conflict_notes: Value,
+    #[serde(default)]
+    metadata: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct AcquisitionTraceInput {
+    id: Uuid,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    submitted_by: String,
+    acquisition_kind: String,
+    discovery_method: String,
+    extraction_method: String,
+    private_context_used: bool,
+    private_context_basis: Option<Value>,
+    opt_in_proof: Option<Value>,
+    source_handles: Value,
+    source_observed_at: DateTime<Utc>,
+    extraction_run_id: Option<String>,
+    tool_or_adapter_version: Option<String>,
+    validation_summary: Value,
+    #[serde(default)]
+    redacted_diagnostics: Value,
+    #[serde(default)]
+    metadata: Value,
+}
+
 pub async fn handle(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
@@ -217,6 +324,8 @@ async fn get_state_summary(
         observation_window_end,
         dictation_evidence,
     );
+    let knowledge_refresh =
+        load_knowledge_refresh_observation(&state.db, payload.space_id, namespace.id).await?;
     let output_summary = format!(
         "Observed {}: {} memories, {} traces, {} feedback loops",
         request.namespace,
@@ -253,6 +362,7 @@ async fn get_state_summary(
             "note": "No persisted GrowthModel is available for this namespace yet.",
         },
         "dictation_observation": dictation_observation,
+        "knowledge_refresh": knowledge_refresh,
     });
 
     let completed_at = Utc::now();
@@ -299,6 +409,9 @@ async fn get_state_summary(
                 "growth_model_status": "not_persisted",
                 "dictation_observation_status": dictation_observation.status,
                 "dictation_observation_evidence_record_count": dictation_observation.evidence_record_count,
+                "knowledge_refresh_source_candidate_count": knowledge_refresh["source_candidates"].as_array().map(Vec::len).unwrap_or(0),
+                "knowledge_refresh_source_policy_count": knowledge_refresh["source_policies"].as_array().map(Vec::len).unwrap_or(0),
+                "knowledge_refresh_context_count": knowledge_refresh["knowledge_contexts"].as_array().map(Vec::len).unwrap_or(0),
             }),
         })
         .await
@@ -501,6 +614,13 @@ async fn capture_observation(
     user_id: Uuid,
     request: SurfaceRequest,
 ) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    if request.payload.get("knowledge_source_candidate").is_some() {
+        return capture_knowledge_source_candidate(state, user_id, request).await;
+    }
+    if request.payload.get("knowledge_context").is_some() {
+        return capture_knowledge_context(state, user_id, request).await;
+    }
+
     let started_at = Utc::now();
     let payload: CapturePayload = serde_json::from_value(request.payload.clone())
         .map_err(|error| AppError::BadRequest(format!("invalid capture payload: {error}")))?;
@@ -615,6 +735,917 @@ async fn capture_observation(
     );
 
     Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
+}
+
+async fn capture_knowledge_source_candidate(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let started_at = Utc::now();
+    let envelope: KnowledgeSourceCandidateEnvelope =
+        serde_json::from_value(request.payload.clone()).map_err(|error| {
+            AppError::BadRequest(format!("invalid KnowledgeSourceCandidateInput: {error}"))
+        })?;
+    let input = envelope.knowledge_source_candidate;
+
+    validate_knowledge_source_candidate_input(&input)?;
+    require_space_writer(state, input.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, input.space_id, &request.namespace).await?;
+    validate_knowledge_scope(
+        input.space_id,
+        input.namespace_id,
+        input.space_id,
+        namespace.id,
+    )?;
+    validate_acquisition_trace(&input.acquisition_trace, input.space_id, namespace.id)?;
+
+    if let Some(policy) = &input.source_policy {
+        validate_knowledge_policy_input(policy)?;
+        if input.state != "approved" {
+            return Err(AppError::BadRequest(
+                "KnowledgeSourcePolicy requires an approved source candidate".to_string(),
+            ));
+        }
+    }
+
+    insert_acquisition_trace(&state.db, &input.acquisition_trace).await?;
+    insert_knowledge_source_candidate(&state.db, &input).await?;
+    if let Some(policy) = &input.source_policy {
+        insert_knowledge_source_policy(&state.db, &input, policy).await?;
+    }
+
+    let completed_at = Utc::now();
+    let output_summary = format!(
+        "Captured KnowledgeSourceCandidate {} in state {}",
+        input.id, input.state
+    );
+    let trace = state
+        .repositories
+        .traces
+        .create_completed(CreateCompletedTrace {
+            space_id: input.space_id,
+            namespace_id: Some(namespace.id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Capture,
+            mode: trace_mode(request.context.mode.as_deref())?,
+            runtime: deterministic_trace_runtime(request.context.runtime_preference),
+            input_summary: Some(format!(
+                "Capture KnowledgeSourceCandidate in namespace {}",
+                request.namespace
+            )),
+            output_summary: Some(output_summary),
+            started_at,
+            completed_at,
+            latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: Vec::new(),
+            user_feedback: None,
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "surface": request.surface,
+                "action": request.action,
+                "adapter": request.adapter,
+                "namespace": request.namespace,
+                "knowledge_refresh": {
+                    "kind": "source_candidate",
+                    "source_candidate_id": input.id,
+                    "source_policy_id": input.source_policy.as_ref().map(|policy| policy.id),
+                    "acquisition_trace_id": input.acquisition_trace.id,
+                    "state": input.state,
+                },
+            }),
+        })
+        .await
+        .map_err(AppError::Database)?;
+
+    let response = SurfaceResponse::new(
+        Surface::Capture,
+        SurfaceAction::CaptureObservation,
+        json!({
+            "status": "knowledge_source_candidate_accepted",
+            "source_candidate_id": input.id,
+            "source_policy_id": input.source_policy.as_ref().map(|policy| policy.id),
+            "acquisition_trace_id": input.acquisition_trace.id,
+            "namespace_id": namespace.id,
+            "state": input.state,
+        }),
+        trace.id,
+        vec!["Use Observation Surface to inspect Knowledge Refresh state.".to_string()],
+        SurfaceVisibility::Adapter,
+    );
+
+    Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
+}
+
+async fn capture_knowledge_context(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let started_at = Utc::now();
+    let envelope: KnowledgeContextEnvelope = serde_json::from_value(request.payload.clone())
+        .map_err(|error| AppError::BadRequest(format!("invalid KnowledgeContextInput: {error}")))?;
+    let input = envelope.knowledge_context;
+
+    validate_knowledge_context_input(&input)?;
+    require_space_writer(state, input.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, input.space_id, &request.namespace).await?;
+    validate_knowledge_scope(
+        input.space_id,
+        input.namespace_id,
+        input.space_id,
+        namespace.id,
+    )?;
+    validate_acquisition_trace(&input.acquisition_trace, input.space_id, namespace.id)?;
+    validate_context_policy_state(&state.db, &input).await?;
+
+    insert_acquisition_trace(&state.db, &input.acquisition_trace).await?;
+    insert_knowledge_context(&state.db, &input).await?;
+
+    let completed_at = Utc::now();
+    let output_summary = format!("Captured KnowledgeContext {}", input.id);
+    let trace = state
+        .repositories
+        .traces
+        .create_completed(CreateCompletedTrace {
+            space_id: input.space_id,
+            namespace_id: Some(namespace.id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Capture,
+            mode: trace_mode(request.context.mode.as_deref())?,
+            runtime: deterministic_trace_runtime(request.context.runtime_preference),
+            input_summary: Some(format!(
+                "Capture KnowledgeContext in namespace {}",
+                request.namespace
+            )),
+            output_summary: Some(output_summary),
+            started_at,
+            completed_at,
+            latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: Vec::new(),
+            user_feedback: None,
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "surface": request.surface,
+                "action": request.action,
+                "adapter": request.adapter,
+                "namespace": request.namespace,
+                "knowledge_refresh": {
+                    "kind": "knowledge_context",
+                    "knowledge_context_id": input.id,
+                    "source_candidate_id": input.source_candidate_id,
+                    "source_policy_id": input.source_policy_id,
+                    "acquisition_trace_id": input.acquisition_trace.id,
+                    "state": input.state,
+                },
+            }),
+        })
+        .await
+        .map_err(AppError::Database)?;
+
+    let response = SurfaceResponse::new(
+        Surface::Capture,
+        SurfaceAction::CaptureObservation,
+        json!({
+            "status": "knowledge_context_accepted",
+            "knowledge_context_id": input.id,
+            "source_candidate_id": input.source_candidate_id,
+            "source_policy_id": input.source_policy_id,
+            "acquisition_trace_id": input.acquisition_trace.id,
+            "namespace_id": namespace.id,
+            "state": input.state,
+        }),
+        trace.id,
+        vec!["Use Observation Surface to inspect KnowledgeContext state.".to_string()],
+        SurfaceVisibility::Adapter,
+    );
+
+    Ok((StatusCode::CREATED, Json(ApiResponse::success(response))))
+}
+
+fn validate_knowledge_source_candidate_input(
+    input: &KnowledgeSourceCandidateInput,
+) -> Result<(), AppError> {
+    validate_allowed_state(
+        &input.state,
+        &["proposed", "approved", "rejected", "expired"],
+        "KnowledgeSourceCandidate.state",
+    )?;
+    validate_required_text(&input.proposed_use, "KnowledgeSourceCandidate.proposed_use")?;
+    validate_required_text(&input.proposer, "KnowledgeSourceCandidate.proposer")?;
+    require_json_object(
+        &input.proposed_source,
+        "KnowledgeSourceCandidate.proposed_source",
+    )?;
+    require_json_object(&input.provenance, "KnowledgeSourceCandidate.provenance")?;
+    require_json_object(
+        &input.quality_signals,
+        "KnowledgeSourceCandidate.quality_signals",
+    )?;
+    require_json_object(&input.freshness, "KnowledgeSourceCandidate.freshness")?;
+    validate_future_expiry_unless_expired(
+        &input.state,
+        input.expiry,
+        "KnowledgeSourceCandidate.expiry",
+    )?;
+    require_json_array(
+        &input.downstream_link_candidates,
+        "KnowledgeSourceCandidate.downstream_link_candidates",
+    )?;
+    require_json_object(&input.metadata, "KnowledgeSourceCandidate.metadata")?;
+    validate_private_context_opt_in(
+        input.private_context_used,
+        input.opt_in_proof.as_ref(),
+        input.namespace_id,
+        "KnowledgeSourceCandidate.opt_in_proof",
+    )?;
+    validate_knowledge_value_safety(
+        &json!({
+            "proposed_source": input.proposed_source,
+            "provenance": input.provenance,
+            "quality_signals": input.quality_signals,
+            "freshness": input.freshness,
+            "downstream_link_candidates": input.downstream_link_candidates,
+            "decision": input.decision,
+            "metadata": input.metadata,
+            "opt_in_proof": input.opt_in_proof,
+        }),
+        "KnowledgeSourceCandidate",
+    )?;
+    Ok(())
+}
+
+fn validate_knowledge_policy_input(input: &KnowledgeSourcePolicyInput) -> Result<(), AppError> {
+    validate_allowed_state(
+        &input.state,
+        &["active", "paused", "revoked", "expired"],
+        "KnowledgeSourcePolicy.state",
+    )?;
+    validate_required_text(&input.approved_by, "KnowledgeSourcePolicy.approved_by")?;
+    require_json_object(
+        &input.source_descriptor,
+        "KnowledgeSourcePolicy.source_descriptor",
+    )?;
+    require_json_array(&input.allowed_use, "KnowledgeSourcePolicy.allowed_use")?;
+    require_json_array(
+        &input.disallowed_use,
+        "KnowledgeSourcePolicy.disallowed_use",
+    )?;
+    require_json_object(
+        &input.privacy_policy,
+        "KnowledgeSourcePolicy.privacy_policy",
+    )?;
+    require_json_object(
+        &input.refresh_policy,
+        "KnowledgeSourcePolicy.refresh_policy",
+    )?;
+    require_json_object(
+        &input.quality_thresholds,
+        "KnowledgeSourcePolicy.quality_thresholds",
+    )?;
+    require_json_object(
+        &input.freshness_requirements,
+        "KnowledgeSourcePolicy.freshness_requirements",
+    )?;
+    validate_future_expiry_unless_expired(
+        &input.state,
+        input.expiry,
+        "KnowledgeSourcePolicy.expiry",
+    )?;
+    require_json_object(&input.metadata, "KnowledgeSourcePolicy.metadata")?;
+    validate_knowledge_value_safety(
+        &json!({
+            "source_descriptor": input.source_descriptor,
+            "allowed_use": input.allowed_use,
+            "disallowed_use": input.disallowed_use,
+            "privacy_policy": input.privacy_policy,
+            "refresh_policy": input.refresh_policy,
+            "quality_thresholds": input.quality_thresholds,
+            "freshness_requirements": input.freshness_requirements,
+            "revoked_or_paused_reason": input.revoked_or_paused_reason,
+            "metadata": input.metadata,
+        }),
+        "KnowledgeSourcePolicy",
+    )?;
+    Ok(())
+}
+
+fn validate_knowledge_context_input(input: &KnowledgeContextInput) -> Result<(), AppError> {
+    validate_allowed_state(
+        &input.state,
+        &["candidate", "valid", "rejected", "expired"],
+        "KnowledgeContext.state",
+    )?;
+    validate_allowed_state(
+        &input.context_type,
+        &[
+            "reference_claims",
+            "rubric_context",
+            "practice_context",
+            "trend_context",
+            "contradiction_context",
+            "review_context",
+        ],
+        "KnowledgeContext.context_type",
+    )?;
+    require_json_array(
+        &input.structured_claims,
+        "KnowledgeContext.structured_claims",
+    )?;
+    require_non_empty_array(
+        &input.structured_claims,
+        "KnowledgeContext.structured_claims",
+    )?;
+    require_json_object(&input.provenance, "KnowledgeContext.provenance")?;
+    require_json_object(&input.quality_signals, "KnowledgeContext.quality_signals")?;
+    require_json_object(&input.freshness, "KnowledgeContext.freshness")?;
+    require_json_array(
+        &input.evidence_snippets,
+        "KnowledgeContext.evidence_snippets",
+    )?;
+    require_non_empty_array(
+        &input.evidence_snippets,
+        "KnowledgeContext.evidence_snippets",
+    )?;
+    validate_future_expiry_unless_expired(&input.state, input.expiry, "KnowledgeContext.expiry")?;
+    require_json_array(&input.downstream_links, "KnowledgeContext.downstream_links")?;
+    require_json_array(&input.conflict_notes, "KnowledgeContext.conflict_notes")?;
+    require_json_object(&input.metadata, "KnowledgeContext.metadata")?;
+    validate_private_context_opt_in(
+        input.private_context_used,
+        input.opt_in_proof.as_ref(),
+        input.namespace_id,
+        "KnowledgeContext.opt_in_proof",
+    )?;
+    validate_knowledge_value_safety(
+        &json!({
+            "structured_claims": input.structured_claims,
+            "provenance": input.provenance,
+            "quality_signals": input.quality_signals,
+            "freshness": input.freshness,
+            "evidence_snippets": input.evidence_snippets,
+            "opt_in_proof": input.opt_in_proof,
+            "downstream_links": input.downstream_links,
+            "conflict_notes": input.conflict_notes,
+            "metadata": input.metadata,
+        }),
+        "KnowledgeContext",
+    )?;
+    Ok(())
+}
+
+fn validate_acquisition_trace(
+    input: &AcquisitionTraceInput,
+    space_id: Uuid,
+    namespace_id: Uuid,
+) -> Result<(), AppError> {
+    validate_knowledge_scope(input.space_id, input.namespace_id, space_id, namespace_id)?;
+    validate_allowed_state(
+        &input.acquisition_kind,
+        &[
+            "source_candidate",
+            "source_policy_review",
+            "knowledge_context",
+            "revalidation",
+        ],
+        "AcquisitionTrace.acquisition_kind",
+    )?;
+    validate_required_text(&input.submitted_by, "AcquisitionTrace.submitted_by")?;
+    validate_required_text(&input.discovery_method, "AcquisitionTrace.discovery_method")?;
+    validate_required_text(
+        &input.extraction_method,
+        "AcquisitionTrace.extraction_method",
+    )?;
+    require_json_array(&input.source_handles, "AcquisitionTrace.source_handles")?;
+    require_json_object(
+        &input.validation_summary,
+        "AcquisitionTrace.validation_summary",
+    )?;
+    require_json_object(
+        &input.redacted_diagnostics,
+        "AcquisitionTrace.redacted_diagnostics",
+    )?;
+    require_json_object(&input.metadata, "AcquisitionTrace.metadata")?;
+    validate_private_context_opt_in(
+        input.private_context_used,
+        input.opt_in_proof.as_ref(),
+        namespace_id,
+        "AcquisitionTrace.opt_in_proof",
+    )?;
+    validate_knowledge_value_safety(
+        &json!({
+            "private_context_basis": input.private_context_basis,
+            "opt_in_proof": input.opt_in_proof,
+            "source_handles": input.source_handles,
+            "extraction_run_id": input.extraction_run_id,
+            "tool_or_adapter_version": input.tool_or_adapter_version,
+            "validation_summary": input.validation_summary,
+            "redacted_diagnostics": input.redacted_diagnostics,
+            "metadata": input.metadata,
+        }),
+        "AcquisitionTrace",
+    )?;
+    Ok(())
+}
+
+fn validate_allowed_state(value: &str, allowed: &[&str], field: &str) -> Result<(), AppError> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!("{field} is invalid")))
+    }
+}
+
+fn validate_required_text(value: &str, field: &str) -> Result<(), AppError> {
+    if value.trim().is_empty() {
+        Err(AppError::BadRequest(format!("{field} cannot be empty")))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_future_expiry_unless_expired(
+    state: &str,
+    expiry: DateTime<Utc>,
+    field: &str,
+) -> Result<(), AppError> {
+    if state != "expired" && expiry <= Utc::now() {
+        Err(AppError::BadRequest(format!(
+            "{field} must be in the future unless state is expired"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_json_object(value: &Value, field: &str) -> Result<(), AppError> {
+    if value.is_object() {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!("{field} must be an object")))
+    }
+}
+
+fn require_json_array(value: &Value, field: &str) -> Result<(), AppError> {
+    if value.is_array() {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!("{field} must be an array")))
+    }
+}
+
+fn require_non_empty_array(value: &Value, field: &str) -> Result<(), AppError> {
+    if value.as_array().is_some_and(|items| !items.is_empty()) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!("{field} cannot be empty")))
+    }
+}
+
+fn validate_knowledge_scope(
+    object_space_id: Uuid,
+    object_namespace_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Uuid,
+) -> Result<(), AppError> {
+    if object_space_id != space_id || object_namespace_id != namespace_id {
+        return Err(AppError::BadRequest(
+            "Knowledge Refresh object must belong to the requested Space and Namespace".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_private_context_opt_in(
+    private_context_used: bool,
+    opt_in_proof: Option<&Value>,
+    namespace_id: Uuid,
+    field: &str,
+) -> Result<(), AppError> {
+    if !private_context_used {
+        return Ok(());
+    }
+    let Some(proof) = opt_in_proof else {
+        return Err(AppError::BadRequest(format!(
+            "{field} is required when private_context_used is true"
+        )));
+    };
+    if !opt_in_proof_matches_namespace(proof, namespace_id) {
+        return Err(AppError::BadRequest(format!(
+            "{field} must be scoped to the requested Namespace"
+        )));
+    }
+    Ok(())
+}
+
+fn opt_in_proof_matches_namespace(proof: &Value, namespace_id: Uuid) -> bool {
+    let namespace = namespace_id.to_string();
+    proof
+        .get("namespace_id")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value == namespace)
+        || proof
+            .get("namespace_ids")
+            .and_then(Value::as_array)
+            .is_some_and(|values| {
+                values
+                    .iter()
+                    .any(|value| value.as_str().is_some_and(|value| value == namespace))
+            })
+}
+
+fn validate_knowledge_value_safety(value: &Value, path: &str) -> Result<(), AppError> {
+    match value {
+        Value::Object(object) => {
+            for (key, nested) in object {
+                let nested_path = format!("{path}.{key}");
+                if denied_knowledge_key(key) {
+                    return Err(invalid_knowledge_reference(&nested_path));
+                }
+                validate_knowledge_value_safety(nested, &nested_path)?;
+            }
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                validate_knowledge_value_safety(item, &format!("{path}[{index}]"))?;
+            }
+        }
+        Value::String(text) if has_secret_like_value(text) => {
+            return Err(invalid_knowledge_reference(path));
+        }
+        Value::String(_) => {}
+        _ => {}
+    }
+    Ok(())
+}
+
+fn denied_knowledge_key(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "authorization"
+            | "cookie"
+            | "credentials"
+            | "credential"
+            | "password"
+            | "secret"
+            | "signed_url"
+            | "api_key"
+            | "access_key"
+            | "secret_key"
+            | "x-amz-signature"
+            | "x-amz-credential"
+            | "signature"
+    )
+}
+
+fn has_secret_like_value(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.starts_with("bearer ")
+        || value.starts_with("-----BEGIN PRIVATE KEY-----")
+        || value.starts_with("sk-")
+        || value.starts_with("AKIA")
+        || value.starts_with("AIza")
+        || value.starts_with("ghp_")
+        || lower.contains("x-amz-signature=")
+        || lower.contains("x-amz-credential=")
+        || lower.contains("sig=")
+        || is_jwt_like_value(value)
+}
+
+fn is_jwt_like_value(value: &str) -> bool {
+    let parts = value.split('.').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| part.len() >= 8 && part.chars().all(is_base64_url_char))
+}
+
+fn is_base64_url_char(value: char) -> bool {
+    value.is_ascii_alphanumeric() || matches!(value, '-' | '_')
+}
+
+fn invalid_knowledge_reference(path: &str) -> AppError {
+    AppError::BadRequest(format!(
+        "invalid_knowledge_reference: secret-bearing value rejected at {path}"
+    ))
+}
+
+async fn insert_acquisition_trace(
+    pool: &PgPool,
+    input: &AcquisitionTraceInput,
+) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        INSERT INTO knowledge_acquisition_traces (
+            id,
+            space_id,
+            namespace_id,
+            submitted_by,
+            acquisition_kind,
+            discovery_method,
+            extraction_method,
+            private_context_used,
+            private_context_basis,
+            opt_in_proof,
+            source_handles,
+            source_observed_at,
+            extraction_run_id,
+            tool_or_adapter_version,
+            validation_summary,
+            redacted_diagnostics,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        "#,
+    )
+    .bind(input.id)
+    .bind(input.space_id)
+    .bind(input.namespace_id)
+    .bind(&input.submitted_by)
+    .bind(&input.acquisition_kind)
+    .bind(&input.discovery_method)
+    .bind(&input.extraction_method)
+    .bind(input.private_context_used)
+    .bind(&input.private_context_basis)
+    .bind(&input.opt_in_proof)
+    .bind(&input.source_handles)
+    .bind(input.source_observed_at)
+    .bind(&input.extraction_run_id)
+    .bind(&input.tool_or_adapter_version)
+    .bind(&input.validation_summary)
+    .bind(&input.redacted_diagnostics)
+    .bind(&input.metadata)
+    .execute(pool)
+    .await
+    .map(|_| ())
+    .map_err(AppError::Database)
+}
+
+async fn insert_knowledge_source_candidate(
+    pool: &PgPool,
+    input: &KnowledgeSourceCandidateInput,
+) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        INSERT INTO knowledge_source_candidates (
+            id,
+            space_id,
+            namespace_id,
+            state,
+            proposed_source,
+            proposed_use,
+            proposer,
+            acquisition_trace_id,
+            private_context_used,
+            opt_in_proof,
+            provenance,
+            quality_signals,
+            freshness,
+            expiry,
+            downstream_link_candidates,
+            decision,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        "#,
+    )
+    .bind(input.id)
+    .bind(input.space_id)
+    .bind(input.namespace_id)
+    .bind(&input.state)
+    .bind(&input.proposed_source)
+    .bind(&input.proposed_use)
+    .bind(&input.proposer)
+    .bind(input.acquisition_trace.id)
+    .bind(input.private_context_used)
+    .bind(&input.opt_in_proof)
+    .bind(&input.provenance)
+    .bind(&input.quality_signals)
+    .bind(&input.freshness)
+    .bind(input.expiry)
+    .bind(&input.downstream_link_candidates)
+    .bind(&input.decision)
+    .bind(&input.metadata)
+    .execute(pool)
+    .await
+    .map(|_| ())
+    .map_err(AppError::Database)
+}
+
+async fn insert_knowledge_source_policy(
+    pool: &PgPool,
+    candidate: &KnowledgeSourceCandidateInput,
+    policy: &KnowledgeSourcePolicyInput,
+) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        INSERT INTO knowledge_source_policies (
+            id,
+            space_id,
+            namespace_id,
+            state,
+            source_candidate_id,
+            source_descriptor,
+            allowed_use,
+            disallowed_use,
+            privacy_policy,
+            refresh_policy,
+            quality_thresholds,
+            freshness_requirements,
+            expiry,
+            approved_by,
+            approved_at,
+            revoked_or_paused_reason,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        "#,
+    )
+    .bind(policy.id)
+    .bind(candidate.space_id)
+    .bind(candidate.namespace_id)
+    .bind(&policy.state)
+    .bind(candidate.id)
+    .bind(&policy.source_descriptor)
+    .bind(&policy.allowed_use)
+    .bind(&policy.disallowed_use)
+    .bind(&policy.privacy_policy)
+    .bind(&policy.refresh_policy)
+    .bind(&policy.quality_thresholds)
+    .bind(&policy.freshness_requirements)
+    .bind(policy.expiry)
+    .bind(&policy.approved_by)
+    .bind(policy.approved_at)
+    .bind(&policy.revoked_or_paused_reason)
+    .bind(&policy.metadata)
+    .execute(pool)
+    .await
+    .map(|_| ())
+    .map_err(AppError::Database)
+}
+
+async fn insert_knowledge_context(
+    pool: &PgPool,
+    input: &KnowledgeContextInput,
+) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        INSERT INTO knowledge_contexts (
+            id,
+            space_id,
+            namespace_id,
+            source_policy_id,
+            source_candidate_id,
+            acquisition_trace_id,
+            state,
+            context_type,
+            structured_claims,
+            provenance,
+            quality_signals,
+            freshness,
+            expiry,
+            evidence_snippets,
+            private_context_used,
+            opt_in_proof,
+            downstream_links,
+            conflict_notes,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        "#,
+    )
+    .bind(input.id)
+    .bind(input.space_id)
+    .bind(input.namespace_id)
+    .bind(input.source_policy_id)
+    .bind(input.source_candidate_id)
+    .bind(input.acquisition_trace.id)
+    .bind(&input.state)
+    .bind(&input.context_type)
+    .bind(&input.structured_claims)
+    .bind(&input.provenance)
+    .bind(&input.quality_signals)
+    .bind(&input.freshness)
+    .bind(input.expiry)
+    .bind(&input.evidence_snippets)
+    .bind(input.private_context_used)
+    .bind(&input.opt_in_proof)
+    .bind(&input.downstream_links)
+    .bind(&input.conflict_notes)
+    .bind(&input.metadata)
+    .execute(pool)
+    .await
+    .map(|_| ())
+    .map_err(AppError::Database)
+}
+
+#[derive(Debug, FromRow)]
+struct KnowledgePolicyValidationRow {
+    policy_space_id: Uuid,
+    policy_namespace_id: Uuid,
+    policy_state: String,
+    policy_expiry: DateTime<Utc>,
+    candidate_id: Uuid,
+    candidate_space_id: Uuid,
+    candidate_namespace_id: Uuid,
+    candidate_state: String,
+    candidate_expiry: DateTime<Utc>,
+}
+
+async fn validate_context_policy_state(
+    pool: &PgPool,
+    input: &KnowledgeContextInput,
+) -> Result<(), AppError> {
+    let row = sqlx::query_as::<_, KnowledgePolicyValidationRow>(
+        r#"
+        SELECT
+            policy.space_id AS policy_space_id,
+            policy.namespace_id AS policy_namespace_id,
+            policy.state AS policy_state,
+            policy.expiry AS policy_expiry,
+            candidate.id AS candidate_id,
+            candidate.space_id AS candidate_space_id,
+            candidate.namespace_id AS candidate_namespace_id,
+            candidate.state AS candidate_state,
+            candidate.expiry AS candidate_expiry
+        FROM knowledge_source_policies policy
+        JOIN knowledge_source_candidates candidate
+          ON candidate.id = policy.source_candidate_id
+        WHERE policy.id = $1
+        "#,
+    )
+    .bind(input.source_policy_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Database)?
+    .ok_or_else(|| {
+        AppError::BadRequest(
+            "KnowledgeContext source_policy_id was not found in the requested Space and Namespace"
+                .to_string(),
+        )
+    })?;
+
+    validate_knowledge_scope(
+        row.policy_space_id,
+        row.policy_namespace_id,
+        input.space_id,
+        input.namespace_id,
+    )?;
+    validate_knowledge_scope(
+        row.candidate_space_id,
+        row.candidate_namespace_id,
+        input.space_id,
+        input.namespace_id,
+    )?;
+    if row.candidate_id != input.source_candidate_id {
+        return Err(AppError::BadRequest(
+            "KnowledgeContext source_candidate_id must match the source policy".to_string(),
+        ));
+    }
+    if row.candidate_state != "approved" {
+        return Err(AppError::BadRequest(
+            "KnowledgeContext requires an approved source candidate".to_string(),
+        ));
+    }
+    if row.candidate_expiry <= Utc::now() {
+        return Err(AppError::BadRequest(
+            "KnowledgeContext source candidate is expired".to_string(),
+        ));
+    }
+    if row.policy_state != "active" {
+        return Err(AppError::BadRequest(
+            "KnowledgeContext requires an active source policy".to_string(),
+        ));
+    }
+    if row.policy_expiry <= Utc::now() {
+        return Err(AppError::BadRequest(
+            "KnowledgeContext source policy is expired".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn prepare_capture_payload(
@@ -1542,6 +2573,231 @@ impl ObservationCounts {
             + self.completed_feedback_loop_count
             + self.paused_feedback_loop_count
     }
+}
+
+#[derive(Debug, FromRow)]
+struct KnowledgeSourceCandidateObservationRow {
+    id: Uuid,
+    state: String,
+    proposed_use: String,
+    proposer: String,
+    acquisition_trace_id: Uuid,
+    private_context_used: bool,
+    quality_signals: Value,
+    freshness: Value,
+    expiry: DateTime<Utc>,
+    downstream_link_count: i32,
+    decision: Option<Value>,
+    surface_trace_id: Option<Uuid>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct KnowledgeSourcePolicyObservationRow {
+    id: Uuid,
+    state: String,
+    source_candidate_id: Uuid,
+    allowed_use: Value,
+    disallowed_use: Value,
+    privacy_policy: Value,
+    refresh_policy: Value,
+    quality_thresholds: Value,
+    freshness_requirements: Value,
+    expiry: DateTime<Utc>,
+    approved_by: String,
+    approved_at: DateTime<Utc>,
+    revoked_or_paused_reason: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct KnowledgeContextObservationRow {
+    id: Uuid,
+    state: String,
+    context_type: String,
+    source_policy_id: Uuid,
+    source_candidate_id: Uuid,
+    acquisition_trace_id: Uuid,
+    structured_claim_count: i32,
+    evidence_snippet_count: i32,
+    quality_signals: Value,
+    freshness: Value,
+    expiry: DateTime<Utc>,
+    private_context_used: bool,
+    downstream_links: Value,
+    conflict_notes: Value,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+async fn load_knowledge_refresh_observation(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+) -> Result<Value, AppError> {
+    let source_candidates = sqlx::query_as::<_, KnowledgeSourceCandidateObservationRow>(
+        r#"
+        SELECT
+            candidate.id,
+            candidate.state,
+            candidate.proposed_use,
+            candidate.proposer,
+            candidate.acquisition_trace_id,
+            candidate.private_context_used,
+            candidate.quality_signals,
+            candidate.freshness,
+            candidate.expiry,
+            jsonb_array_length(candidate.downstream_link_candidates) AS downstream_link_count,
+            candidate.decision,
+            (
+                SELECT trace.id
+                FROM traces trace
+                WHERE trace.space_id = candidate.space_id
+                  AND trace.namespace_id = candidate.namespace_id
+                  AND trace.metadata #>> '{knowledge_refresh,kind}' = 'source_candidate'
+                  AND trace.metadata #>> '{knowledge_refresh,source_candidate_id}' = candidate.id::text
+                ORDER BY trace.created_at DESC, trace.id DESC
+                LIMIT 1
+            ) AS surface_trace_id,
+            candidate.created_at,
+            candidate.updated_at
+        FROM knowledge_source_candidates candidate
+        WHERE candidate.space_id = $1
+          AND candidate.namespace_id = $2
+        ORDER BY candidate.updated_at DESC, candidate.id ASC
+        LIMIT 50
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let source_policies = sqlx::query_as::<_, KnowledgeSourcePolicyObservationRow>(
+        r#"
+        SELECT
+            id,
+            state,
+            source_candidate_id,
+            allowed_use,
+            disallowed_use,
+            privacy_policy,
+            refresh_policy,
+            quality_thresholds,
+            freshness_requirements,
+            expiry,
+            approved_by,
+            approved_at,
+            revoked_or_paused_reason,
+            created_at,
+            updated_at
+        FROM knowledge_source_policies
+        WHERE space_id = $1
+          AND namespace_id = $2
+        ORDER BY updated_at DESC, id ASC
+        LIMIT 50
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let knowledge_contexts = sqlx::query_as::<_, KnowledgeContextObservationRow>(
+        r#"
+        SELECT
+            id,
+            state,
+            context_type,
+            source_policy_id,
+            source_candidate_id,
+            acquisition_trace_id,
+            jsonb_array_length(structured_claims) AS structured_claim_count,
+            jsonb_array_length(evidence_snippets) AS evidence_snippet_count,
+            quality_signals,
+            freshness,
+            expiry,
+            private_context_used,
+            downstream_links,
+            conflict_notes,
+            created_at,
+            updated_at
+        FROM knowledge_contexts
+        WHERE space_id = $1
+          AND namespace_id = $2
+        ORDER BY updated_at DESC, id ASC
+        LIMIT 50
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    Ok(json!({
+        "source_candidates": source_candidates.into_iter().map(|row| {
+            json!({
+                "id": row.id,
+                "state": row.state,
+                "proposed_use": row.proposed_use,
+                "proposer": row.proposer,
+                "acquisition_trace_id": row.acquisition_trace_id,
+                "private_context_used": row.private_context_used,
+                "quality_signals": row.quality_signals,
+                "freshness": row.freshness,
+                "expiry": row.expiry,
+                "downstream_link_count": row.downstream_link_count,
+                "decision": row.decision,
+                "surface_trace_id": row.surface_trace_id,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            })
+        }).collect::<Vec<_>>(),
+        "source_policies": source_policies.into_iter().map(|row| {
+            json!({
+                "id": row.id,
+                "state": row.state,
+                "source_candidate_id": row.source_candidate_id,
+                "allowed_use": row.allowed_use,
+                "disallowed_use": row.disallowed_use,
+                "privacy_policy": row.privacy_policy,
+                "refresh_policy": row.refresh_policy,
+                "quality_thresholds": row.quality_thresholds,
+                "freshness_requirements": row.freshness_requirements,
+                "expiry": row.expiry,
+                "approved_by": row.approved_by,
+                "approved_at": row.approved_at,
+                "revoked_or_paused_reason": row.revoked_or_paused_reason,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            })
+        }).collect::<Vec<_>>(),
+        "knowledge_contexts": knowledge_contexts.into_iter().map(|row| {
+            json!({
+                "id": row.id,
+                "state": row.state,
+                "context_type": row.context_type,
+                "source_policy_id": row.source_policy_id,
+                "source_candidate_id": row.source_candidate_id,
+                "acquisition_trace_id": row.acquisition_trace_id,
+                "structured_claim_count": row.structured_claim_count,
+                "evidence_snippet_count": row.evidence_snippet_count,
+                "quality_signals": row.quality_signals,
+                "freshness": row.freshness,
+                "expiry": row.expiry,
+                "private_context_used": row.private_context_used,
+                "downstream_links": row.downstream_links,
+                "conflict_notes": row.conflict_notes,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            })
+        }).collect::<Vec<_>>(),
+    }))
 }
 
 async fn load_observation_counts(
