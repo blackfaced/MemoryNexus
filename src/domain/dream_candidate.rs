@@ -63,6 +63,7 @@ pub struct DreamCandidate {
     pub namespace_id: Option<NamespaceId>,
     pub source_sleep_cycle_id: SleepCycleId,
     pub source_consolidation_result_id: ConsolidationResultId,
+    pub source_knowledge_context_ids: Vec<Uuid>,
     pub purpose: DreamCandidatePurpose,
     pub title: Option<String>,
     pub content: String,
@@ -94,6 +95,7 @@ impl DreamCandidate {
             namespace_id,
             source_sleep_cycle_id: source.sleep_cycle_id,
             source_consolidation_result_id: source.consolidation_result_id,
+            source_knowledge_context_ids: Vec::new(),
             purpose,
             title: None,
             content: content.into(),
@@ -122,6 +124,15 @@ impl DreamCandidate {
 
     pub fn expire(&mut self) {
         self.status = DreamCandidateStatus::Expired;
+    }
+
+    pub fn cite_knowledge_context(&mut self, knowledge_context_id: Uuid) {
+        if !self
+            .source_knowledge_context_ids
+            .contains(&knowledge_context_id)
+        {
+            self.source_knowledge_context_ids.push(knowledge_context_id);
+        }
     }
 
     pub fn record_execution(&mut self, trace_id: TraceId) {

@@ -3,7 +3,7 @@ use memorynexus::domain::dream_candidate::{
     DreamCandidateStatus,
 };
 use memorynexus::domain::practice_plan::{PracticePlan, PracticePlanSource, PracticePlanStatus};
-use serde_json::json;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 #[test]
@@ -166,4 +166,38 @@ fn practice_plan_tracks_selected_executed_and_evaluated_states() {
         plan.evaluation_result.as_ref().unwrap().effectiveness,
         DreamCandidateEffectiveness::Neutral
     );
+}
+
+#[test]
+fn knowledge_context_dream_candidate_cites_external_context_without_plan_or_model_mutation() {
+    let space_id = Uuid::new_v4();
+    let namespace_id = Uuid::new_v4();
+    let sleep_cycle_id = Uuid::new_v4();
+    let consolidation_result_id = Uuid::new_v4();
+    let knowledge_context_id = Uuid::new_v4();
+
+    let mut candidate = DreamCandidate::new(
+        space_id,
+        Some(namespace_id),
+        DreamCandidateSource {
+            sleep_cycle_id,
+            consolidation_result_id,
+        },
+        DreamCandidatePurpose::ContradictionExploration,
+        "Review whether the external rubric conflicts with the user's recent attempts.",
+        Some("Turn external context into a hypothesis instead of overwriting local evidence."),
+    );
+    candidate.cite_knowledge_context(knowledge_context_id);
+
+    let value = serde_json::to_value(&candidate).unwrap();
+
+    assert_eq!(
+        value["source_knowledge_context_ids"],
+        json!([knowledge_context_id])
+    );
+    assert_eq!(value["target_growth_model_id"], Value::Null);
+    assert_eq!(candidate.target_growth_model_id, None);
+
+    let maybe_plan = PracticePlan::try_from_knowledge_context_candidate(&candidate);
+    assert!(maybe_plan.is_none());
 }
