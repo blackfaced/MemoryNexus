@@ -4,8 +4,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::dream_candidate::{
-    ConsolidationResultId, DreamCandidateEffectiveness, DreamCandidateEvaluation, DreamCandidateId,
-    NamespaceId, TraceId,
+    ConsolidationResultId, DreamCandidate, DreamCandidateEffectiveness, DreamCandidateEvaluation,
+    DreamCandidateId, NamespaceId, TraceId,
 };
 use super::growth_model::{EvidenceId, GrowthModel, GrowthModelId};
 use super::SpaceId;
@@ -239,6 +239,10 @@ impl PracticePlanGeneration {
 }
 
 impl PracticePlan {
+    pub fn try_from_knowledge_context_candidate(_candidate: &DreamCandidate) -> Option<Self> {
+        None
+    }
+
     pub fn from_dream_candidate(
         space_id: SpaceId,
         namespace_id: Option<NamespaceId>,

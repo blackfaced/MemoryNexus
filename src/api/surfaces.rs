@@ -109,6 +109,8 @@ struct ManualConsolidationPayload {
     space_id: Uuid,
     evidence_window_start: DateTime<Utc>,
     evidence_window_end: DateTime<Utc>,
+    #[serde(default)]
+    knowledge_context_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2215,6 +2217,13 @@ async fn request_manual_consolidation(
         payload.evidence_window_end,
     )
     .await?;
+    let candidate_context = load_manual_consolidation_candidate_context(
+        &state.db,
+        payload.space_id,
+        namespace.id,
+        &payload.knowledge_context_ids,
+    )
+    .await?;
 
     let now = Utc::now();
     let triggering_trace = state
@@ -2231,8 +2240,9 @@ async fn request_manual_consolidation(
                 "Manual consolidation requested through Surface Gateway".to_string(),
             ),
             output_summary: Some(format!(
-                "Selected {} Trace records for the evidence window",
-                input_trace_ids.len()
+                "Selected {} Trace records and {} KnowledgeContext records for the evidence window",
+                input_trace_ids.len(),
+                candidate_context.selected.len()
             )),
             started_at: now,
             completed_at: Utc::now(),
@@ -2257,6 +2267,7 @@ async fn request_manual_consolidation(
                 "evidence_window_start": payload.evidence_window_start,
                 "evidence_window_end": payload.evidence_window_end,
                 "selected_input_trace_count": input_trace_ids.len(),
+                "selected_knowledge_context_count": candidate_context.selected.len(),
             }),
         })
         .await
@@ -2281,10 +2292,14 @@ async fn request_manual_consolidation(
                 "surface": request.surface,
                 "action": request.action,
                 "adapter": request.adapter,
+                "candidate_context_selection": candidate_context.selection_metadata(),
             }),
         })
         .await
         .map_err(map_sleep_cycle_create_error)?;
+
+    let candidate_context_response =
+        candidate_context.to_response(sleep_cycle.id, input_trace_ids.len());
 
     let sleep_cycle = sleep_cycle_repository
         .mark_completed(
@@ -2295,6 +2310,7 @@ async fn request_manual_consolidation(
                     "summary": deterministic_consolidation_summary(input_trace_ids.len()),
                     "selected_input_trace_count": input_trace_ids.len(),
                     "runtime": "deterministic",
+                    "candidate_context": candidate_context_response,
                 }),
             },
         )
@@ -2313,6 +2329,7 @@ async fn request_manual_consolidation(
             "evidence_window_end": sleep_cycle.evidence_window_end,
             "input_trace_ids": sleep_cycle.input_trace_ids,
             "input_trace_count": sleep_cycle.input_trace_ids.len(),
+            "candidate_context": candidate_context_response,
         }),
         triggering_trace.id,
         Vec::new(),
@@ -2373,6 +2390,274 @@ async fn select_trace_evidence(
     .fetch_all(pool)
     .await
     .map_err(AppError::Database)
+}
+
+#[derive(Debug, FromRow)]
+struct ManualKnowledgeContextRow {
+    id: Uuid,
+    state: String,
+    context_type: String,
+    source_policy_id: Uuid,
+    source_candidate_id: Uuid,
+    acquisition_trace_id: Uuid,
+    structured_claims: Value,
+    quality_signals: Value,
+    conflict_notes: Value,
+    expiry: DateTime<Utc>,
+}
+
+#[derive(Debug)]
+struct ManualCandidateContext {
+    selected: Vec<ManualKnowledgeContextRow>,
+    total_in_scope_count: i64,
+    explicit_reference_count: usize,
+}
+
+impl ManualCandidateContext {
+    fn ignored_count(&self) -> i64 {
+        (self.total_in_scope_count - self.selected.len() as i64).max(0)
+    }
+
+    fn selection_metadata(&self) -> Value {
+        json!({
+            "mode": if self.explicit_reference_count == 0 { "ambient" } else { "explicit" },
+            "requested_knowledge_context_count": self.explicit_reference_count,
+            "selected_knowledge_context_count": self.selected.len(),
+            "ignored_knowledge_context_count": self.ignored_count(),
+            "knowledge_context_ids": self.selected.iter().map(|row| row.id).collect::<Vec<_>>(),
+        })
+    }
+
+    fn to_response(&self, sleep_cycle_id: Uuid, local_trace_count: usize) -> Value {
+        let knowledge_context_ids = self.selected.iter().map(|row| row.id).collect::<Vec<_>>();
+        let dream_candidates = self
+            .selected
+            .iter()
+            .map(|row| deterministic_knowledge_context_dream_candidate(row, sleep_cycle_id))
+            .collect::<Vec<_>>();
+
+        json!({
+            "mode": if self.explicit_reference_count == 0 { "ambient" } else { "explicit" },
+            "requested_knowledge_context_count": self.explicit_reference_count,
+            "total_in_scope_knowledge_context_count": self.total_in_scope_count,
+            "selected_knowledge_context_count": self.selected.len(),
+            "ignored_knowledge_context_count": self.ignored_count(),
+            "knowledge_context_ids": knowledge_context_ids,
+            "evidence_priority": {
+                "local_trace_count": local_trace_count,
+                "local_evidence": "primary",
+                "external_knowledge": "candidate_context"
+            },
+            "persistence": "sleep_cycle_metadata_only",
+            "dream_candidates": dream_candidates,
+        })
+    }
+}
+
+async fn load_manual_consolidation_candidate_context(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    requested_ids: &[Uuid],
+) -> Result<ManualCandidateContext, AppError> {
+    let total_in_scope_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM knowledge_contexts
+        WHERE space_id = $1
+          AND namespace_id = $2
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let explicit_ids = unique_uuids(requested_ids);
+    let selected = if explicit_ids.is_empty() {
+        sqlx::query_as::<_, ManualKnowledgeContextRow>(
+            eligible_knowledge_context_sql(
+                r#"
+                ORDER BY context.updated_at DESC, context.id ASC
+                LIMIT 10
+                "#,
+            )
+            .as_str(),
+        )
+        .bind(space_id)
+        .bind(namespace_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AppError::Database)?
+    } else {
+        let selected = sqlx::query_as::<_, ManualKnowledgeContextRow>(
+            eligible_knowledge_context_sql(
+                r#"
+                  AND context.id = ANY($3::uuid[])
+                ORDER BY array_position($3::uuid[], context.id), context.id ASC
+                "#,
+            )
+            .as_str(),
+        )
+        .bind(space_id)
+        .bind(namespace_id)
+        .bind(&explicit_ids)
+        .fetch_all(pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        if selected.len() != explicit_ids.len() {
+            return Err(AppError::BadRequest(
+                "knowledge_context_ids must reference approved, non-expired context for the requested space and namespace".to_string(),
+            ));
+        }
+        selected
+    };
+
+    Ok(ManualCandidateContext {
+        selected,
+        total_in_scope_count,
+        explicit_reference_count: explicit_ids.len(),
+    })
+}
+
+fn eligible_knowledge_context_sql(suffix: &str) -> String {
+    format!(
+        r#"
+        SELECT
+            context.id,
+            context.state,
+            context.context_type,
+            context.source_policy_id,
+            context.source_candidate_id,
+            context.acquisition_trace_id,
+            context.structured_claims,
+            context.quality_signals,
+            context.conflict_notes,
+            context.expiry
+        FROM knowledge_contexts context
+        JOIN knowledge_source_policies policy
+          ON policy.id = context.source_policy_id
+         AND policy.space_id = context.space_id
+         AND policy.namespace_id = context.namespace_id
+        JOIN knowledge_source_candidates candidate
+          ON candidate.id = context.source_candidate_id
+         AND candidate.space_id = context.space_id
+         AND candidate.namespace_id = context.namespace_id
+        JOIN knowledge_acquisition_traces acquisition
+          ON acquisition.id = context.acquisition_trace_id
+         AND acquisition.space_id = context.space_id
+         AND acquisition.namespace_id = context.namespace_id
+        WHERE context.space_id = $1
+          AND context.namespace_id = $2
+          AND context.state IN ('candidate', 'valid')
+          AND context.expiry > NOW()
+          AND policy.state = 'active'
+          AND policy.expiry > NOW()
+          AND candidate.state = 'approved'
+          AND candidate.expiry > NOW()
+        {suffix}
+        "#
+    )
+}
+
+fn unique_uuids(ids: &[Uuid]) -> Vec<Uuid> {
+    let mut unique = Vec::new();
+    for id in ids {
+        if !unique.contains(id) {
+            unique.push(*id);
+        }
+    }
+    unique
+}
+
+fn deterministic_knowledge_context_dream_candidate(
+    row: &ManualKnowledgeContextRow,
+    sleep_cycle_id: Uuid,
+) -> Value {
+    let purpose = knowledge_context_candidate_purpose(row);
+    json!({
+        "id": Uuid::new_v4(),
+        "type": "dream_candidate",
+        "status": "proposed",
+        "purpose": purpose,
+        "source_sleep_cycle_id": sleep_cycle_id,
+        "knowledge_context_id": row.id,
+        "source_knowledge_context_ids": [row.id],
+        "source_policy_id": row.source_policy_id,
+        "source_candidate_id": row.source_candidate_id,
+        "acquisition_trace_id": row.acquisition_trace_id,
+        "knowledge_context_state": row.state,
+        "context_type": row.context_type,
+        "content": deterministic_knowledge_context_candidate_content(row, purpose),
+        "rationale": "External KnowledgeContext is used only as candidate context; local Trace, FeedbackLoop, and GrowthModel evidence remain primary.",
+        "expected_effect": "Create a reviewable next-step candidate without directly changing GrowthModel or PracticePlan.",
+        "structured_claim_count": json_array_len(&row.structured_claims),
+        "conflict_note_count": json_array_len(&row.conflict_notes),
+        "quality_signals": row.quality_signals,
+        "expiry": row.expiry,
+        "evidence_priority": {
+            "local_evidence": "primary",
+            "external_knowledge": "candidate_context"
+        },
+        "direct_mutation": {
+            "growth_model": false,
+            "practice_plan": false,
+            "memory": false
+        }
+    })
+}
+
+fn knowledge_context_candidate_purpose(row: &ManualKnowledgeContextRow) -> &'static str {
+    if row.context_type == "contradiction_context" || json_array_len(&row.conflict_notes) > 0 {
+        "contradiction_exploration"
+    } else {
+        match row.context_type.as_str() {
+            "practice_context" => "practice_generation",
+            "review_context" | "rubric_context" | "reference_claims" => "review_question",
+            "trend_context" => "planning_prompt",
+            _ => "review_question",
+        }
+    }
+}
+
+fn deterministic_knowledge_context_candidate_content(
+    row: &ManualKnowledgeContextRow,
+    purpose: &str,
+) -> String {
+    let claim_text = first_structured_claim_text(&row.structured_claims).unwrap_or_else(|| {
+        "Review the approved external context against local evidence.".to_string()
+    });
+    match purpose {
+        "contradiction_exploration" => {
+            format!("Treat this external claim as a hypothesis, not an overwrite: {claim_text}")
+        }
+        "practice_generation" => {
+            format!("Draft a candidate practice idea from approved context: {claim_text}")
+        }
+        "planning_prompt" => {
+            format!(
+                "Consider whether this external trend should inform a future plan: {claim_text}"
+            )
+        }
+        _ => format!("Ask a review question using approved external context: {claim_text}"),
+    }
+}
+
+fn first_structured_claim_text(claims: &Value) -> Option<String> {
+    claims.as_array()?.iter().find_map(|claim| {
+        claim
+            .get("text")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(|text| text.chars().take(240).collect())
+    })
+}
+
+fn json_array_len(value: &Value) -> usize {
+    value.as_array().map_or(0, Vec::len)
 }
 
 fn manual_trace_mode(mode: Option<&str>) -> Result<TraceMode, AppError> {

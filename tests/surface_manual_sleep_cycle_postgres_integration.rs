@@ -238,6 +238,283 @@ async fn manual_consolidation_surface_stores_selected_trace_evidence() {
     );
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn manual_consolidation_surface_includes_eligible_knowledge_context_candidates() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool, "knowledge-context").await;
+    let knowledge_context_id = seed_knowledge_context(
+        &pool,
+        fixture.space_id,
+        fixture.namespace_id,
+        KnowledgeContextSeed {
+            context_state: "valid",
+            candidate_state: "approved",
+            policy_state: "active",
+            context_type: "rubric_context",
+            expiry: Utc::now() + Duration::days(30),
+            conflict_notes: json!([]),
+        },
+    )
+    .await;
+    let base_url = spawn_api(pool.clone()).await;
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let window_start = Utc::now() - Duration::hours(1);
+    let window_end = Utc::now();
+
+    let response = Client::new()
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(token)
+        .json(&json!({
+            "namespace": fixture.namespace_name,
+            "surface": "observation",
+            "action": "request_consolidation",
+            "actor": fixture.owner_user_id,
+            "adapter": "cli",
+            "payload": {
+                "space_id": fixture.space_id,
+                "evidence_window_start": window_start,
+                "evidence_window_end": window_end
+            },
+            "context": {
+                "mode": "deep",
+                "locale": "en-US",
+                "device": "terminal",
+                "runtime_preference": "deterministic"
+            }
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body: Value = response.json().await.expect("response should be json");
+    let candidate_context = &body["data"]["result"]["candidate_context"];
+    assert_eq!(candidate_context["selected_knowledge_context_count"], 1);
+    assert_eq!(candidate_context["ignored_knowledge_context_count"], 0);
+    assert_eq!(
+        candidate_context["knowledge_context_ids"],
+        json!([knowledge_context_id])
+    );
+    assert_eq!(
+        candidate_context["dream_candidates"][0]["knowledge_context_id"],
+        json!(knowledge_context_id)
+    );
+    assert_eq!(
+        candidate_context["dream_candidates"][0]["evidence_priority"]["local_evidence"],
+        "primary"
+    );
+    assert_eq!(
+        candidate_context["dream_candidates"][0]["direct_mutation"]["growth_model"],
+        false
+    );
+    assert_eq!(
+        candidate_context["dream_candidates"][0]["direct_mutation"]["practice_plan"],
+        false
+    );
+
+    let sleep_cycle_id: Uuid = serde_json::from_value(body["data"]["result"]["cycle_id"].clone())
+        .expect("cycle id should parse");
+    let stored = find_sleep_cycle(&pool, sleep_cycle_id).await;
+    assert_eq!(
+        stored.metadata["candidate_context"]["knowledge_context_ids"],
+        json!([knowledge_context_id])
+    );
+    assert_eq!(
+        stored.metadata["candidate_context"]["dream_candidates"][0]["knowledge_context_id"],
+        json!(knowledge_context_id)
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn manual_consolidation_surface_filters_ineligible_ambient_knowledge_context() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool, "knowledge-filtering").await;
+    let selected_id = seed_knowledge_context(
+        &pool,
+        fixture.space_id,
+        fixture.namespace_id,
+        KnowledgeContextSeed {
+            context_state: "candidate",
+            candidate_state: "approved",
+            policy_state: "active",
+            context_type: "review_context",
+            expiry: Utc::now() + Duration::days(30),
+            conflict_notes: json!([{"kind": "local_external_tension"}]),
+        },
+    )
+    .await;
+    let _expired_id = seed_knowledge_context(
+        &pool,
+        fixture.space_id,
+        fixture.namespace_id,
+        KnowledgeContextSeed {
+            context_state: "valid",
+            candidate_state: "approved",
+            policy_state: "active",
+            context_type: "practice_context",
+            expiry: Utc::now() - Duration::days(1),
+            conflict_notes: json!([]),
+        },
+    )
+    .await;
+    let _rejected_candidate_id = seed_knowledge_context(
+        &pool,
+        fixture.space_id,
+        fixture.namespace_id,
+        KnowledgeContextSeed {
+            context_state: "valid",
+            candidate_state: "rejected",
+            policy_state: "active",
+            context_type: "practice_context",
+            expiry: Utc::now() + Duration::days(30),
+            conflict_notes: json!([]),
+        },
+    )
+    .await;
+    let other_namespace_name = format!("{}.other", fixture.namespace_name);
+    let other_namespace_id = seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        &other_namespace_name,
+    )
+    .await;
+    let _cross_namespace_id = seed_knowledge_context(
+        &pool,
+        fixture.space_id,
+        other_namespace_id,
+        KnowledgeContextSeed {
+            context_state: "valid",
+            candidate_state: "approved",
+            policy_state: "active",
+            context_type: "practice_context",
+            expiry: Utc::now() + Duration::days(30),
+            conflict_notes: json!([]),
+        },
+    )
+    .await;
+    let base_url = spawn_api(pool.clone()).await;
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let window_start = Utc::now() - Duration::hours(1);
+    let window_end = Utc::now();
+
+    let response = Client::new()
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(token)
+        .json(&json!({
+            "namespace": fixture.namespace_name,
+            "surface": "observation",
+            "action": "request_consolidation",
+            "actor": fixture.owner_user_id,
+            "adapter": "mcp",
+            "payload": {
+                "space_id": fixture.space_id,
+                "evidence_window_start": window_start,
+                "evidence_window_end": window_end
+            },
+            "context": {
+                "mode": "deep",
+                "runtime_preference": "deterministic"
+            }
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body: Value = response.json().await.expect("response should be json");
+    let candidate_context = &body["data"]["result"]["candidate_context"];
+    assert_eq!(candidate_context["selected_knowledge_context_count"], 1);
+    assert_eq!(candidate_context["ignored_knowledge_context_count"], 2);
+    assert_eq!(
+        candidate_context["knowledge_context_ids"],
+        json!([selected_id])
+    );
+    assert_eq!(
+        candidate_context["dream_candidates"][0]["purpose"],
+        "contradiction_exploration"
+    );
+    assert_eq!(
+        candidate_context["dream_candidates"][0]["knowledge_context_id"],
+        json!(selected_id)
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn manual_consolidation_surface_rejects_explicit_ineligible_knowledge_context_reference() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool, "explicit-knowledge-reject").await;
+    let rejected_id = seed_knowledge_context(
+        &pool,
+        fixture.space_id,
+        fixture.namespace_id,
+        KnowledgeContextSeed {
+            context_state: "rejected",
+            candidate_state: "approved",
+            policy_state: "active",
+            context_type: "rubric_context",
+            expiry: Utc::now() + Duration::days(30),
+            conflict_notes: json!([]),
+        },
+    )
+    .await;
+    let base_url = spawn_api(pool.clone()).await;
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let window_start = Utc::now() - Duration::hours(1);
+    let window_end = Utc::now();
+
+    let response = Client::new()
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(token)
+        .json(&json!({
+            "namespace": fixture.namespace_name,
+            "surface": "observation",
+            "action": "request_consolidation",
+            "actor": fixture.owner_user_id,
+            "adapter": "cli",
+            "payload": {
+                "space_id": fixture.space_id,
+                "evidence_window_start": window_start,
+                "evidence_window_end": window_end,
+                "knowledge_context_ids": [rejected_id]
+            },
+            "context": {
+                "mode": "deep",
+                "runtime_preference": "deterministic"
+            }
+        }))
+        .send()
+        .await
+        .expect("surface request should send");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let created_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM sleep_cycles
+        WHERE space_id = $1 AND namespace_id = $2
+        "#,
+    )
+    .bind(fixture.space_id)
+    .bind(fixture.namespace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("sleep cycle count should query");
+    assert_eq!(created_count, 0);
+}
+
 #[derive(Debug, sqlx::FromRow)]
 struct StoredSleepCycle {
     space_id: Uuid,
@@ -245,6 +522,16 @@ struct StoredSleepCycle {
     status: String,
     input_trace_ids: Vec<Uuid>,
     triggering_trace_id: Option<Uuid>,
+    metadata: Value,
+}
+
+struct KnowledgeContextSeed {
+    context_state: &'static str,
+    candidate_state: &'static str,
+    policy_state: &'static str,
+    context_type: &'static str,
+    expiry: chrono::DateTime<Utc>,
+    conflict_notes: Value,
 }
 
 struct Fixture {
@@ -462,10 +749,145 @@ async fn seed_trace(pool: &PgPool, fixture: &Fixture, started_at: chrono::DateTi
     .expect("trace seed should insert")
 }
 
+async fn seed_knowledge_context(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    seed: KnowledgeContextSeed,
+) -> Uuid {
+    let acquisition_trace_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO knowledge_acquisition_traces (
+            id, space_id, namespace_id, submitted_by, acquisition_kind, discovery_method,
+            extraction_method, private_context_used, source_handles, source_observed_at,
+            validation_summary, redacted_diagnostics, metadata
+        )
+        VALUES ($1, $2, $3, 'fixture', 'knowledge_context', 'manual', 'human_summary',
+            false, '[]', NOW(), '{}', '{}', '{}')
+        "#,
+    )
+    .bind(acquisition_trace_id)
+    .bind(space_id)
+    .bind(namespace_id)
+    .execute(pool)
+    .await
+    .expect("knowledge acquisition trace should insert");
+
+    let source_candidate_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO knowledge_source_candidates (
+            id, space_id, namespace_id, state, proposed_source, proposed_use, proposer,
+            acquisition_trace_id, private_context_used, provenance, quality_signals,
+            freshness, expiry, downstream_link_candidates, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, 'fixture source for manual dreaming', 'fixture',
+            $6, false, '{}', '{}', '{}', $7, '[]', '{}')
+        "#,
+    )
+    .bind(source_candidate_id)
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(seed.candidate_state)
+    .bind(json!({"kind": "fixture", "locator": "https://example.test/rubric"}))
+    .bind(acquisition_trace_id)
+    .bind(seed.expiry)
+    .execute(pool)
+    .await
+    .expect("knowledge source candidate should insert");
+
+    let source_policy_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO knowledge_source_policies (
+            id, space_id, namespace_id, state, source_candidate_id, source_descriptor,
+            allowed_use, disallowed_use, privacy_policy, refresh_policy, quality_thresholds,
+            freshness_requirements, expiry, approved_by, approved_at, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, '["dream_candidate"]', '["direct_growth_model_update", "direct_practice_plan_update"]',
+            '{}', '{}', '{}', '{}', $7, 'fixture', NOW(), '{}')
+        "#,
+    )
+    .bind(source_policy_id)
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(seed.policy_state)
+    .bind(source_candidate_id)
+    .bind(json!({"kind": "fixture", "locator": "https://example.test/rubric"}))
+    .bind(seed.expiry)
+    .execute(pool)
+    .await
+    .expect("knowledge source policy should insert");
+
+    let knowledge_context_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO knowledge_contexts (
+            id, space_id, namespace_id, source_policy_id, source_candidate_id,
+            acquisition_trace_id, state, context_type, structured_claims, provenance,
+            quality_signals, freshness, expiry, evidence_snippets, private_context_used,
+            downstream_links, conflict_notes, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+            false, $15, $16, '{}')
+        "#,
+    )
+    .bind(knowledge_context_id)
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(source_policy_id)
+    .bind(source_candidate_id)
+    .bind(acquisition_trace_id)
+    .bind(seed.context_state)
+    .bind(seed.context_type)
+    .bind(json!([{
+        "claim_id": "claim-1",
+        "claim_type": "rubric_item",
+        "text": "Missing internal letters should be reviewed separately from transposition.",
+        "confidence": 0.9,
+        "source_fragment_ref": "fixture-section",
+        "evidence_snippet_ids": ["snippet-1"],
+        "limitations": []
+    }]))
+    .bind(json!({
+        "source_descriptor": {"kind": "fixture", "locator": "https://example.test/rubric"},
+        "observed_at": Utc::now(),
+        "extracted_at": Utc::now(),
+        "extractor": "fixture"
+    }))
+    .bind(json!({
+        "reliability": "reviewed",
+        "relevance": "high",
+        "extraction_confidence": 0.9,
+        "contradiction_status": if seed.conflict_notes.as_array().is_some_and(|notes| !notes.is_empty()) {
+            "candidate_conflict"
+        } else {
+            "none"
+        }
+    }))
+    .bind(json!({
+        "observed_at": Utc::now(),
+        "stale_after": seed.expiry
+    }))
+    .bind(seed.expiry)
+    .bind(json!([{
+        "snippet_id": "snippet-1",
+        "text": "Classify missing internal letters as a separate review item."
+    }]))
+    .bind(json!([{"kind": "dream_candidate", "id": Uuid::new_v4()}]))
+    .bind(seed.conflict_notes)
+    .execute(pool)
+    .await
+    .expect("knowledge context should insert");
+
+    knowledge_context_id
+}
+
 async fn find_sleep_cycle(pool: &PgPool, sleep_cycle_id: Uuid) -> StoredSleepCycle {
     sqlx::query_as(
         r#"
-        SELECT space_id, namespace_id, status, input_trace_ids, triggering_trace_id
+        SELECT space_id, namespace_id, status, input_trace_ids, triggering_trace_id, metadata
         FROM sleep_cycles
         WHERE id = $1
         "#,

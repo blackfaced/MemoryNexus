@@ -7,12 +7,14 @@ external knowledge as scoped context for a `CognitiveSpace` and Namespace.
 External Skills, Agents, and Adapters may discover sources, fetch them, extract
 candidate claims, and prepare summaries. MemoryNexus does not do that work in
 V1. The Engine validates scoped submissions, approval state, provenance,
-quality, freshness, privacy opt-in, and downstream links before any approved
-context can be considered by later Surface or Sleep/Dreaming issues.
+quality, freshness, privacy opt-in, and downstream links before approved
+context can be considered by bounded downstream consumers such as manual
+Surface-triggered SleepCycle / deterministic Dreaming.
 
-This contract is docs-first. It is not a Rust schema, API route, migration,
-repository, frontend UI, crawler, provider integration, search adapter, or
-scheduler.
+This contract started docs-first and now has bounded Rust persistence plus
+Capture / Observation Surface paths. It is still not a frontend UI, crawler,
+provider integration, search adapter, scheduler, corpus store, or Knowledge
+Surface.
 
 ## Goals
 
@@ -31,8 +33,11 @@ scheduler.
 - Do not persist full external articles, raw provider payloads, or full
   corpora.
 - Do not add a Knowledge Surface in V1.
-- Do not wire `KnowledgeContext` into `SleepCycle`, `Dreaming`,
-  `GrowthModel`, or `PracticePlan` in this issue.
+- Do not directly wire `KnowledgeContext` into `GrowthModel` or
+  `PracticePlan`.
+- Do not use `KnowledgeContext` in SleepCycle / Dreaming except as approved,
+  non-expired, same-Space and same-Namespace candidate-only context with
+  explicit `knowledge_context_id` citations.
 - Do not change Engine ownership: `CognitiveSpace` remains the permission
   boundary and Namespace remains a partition inside it.
 
@@ -479,9 +484,10 @@ persistence.
 
 External knowledge is not user Memory.
 
-`KnowledgeContext` may later be considered as candidate context for manual
-SleepCycle or Dreaming work, but this issue does not wire that path. Even in
-future work:
+`KnowledgeContext` may be considered as candidate context for manual
+SleepCycle or deterministic Dreaming work when the context is approved,
+non-expired, and scoped to the same `CognitiveSpace` and Namespace. Even when
+that path is wired:
 
 - external claims do not become Memory automatically;
 - external claims do not directly update `GrowthModel`;

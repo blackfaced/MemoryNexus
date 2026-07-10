@@ -17,6 +17,13 @@ and generated Memory summary links. Future links to ConsolidationResult,
 DreamCandidate, CognitiveScene, and GrowthModel stay conceptual until those
 tables exist.
 
+As of Issue #198, manual Surface-triggered SleepCycle / deterministic Dreaming
+may also select approved, non-expired `KnowledgeContext` rows for the same
+`CognitiveSpace` and Namespace as candidate-only external context. This context
+is preserved in response JSON and SleepCycle metadata as bounded IDs, counts,
+and non-persisted candidate outputs. It is not stored as user Memory and does
+not directly mutate GrowthModel or PracticePlan.
+
 This contract is still not an API schema, job scheduler, model runtime, or
 product UI specification.
 
@@ -140,6 +147,12 @@ SleepCycle {
 | `completed_at` | no | Timestamp when processing completed or failed. |
 | `metadata` | no | Small structured extension point; not a place for raw provider payloads. |
 
+When manual deterministic Dreaming uses `KnowledgeContext`, metadata may
+include a `candidate_context` object with selected/ignored counts,
+`knowledge_context_ids`, evidence priority, and generated candidate summaries.
+Every candidate produced from external context must cite `knowledge_context_id`;
+local Trace, FeedbackLoop, and GrowthModel evidence remains primary.
+
 ### Cycle Type
 
 ```text
@@ -242,6 +255,12 @@ ConsolidationResult {
 | `confidence` | no | Best-effort 0.0 to 1.0 confidence score or qualitative equivalent. |
 | `created_at` | yes | Timestamp when the result was created. |
 | `metadata` | no | Small structured extension point. |
+
+Candidates generated from `KnowledgeContext` must include
+`source_knowledge_context_ids` or an equivalent adapter-shaped
+`knowledge_context_id` citation. These candidates remain proposed hypotheses,
+review questions, experiments, or practice ideas; they must not directly update
+GrowthModel or select/obsolete PracticePlan.
 
 ### Result Type
 
