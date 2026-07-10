@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-07-01
+> Last updated: 2026-07-10
 > Source of truth for executable task definitions: GitHub Issues, with
 > [docs/issues.md](issues.md) as the planning mirror for the milestone shape.
 
@@ -74,7 +74,8 @@ The project still needs to close these gaps:
   and descriptor resolution remain Adapter/future-slice work.
 - GitHub Release artifact publication and Local One-click release validation
   have landed. Trial Profile remains blocked on a real Trial API endpoint and
-  scoped token; Production Profile still needs a real deployment smoke.
+  scoped token; the next actionable distribution issue is the private self-use
+  Mac mini Local Lab and release-binary smoke (#130).
 - Evaluation should measure growth and feedback usefulness, not just retrieval
   accuracy.
 
@@ -253,8 +254,8 @@ Execution dependency graph:
 This graph has now executed through the first app adapter: #146, #147, #148,
 #152, #153, #155-#160, #162, #163, #175, and #177 are closed on GitHub. The
 remaining adjacent edge is the release/distribution wave after #128's Local
-One-click offline bundle; #129 Trial Profile and #130 Production Profile remain
-follow-up distribution work.
+One-click offline bundle; #129 Trial Profile is blocked, while #130 is the next
+actionable private self-use Mac mini Local Lab and release-binary smoke.
 
 The accepted #160 smoke uses one learner and genuinely typed or pasted text. It
 does not require OCR, ASR, a tagged release, or a dedicated Dictation Coach App.
@@ -366,13 +367,15 @@ Goal: let external Skills, Agents, or Adapters propose and submit approved
 KnowledgeContext while MemoryNexus keeps the Engine boundary, provenance,
 privacy opt-in, and downstream candidate semantics.
 
-Status: next open Engine roadmap milestone on GitHub.
+Status: completed and GitHub milestone closed. The contracts (#200), Capture /
+Observation path (#199), and manual SleepCycle Dreaming integration (#198) have
+all landed.
 
-Recommended sequence:
+Completed sequence:
 
-1. #200 Define Namespace Knowledge Refresh contracts.
-2. #199 Add Capture and Observation path for KnowledgeContext.
-3. #198 Use KnowledgeContext in manual SleepCycle Dreaming.
+1. #200 defined Namespace Knowledge Refresh contracts.
+2. #199 added the Capture and Observation path for KnowledgeContext.
+3. #198 added KnowledgeContext to manual SleepCycle Dreaming.
 
 Non-goals:
 
@@ -386,9 +389,9 @@ Non-goals:
 
 - #129 Trial Profile plug-and-play remains blocked on one real Trial API URL and
   scoped token.
-- #130 Mac mini Local Lab / private self-use deployment can provide the real
-  endpoint evidence needed for #129 if token policy allows it.
-- #198, #199, and #200 are the M8 Namespace Knowledge Refresh sequence.
+- #130 is the next actionable issue: stand up a private self-use Mac mini Local
+  Lab, keep the first smoke on localhost, and validate the release-binary path.
+  It may provide the endpoint evidence needed for #129 if token policy allows.
 
 ## Supporting Distribution Track
 
@@ -397,9 +400,11 @@ These start after the accepted #160 Agent smoke and are not on the completed
 
 - #128 Publish first Local One-click offline release bundle. Completed on
   GitHub on 2026-06-30.
-- #129 Make Trial Profile plug-and-play for agent demos.
-- #130 (P1) stand up a versioned Mac mini or equivalent Production Profile
-  deployment with migration preflight, health smoke, and rollback.
+- #129 Make Trial Profile plug-and-play for agent demos. Blocked on a real Trial
+  API URL and scoped token.
+- #130 (P1, next actionable) stand up a private self-use Mac mini Local Lab,
+  validate the release-binary path on localhost first, and document backup,
+  restore, upgrade, and rollback before optional later hardening.
 
 They distribute the already validated Agent loop; they do not delay the first
 typed/pasted Developer Profile smoke.
