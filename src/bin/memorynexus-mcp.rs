@@ -1,4 +1,7 @@
 use memorynexus::domain::evidence::{validate_evidence_request, InputConfirmation};
+use memorynexus::domain::personal_feedback::{
+    SleepEnergyCheckInInput, PERSONAL_HEALTH_SLEEP_NAMESPACE,
+};
 use serde_json::{json, Map, Value};
 use std::io::{self, BufRead, Write};
 
@@ -1021,13 +1024,14 @@ fn build_surface_api_request(
     if !payload.is_object() {
         return Err(McpError::new("payload must be a JSON object"));
     }
-    validate_surface_payload(spec, &payload)?;
+    let namespace = required_string(arguments, "namespace")?;
+    validate_surface_payload(spec, namespace.as_str(), &payload)?;
 
     Ok(ApiRequest {
         method: HttpMethod::Post,
         url: format!("{base_url}/api/v1/surfaces"),
         body: Some(json!({
-            "namespace": required_string(arguments, "namespace")?,
+            "namespace": namespace,
             "surface": spec.surface,
             "action": spec.action,
             "actor": required_string(arguments, "actor")?,
@@ -1039,7 +1043,25 @@ fn build_surface_api_request(
     })
 }
 
-fn validate_surface_payload(spec: SurfaceToolSpec, payload: &Value) -> Result<(), McpError> {
+fn validate_surface_payload(
+    spec: SurfaceToolSpec,
+    namespace: &str,
+    payload: &Value,
+) -> Result<(), McpError> {
+    if namespace == PERSONAL_HEALTH_SLEEP_NAMESPACE {
+        if spec.name != "surface_capture_observation" {
+            return Err(McpError::new(
+                "personal.health.sleep currently supports Capture only",
+            ));
+        }
+        let input: SleepEnergyCheckInInput = serde_json::from_value(payload.clone())
+            .map_err(|_| McpError::new("invalid personal.health.sleep capture payload"))?;
+        input
+            .confirm()
+            .map_err(|error| McpError::new(error.to_string()))?;
+        return Ok(());
+    }
+
     let source = surface_payload_source(payload);
     if matches!(source.as_deref(), Some("typed" | "pasted")) {
         reject_media_only_fields_for_text_source(payload)?;
@@ -1731,6 +1753,44 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[test]
+    fn surface_capture_maps_confirmed_sleep_check_ins_without_a_provider_branch() {
+        let config = config_with_token();
+        for (source, method) in [
+            ("typed", "explicit_acceptance"),
+            ("agent_ocr", "explicit_acceptance"),
+        ] {
+            let mut arguments = base_surface_args(json!({
+                "local_date": "2026-07-13",
+                "sleep_duration_minutes": 450,
+                "sleep_start_local_time": "22:30",
+                "sleep_end_local_time": "06:00",
+                "daytime_energy": 3,
+                "input_source": source,
+                "input_confirmation": {"status": "confirmed", "method": method}
+            }));
+            arguments["namespace"] = json!("personal.health.sleep");
+
+            let request =
+                build_api_request_for_tool(&config, "surface_capture_observation", &arguments)
+                    .expect("confirmed sleep check-in should map through generic Capture");
+            assert_eq!(request.body.unwrap()["namespace"], "personal.health.sleep");
+        }
+
+        let mut invalid = base_surface_args(json!({
+            "local_date": "2026-07-13",
+            "sleep_duration_minutes": 450,
+            "daytime_energy": 3,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"},
+            "medical_notes": "not allowed"
+        }));
+        invalid["namespace"] = json!("personal.health.sleep");
+        assert!(
+            build_api_request_for_tool(&config, "surface_capture_observation", &invalid).is_err()
+        );
     }
 
     #[test]
