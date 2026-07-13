@@ -1937,3 +1937,209 @@ local evidence.
 - `docs/knowledge-refresh-contract.md`
 - `tests/*sleep*`
 - `tests/*dream*`
+
+## Milestone 9: Personal Feedback Dogfood
+
+M9 is a private self-use `personal.health.sleep` dogfood milestone. It proves a
+confirmed sleep-and-energy feedback loop through the Mac mini, one controlled
+private Adapter, generic Surfaces, deterministic planning, and a falsifiable
+fourteen-day owner gate. It is not a healthcare product, clinical claim, public
+deployment, or replacement for Dictation Coach as the first upstream learning
+product/evaluation fixture. The canonical field and gate rules are in
+[`docs/personal-feedback-dogfood-contract.md`](personal-feedback-dogfood-contract.md).
+
+### Issue 9.0: Record the Personal Feedback Dogfood Architecture and Contract
+
+**GitHub:** #220
+
+**Scope:** Add the durable ADR and executable contract for private personal use:
+the `personal.health.sleep` namespace, same-Space ownership, one evening
+check-in, explicit media confirmation, low-sensitivity allowlist, baseline,
+deterministic advisory policy, and fixed success/failure gate.
+
+**Acceptance Criteria:**
+
+- ADR, decision index, roadmap, and contract preserve MemoryNexus as a
+  local-first long-term feedback engine while making private owner next-action
+  usefulness the current dogfood priority.
+- The contract fixes three baseline days, a day-seven preliminary review, and
+  the day-fourteen gate of ten valid records, five tried suggestions, and one
+  owner-selected adjustment worth continuing.
+- Raw screenshots/OCR stay outside Engine persistence; `agent_ocr` requires
+  explicit acceptance or explicit correction. Diagnosis, medication, treatment,
+  medical reports, images, and provider advice are excluded.
+- Fewer than ten records is Adapter failure; sufficient usage without a useful
+  adjustment is Engine feedback failure.
+
+**Non-Goals:** No Rust behavior, OCR/provider integration, standalone health
+app, frontend stack, public SaaS, multi-tenant profile, diagnosis, or clinical
+claim.
+
+### Issue 9.1: Capture One Confirmed Sleep-and-Energy Check-in End to End
+
+**GitHub:** #221
+**Depends On:** #220
+
+**Scope:** Deliver one confirmed allowlisted `personal.health.sleep` evening
+record through generic MCP Capture. Validate normalized values, same-Space and
+Namespace scope, `agent_ocr` confirmation, and a user-facing readback without
+exposing Engine internals.
+
+**Acceptance Criteria:** Valid input returns Memory, Namespace, and Trace IDs;
+unknown/disallowed health fields, invalid confirmation, malformed values,
+inactive Namespace, unauthorized callers, and cross-Space input are rejected
+before business or Trace writes; raw media, OCR, locators, and evidence
+descriptors stay out of persisted Memory, FeedbackLoop, Trace, and summaries.
+
+**Non-Goals:** No OCR/Huawei SDK, channel-specific Engine branch, pattern
+detection, recommendation, reminder, medical interpretation, or raw media
+persistence.
+
+### Issue 9.2: Prove One Controlled Private Adapter Against the Mac mini Local Lab
+
+**GitHub:** #222
+**Depends On:** #221 and #130
+
+**Scope:** Prove one end-to-end screenshot check-in through a controlled private
+Adapter on the Apple Silicon Mac mini Local Lab: external extraction, owner
+explicit acceptance and correction, confirmed normalized Capture, and readback.
+An authenticated private LAN web surface is preferred; another private Adapter
+may qualify with equivalent identity, session, confirmation, and privacy
+evidence.
+
+**Acceptance Criteria:** The closeout documents the chosen Adapter and its
+identity/session boundary; both acceptance and correction paths work; only
+allowlisted normalized values reach MemoryNexus; sanitized evidence records
+initialization, discovery, Capture, readback, and Trace IDs; provider failure
+still permits manual correction; and the Rust Engine contains no named channel,
+browser, OCR provider, or provider routing.
+
+**Non-Goals:** No fourteen-day experiment, public Trial endpoint/#129 closure,
+Engine OCR/image storage/provider SDK, public webhook/open CORS/committed token,
+or medical recommendation.
+
+### Issue 9.3: Return a Three-Day Sleep Baseline Without Fabricating Patterns
+
+**GitHub:** #223
+**Depends On:** #221
+
+**Scope:** Extend generic Observation with a namespace-policy seam for a
+deterministic cold-start `personal.health.sleep` baseline.
+
+**Acceptance Criteria:** Fewer than three valid confirmed daily records returns
+`needs_more_evidence`, count, remaining threshold, and typed evidence references.
+Three or more returns a bounded allowed-observation summary with a window.
+Unconfirmed, malformed, cross-Space, cross-Namespace, duplicate, and
+out-of-window records do not influence the baseline; the response separates
+observations from hypotheses and writes Trace without raw media descriptors.
+
+**Non-Goals:** No recommendation/PracticePlan, cross-Namespace correlation,
+medical thresholds/diagnosis/device-score interpretation, or raw media.
+
+### Issue 9.4: Start One Evidence-Backed Sleep Experiment from the Baseline
+
+**GitHub:** #224
+**Depends On:** #223
+
+**Scope:** Use generic Planning to select at most one reviewed, low-risk,
+reversible experiment after the baseline, with stable identity, evidence
+citations, and a traceable same-Space, same-Namespace plan lifecycle.
+
+**Acceptance Criteria:** Sparse evidence returns a gap; eligible identical
+evidence and policy version produce deterministic output; the owner can retrieve
+the action/provenance without Engine internals; existing Dictation planning stays
+unchanged while the shared seam no longer assumes Dictation mistakes.
+
+**Non-Goals:** No open-ended LLM generation, automatic Knowledge Refresh health
+lookup, medical/causal advice, external action, scheduler, or concurrent
+experiments.
+
+### Issue 9.5: Record Experiment Adherence and Outcome, Then Adjust Next Action
+
+**GitHub:** #225
+**Depends On:** #224
+
+**Scope:** Close one feedback loop through generic Performance and Planning.
+Record `performed`, `skipped`, and `not_evaluable` outcomes against the offered
+experiment; later planning deterministically continues, stops, or retests.
+
+**Acceptance Criteria:** Unknown, unoffered, cross-Space, and cross-Namespace
+experiments are rejected; performed, skipped, missing, and corrected evidence
+remain distinct; every transition preserves original-plan evidence and outcome
+Trace ID; and existing Dictation attempts/feedback stay green.
+
+**Non-Goals:** No passive adherence, wearable integration, push scheduler,
+medical efficacy claim, calendar/reminder mutation, or concurrent experiments.
+
+### Issue 9.6: Review Seven- and Fourteen-Day Feedback Effectiveness
+
+**GitHub:** #226
+**Depends On:** #225
+
+**Scope:** Provide deterministic seven- and fourteen-day review outputs that
+measure coverage, selected/tried actions, adherence, outcomes, gaps, and
+continue/stop/retest decisions rather than memory volume.
+
+**Acceptance Criteria:** Day seven is preliminary. Day fourteen applies the
+fixed ten-valid / five-tried / one-retained-adjustment gate; insufficient record
+or tried-suggestion usage is Adapter failure and sufficient usage without
+retained usefulness is Engine failure. Reviews cite records/plans/outcomes/FeedbackLoops/Traces while excluding
+raw health values from diagnostic metadata; fixtures cover pass, both failures,
+skipped, corrected, cross-Namespace, and sparse evidence.
+
+**Non-Goals:** No public leaderboard/health efficacy score, dashboard/new
+frontend, post-result threshold changes, or automatic namespace expansion.
+
+### Issue 9.7: Run the Fourteen-Day Personal Sleep Dogfood Gate
+
+**GitHub:** #227
+**Depends On:** #222 and #226
+
+**Scope:** Run the real proven controlled private Adapter path for fourteen
+calendar days. This is a manual owner/Coordinator acceptance gate, not an AFK
+implementation issue. Publish sanitized aggregate evidence and the product
+decision only.
+
+**Acceptance Criteria:** Count at least ten valid confirmed check-ins and five
+tried suggestions from MemoryNexus evidence; record whether one adjustment is
+worth continuing; apply the precommitted pass/Adapter-failure/Engine-failure
+classification; report sanitized friction, corrections, rejected suggestions,
+and safety/privacy incidents; choose exactly one next step: six-week extension,
+Adapter repair and rerun, or Engine feedback-loop repair.
+
+**Non-Goals:** No feature expansion beyond safe-recording defects, required
+named channel, public health data/medical claim, new namespace, open-ended
+advice source, public deployment, permanent channel commitment, or #129 closure.
+
+### Adjacent P1: Upstream Learning-Adapter Integration
+
+This is a separate track and does not block M9:
+
+```text
+#228 -> #229
+```
+
+#### Accept One Idempotent Confirmed Upstream Learning Outcome Through Performance
+
+**GitHub:** #228
+
+Add a provider-neutral stable `source_event_id` (or documented equivalent) to
+the generic Performance seam. A valid confirmed same-Space, same-Namespace
+learning outcome creates/updates its intended FeedbackLoop and one completed
+Trace; identical retry returns the original result without duplicates, while a
+conflicting retry is rejected before persistence. Preserve confirmation and raw
+media exclusions, and do not add Study Buddy, Mavis, MiniMax, WeChat, Feishu,
+Huawei, Node, or SQLite branches to Engine.
+
+#### Return a Parent-Authorized Seven-Day Learning Observation
+
+**GitHub:** #229
+**Depends On:** #228
+
+Return one deterministic seven-day generic Observation for an authorized Space
+member. It reports time window, coverage, confirmed outcome count, bounded
+patterns when supported, evidence gaps, and typed identifiers; it separates facts,
+aggregates, hypotheses, and optional prompts. Sparse/duplicate/unconfirmed/
+cross-Space/cross-Namespace/rejected/out-of-window evidence cannot fabricate or
+inflate a trend. Do not add product roles, raw media, a parent dashboard,
+open-ended LLM judgment, education diagnosis, or automatic health expansion.
