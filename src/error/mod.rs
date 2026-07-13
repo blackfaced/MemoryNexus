@@ -18,6 +18,9 @@ pub enum AppError {
     #[error("参数错误: {0}")]
     BadRequest(String),
 
+    #[error("冲突: {0}")]
+    Conflict(String),
+
     #[error("服务器内部错误: {0}")]
     Internal(String),
 
@@ -34,6 +37,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
             AppError::NotImplemented(msg) => (StatusCode::NOT_IMPLEMENTED, msg.clone()),
             AppError::Database(e) => {

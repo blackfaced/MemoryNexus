@@ -225,6 +225,37 @@ read the same traceable payload that the CLI sees.
 
 Generic Surface Gateway tools use this shared argument shape:
 
+### Idempotent normalized Performance outcome
+
+An upstream Adapter can retry one completed learning session with a stable,
+provider-neutral `source_event_id`. Its scope is `(CognitiveSpace, Namespace,
+source_event_id)`; it is not a provider conversation or session ID. The same
+normalized payload returns the original `feedback_loop_id` and
+`generated_trace_id` with status `attempt_replayed`; changed content returns a
+conflict and performs no writes. Do not include raw chat, media bytes, provider
+payloads, credentials, or provider session identifiers.
+
+```json
+{
+  "namespace": "child.english.spelling",
+  "actor": "<user-id>",
+  "payload": {
+    "space_id": "<space-id>",
+    "source_event_id": "adapter.learning-session:2026-07-13.1",
+    "task": "Daily spelling",
+    "input_source": "typed",
+    "normalized_outcome": {
+      "summary": "Completed five spelling words",
+      "mistake": {
+        "expected_text": "because",
+        "actual_text": "becuase",
+        "mistake_type": "letter_order"
+      }
+    }
+  }
+}
+```
+
 ```json
 {
   "namespace": "child.english.spelling",

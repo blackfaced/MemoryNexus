@@ -256,6 +256,53 @@ impl PostgresTraceRepository {
     }
 }
 
+pub(crate) async fn insert_completed_trace_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    trace: CreateCompletedTrace,
+) -> Result<TraceDb, Error> {
+    sqlx::query_as::<_, TraceDb>(
+        r#"
+        INSERT INTO traces (
+            space_id, namespace_id, source_type, task_type, mode, runtime,
+            input_summary, output_summary, started_at, completed_at, latency_ms,
+            status, model_provider, model_name, token_usage, estimated_cost_usd,
+            local_processing_ratio, related_memory_ids, generated_memory_ids,
+            generated_lens_run_ids, generated_review_report_ids,
+            generated_feedback_loop_ids, user_feedback, error, metadata
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'completed',
+            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+        ) RETURNING *
+        "#,
+    )
+    .bind(trace.space_id)
+    .bind(trace.namespace_id)
+    .bind(trace.source_type.to_string())
+    .bind(trace.task_type.to_string())
+    .bind(trace.mode.to_string())
+    .bind(trace.runtime.to_string())
+    .bind(&trace.input_summary)
+    .bind(&trace.output_summary)
+    .bind(trace.started_at)
+    .bind(trace.completed_at)
+    .bind(trace.latency_ms)
+    .bind(&trace.model_provider)
+    .bind(&trace.model_name)
+    .bind(&trace.token_usage)
+    .bind(trace.estimated_cost_usd)
+    .bind(trace.local_processing_ratio)
+    .bind(&trace.related_memory_ids)
+    .bind(&trace.generated_memory_ids)
+    .bind(&trace.generated_lens_run_ids)
+    .bind(&trace.generated_review_report_ids)
+    .bind(&trace.generated_feedback_loop_ids)
+    .bind(&trace.user_feedback)
+    .bind(&trace.error)
+    .bind(&trace.metadata)
+    .fetch_one(&mut **tx)
+    .await
+}
+
 #[async_trait::async_trait]
 impl TraceRepository for PostgresTraceRepository {
     async fn create_completed(&self, trace: CreateCompletedTrace) -> Result<TraceDb, Error> {

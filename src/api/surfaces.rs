@@ -2,20 +2,24 @@ use std::time::Duration;
 
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use sqlx::{Error, FromRow, PgPool, Postgres};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
-use crate::db::feedback_loop::{CreateFeedbackLoop, FeedbackLoopDb, PatchFeedbackLoop};
+use crate::db::feedback_loop::{
+    insert_feedback_loop_in_tx, CreateFeedbackLoop, FeedbackLoopDb, PatchFeedbackLoop,
+};
 use crate::db::memory::{CreateMemory, MemoryType};
 use crate::db::sleep_cycles::{
     CompleteSleepCycle, CreateSleepCycle, PostgresSleepCycleRepository, SleepCycleRepository,
 };
 use crate::db::space::SpaceMemberRole;
 use crate::db::trace::{
-    CreateCompletedTrace, TraceMode, TraceRuntime, TraceSourceType, TraceTaskType,
+    insert_completed_trace_in_tx, CreateCompletedTrace, TraceMode, TraceRuntime, TraceSourceType,
+    TraceTaskType,
 };
 use crate::domain::dictation::{
     build_dictation_attempt, build_dictation_capture, DictationAttemptInput, DictationCaptureInput,
@@ -97,6 +101,25 @@ struct SubmitAttemptPayload {
     input_confirmation: Option<InputConfirmation>,
     #[serde(default)]
     evidence_refs: Vec<Value>,
+    source_event_id: Option<String>,
+    normalized_outcome: Option<NormalizedLearningOutcome>,
+}
+
+/// A deliberately small Adapter-to-Performance contract. It contains only
+/// confirmed text outcomes, never provider conversations or raw media.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct NormalizedLearningOutcome {
+    summary: String,
+    mistake: Option<ConfirmedLearningMistake>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ConfirmedLearningMistake {
+    expected_text: String,
+    actual_text: String,
+    mistake_type: String,
 }
 
 #[derive(Debug)]
@@ -109,6 +132,13 @@ struct PreparedSubmitAttemptPayload {
     evaluation: Value,
     trace_metadata: Value,
     input_source: Option<String>,
+    idempotency: Option<PerformanceIdempotency>,
+}
+
+#[derive(Debug)]
+struct PerformanceIdempotency {
+    source_event_id: String,
+    payload_fingerprint: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2017,6 +2047,9 @@ fn prepare_submit_attempt_payload(
     namespace: &str,
     payload: SubmitAttemptPayload,
 ) -> Result<PreparedSubmitAttemptPayload, AppError> {
+    if payload.source_event_id.is_some() || payload.normalized_outcome.is_some() {
+        return prepare_idempotent_learning_outcome(namespace, payload);
+    }
     if payload.task_kind.is_some()
         || payload.source.is_some()
         || !payload.prompt_items.is_empty()
@@ -2048,6 +2081,7 @@ fn prepare_submit_attempt_payload(
         evaluation,
         trace_metadata: Value::Null,
         input_source: payload.input_source,
+        idempotency: None,
     })
 }
 
@@ -2096,7 +2130,173 @@ fn prepare_dictation_attempt_payload(
         evaluation,
         trace_metadata,
         input_source: Some(attempt.source.as_str().to_string()),
+        idempotency: None,
     })
+}
+
+fn prepare_idempotent_learning_outcome(
+    namespace: &str,
+    payload: SubmitAttemptPayload,
+) -> Result<PreparedSubmitAttemptPayload, AppError> {
+    let source_event_id = payload.source_event_id.ok_or_else(|| {
+        AppError::BadRequest("source_event_id is required for normalized_outcome".to_string())
+    })?;
+    if !valid_source_event_id(&source_event_id) {
+        return Err(AppError::BadRequest("invalid source_event_id".to_string()));
+    }
+    if payload.feedback_loop_id.is_some()
+        || payload.attempt.is_some()
+        || payload.task_kind.is_some()
+        || payload.source.is_some()
+        || !payload.prompt_items.is_empty()
+        || !payload.submitted_items.is_empty()
+        || !payload.metadata.is_null()
+    {
+        return Err(AppError::BadRequest(
+            "idempotent normalized_outcome does not accept legacy attempt, dictation, feedback_loop_id, or metadata fields".to_string(),
+        ));
+    }
+    if matches!(payload.input_source.as_deref(), Some("typed" | "pasted"))
+        && payload.input_confirmation.is_some()
+    {
+        return Err(AppError::BadRequest(
+            "typed or pasted normalized_outcome must not include media confirmation".to_string(),
+        ));
+    }
+    validate_surface_evidence(
+        payload.input_source.as_deref(),
+        payload.input_confirmation.as_ref(),
+        &payload.evidence_refs,
+    )?;
+    let outcome = payload.normalized_outcome.ok_or_else(|| {
+        AppError::BadRequest("normalized_outcome is required with source_event_id".to_string())
+    })?;
+    validate_normalized_outcome(&outcome)?;
+    let attempt_summary = normalized_outcome_summary(&outcome);
+    let task = payload
+        .task
+        .ok_or_else(|| AppError::BadRequest("normalized_outcome requires task".to_string()))?;
+    let goal = payload
+        .goal
+        .unwrap_or_else(|| format!("Practice {namespace}"));
+    let fingerprint_input = json!({
+        "namespace": namespace,
+        "goal": goal,
+        "task": task,
+        "input_source": payload.input_source,
+        "input_confirmation": payload.input_confirmation,
+        "normalized_outcome": outcome,
+    });
+    let payload_fingerprint = canonical_payload_fingerprint(&fingerprint_input)?;
+
+    Ok(PreparedSubmitAttemptPayload {
+        space_id: payload.space_id,
+        feedback_loop_id: None,
+        goal: Some(goal),
+        task: Some(task),
+        attempt_summary,
+        evaluation: json!({"summary": "completed", "mistake_recorded": outcome.mistake.is_some()}),
+        trace_metadata: json!({"normalized_learning_outcome": true}),
+        input_source: payload.input_source,
+        idempotency: Some(PerformanceIdempotency {
+            source_event_id,
+            payload_fingerprint,
+        }),
+    })
+}
+
+fn valid_source_event_id(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (1..=128).contains(&bytes.len())
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+}
+
+fn validate_normalized_outcome(outcome: &NormalizedLearningOutcome) -> Result<(), AppError> {
+    if outcome.summary.trim().is_empty() || outcome.summary.len() > 400 {
+        return Err(AppError::BadRequest(
+            "normalized_outcome.summary must be 1..=400 characters".to_string(),
+        ));
+    }
+    if let Some(mistake) = &outcome.mistake {
+        for value in [
+            &mistake.expected_text,
+            &mistake.actual_text,
+            &mistake.mistake_type,
+        ] {
+            if value.trim().is_empty() || value.len() > 120 || value.chars().any(char::is_control) {
+                return Err(AppError::BadRequest(
+                    "normalized_outcome mistake fields must be bounded non-control text"
+                        .to_string(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn normalized_outcome_summary(outcome: &NormalizedLearningOutcome) -> String {
+    match &outcome.mistake {
+        Some(mistake) => format!(
+            "{}; {} -> {} ({})",
+            outcome.summary.trim(),
+            mistake.expected_text.trim(),
+            mistake.actual_text.trim(),
+            mistake.mistake_type.trim()
+        ),
+        None => outcome.summary.trim().to_string(),
+    }
+}
+
+fn canonical_payload_fingerprint(value: &Value) -> Result<String, AppError> {
+    let canonical = serde_json::to_vec(value).map_err(|error| {
+        AppError::Internal(format!("normalized outcome serialization failed: {error}"))
+    })?;
+    Ok(format!("{:x}", Sha256::digest(canonical)))
+}
+
+fn reject_forbidden_idempotent_outcome_fields(value: &Value) -> Result<(), AppError> {
+    const FORBIDDEN: &[&str] = &[
+        "raw_chat_history",
+        "chat_history",
+        "conversation",
+        "camera_frame",
+        "image_bytes",
+        "media_bytes",
+        "media_locator",
+        "provider_session_id",
+        "provider_payload",
+        "model_reasoning",
+        "credentials",
+        "authorization",
+        "password",
+        "api_key",
+        "token",
+        "secret",
+    ];
+    fn visit(value: &Value, in_evidence_refs: bool) -> bool {
+        match value {
+            Value::Object(object) => object.iter().any(|(key, value)| {
+                let key = key.to_ascii_lowercase();
+                (!in_evidence_refs
+                    && FORBIDDEN
+                        .iter()
+                        .any(|needle| key == *needle || key.contains(needle)))
+                    || visit(value, in_evidence_refs || key == "evidence_refs")
+            }),
+            Value::Array(values) => values.iter().any(|value| visit(value, in_evidence_refs)),
+            _ => false,
+        }
+    }
+    if visit(value, false) {
+        return Err(AppError::BadRequest(
+            "idempotent normalized_outcome contains forbidden raw or secret-bearing fields"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 async fn submit_attempt(
@@ -2105,6 +2305,9 @@ async fn submit_attempt(
     request: SurfaceRequest,
 ) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
     let started_at = Utc::now();
+    if request.payload.get("source_event_id").is_some() {
+        reject_forbidden_idempotent_outcome_fields(&request.payload)?;
+    }
     let payload: SubmitAttemptPayload = serde_json::from_value(request.payload.clone())
         .map_err(|error| AppError::BadRequest(format!("invalid submitAttempt payload: {error}")))?;
     let prepared = prepare_submit_attempt_payload(&request.namespace, payload)?;
@@ -2112,6 +2315,77 @@ async fn submit_attempt(
     require_space_writer(state, prepared.space_id, user_id).await?;
     let namespace =
         resolve_namespace_by_name(state, user_id, prepared.space_id, &request.namespace).await?;
+
+    if let Some(idempotency) = prepared.idempotency.as_ref() {
+        let task = prepared.task.clone().ok_or_else(|| {
+            AppError::Internal("idempotent outcome missing validated task".to_string())
+        })?;
+        let goal = prepared.goal.clone().ok_or_else(|| {
+            AppError::Internal("idempotent outcome missing validated goal".to_string())
+        })?;
+        let result = submit_idempotent_learning_outcome(
+            &state.db,
+            idempotency,
+            CreateFeedbackLoop {
+                space_id: prepared.space_id,
+                namespace_id: namespace.id,
+                goal,
+                task,
+                attempt: Some(prepared.attempt_summary.clone()),
+                evaluation: None,
+                feedback: None,
+                adjustment: None,
+                next_task: None,
+                status: "active".to_string(),
+                created_by: user_id,
+            },
+            AttemptTraceInput {
+                space_id: prepared.space_id,
+                namespace_id: namespace.id,
+                request: &request,
+                input_source: prepared.input_source.clone(),
+                trace_metadata: prepared.trace_metadata.clone(),
+                attempt_summary: prepared.attempt_summary.clone(),
+                started_at,
+            },
+        )
+        .await?;
+        let (feedback_loop_id, trace_id, status) = match result {
+            IdempotentSubmission::Created {
+                feedback_loop_id,
+                trace_id,
+            } => (feedback_loop_id, trace_id, "attempt_recorded"),
+            IdempotentSubmission::Replayed {
+                feedback_loop_id,
+                trace_id,
+            } => (feedback_loop_id, trace_id, "attempt_replayed"),
+        };
+        let event = EngineEvent::AttemptSubmitted(EngineEventEnvelope {
+            space_id: prepared.space_id,
+            namespace_id: namespace.id,
+            source_trace_id: trace_id,
+            payload_refs: vec![EnginePayloadRef {
+                kind: EnginePayloadRefKind::Attempt,
+                id: feedback_loop_id,
+            }],
+        });
+        let response = SurfaceResponse::new(
+            Surface::Performance,
+            SurfaceAction::SubmitAttempt,
+            json!({
+                "status": status,
+                "feedback_loop_id": feedback_loop_id,
+                "namespace_id": namespace.id,
+                "evaluation": prepared.evaluation,
+                "deep_consolidation": false,
+                "event": event,
+            }),
+            trace_id,
+            vec!["Review this attempt later for recurring mistake patterns".to_string()],
+            SurfaceVisibility::User,
+        );
+        return Ok((StatusCode::OK, Json(ApiResponse::success(response))));
+    }
 
     let feedback_loop = match prepared.feedback_loop_id {
         Some(feedback_loop_id) => {
@@ -2236,6 +2510,147 @@ async fn submit_attempt(
     );
 
     Ok((StatusCode::OK, Json(ApiResponse::success(response))))
+}
+
+struct AttemptTraceInput<'a> {
+    space_id: Uuid,
+    namespace_id: Uuid,
+    request: &'a SurfaceRequest,
+    input_source: Option<String>,
+    trace_metadata: Value,
+    attempt_summary: String,
+    started_at: DateTime<Utc>,
+}
+
+#[derive(Debug)]
+enum IdempotentSubmission {
+    Created {
+        feedback_loop_id: Uuid,
+        trace_id: Uuid,
+    },
+    Replayed {
+        feedback_loop_id: Uuid,
+        trace_id: Uuid,
+    },
+}
+
+#[derive(FromRow)]
+struct IdempotencyRecord {
+    payload_fingerprint: String,
+    feedback_loop_id: Option<Uuid>,
+    trace_id: Option<Uuid>,
+}
+
+async fn submit_idempotent_learning_outcome(
+    pool: &PgPool,
+    idempotency: &PerformanceIdempotency,
+    feedback_loop: CreateFeedbackLoop,
+    trace_input: AttemptTraceInput<'_>,
+) -> Result<IdempotentSubmission, AppError> {
+    let mut tx = pool.begin().await.map_err(AppError::Database)?;
+    let claimed: Option<bool> = sqlx::query_scalar(
+        r#"
+        INSERT INTO performance_idempotency_records
+            (space_id, namespace_id, source_event_id, payload_fingerprint)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (space_id, namespace_id, source_event_id) DO NOTHING
+        RETURNING true
+        "#,
+    )
+    .bind(feedback_loop.space_id)
+    .bind(feedback_loop.namespace_id)
+    .bind(&idempotency.source_event_id)
+    .bind(&idempotency.payload_fingerprint)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(AppError::Database)?;
+
+    if claimed.is_none() {
+        let record = sqlx::query_as::<_, IdempotencyRecord>(
+            r#"
+            SELECT payload_fingerprint, feedback_loop_id, trace_id
+            FROM performance_idempotency_records
+            WHERE space_id = $1 AND namespace_id = $2 AND source_event_id = $3
+            "#,
+        )
+        .bind(feedback_loop.space_id)
+        .bind(feedback_loop.namespace_id)
+        .bind(&idempotency.source_event_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+        if record.payload_fingerprint != idempotency.payload_fingerprint {
+            return Err(AppError::Conflict(
+                "source_event_id conflicts with a different normalized outcome".to_string(),
+            ));
+        }
+        let feedback_loop_id = record
+            .feedback_loop_id
+            .ok_or_else(|| AppError::Internal("idempotency record is incomplete".to_string()))?;
+        let trace_id = record
+            .trace_id
+            .ok_or_else(|| AppError::Internal("idempotency record is incomplete".to_string()))?;
+        tx.commit().await.map_err(AppError::Database)?;
+        return Ok(IdempotentSubmission::Replayed {
+            feedback_loop_id,
+            trace_id,
+        });
+    }
+
+    let feedback_loop = insert_feedback_loop_in_tx(&mut tx, &feedback_loop)
+        .await
+        .map_err(AppError::Database)?;
+    let completed_at = Utc::now();
+    let trace = insert_completed_trace_in_tx(
+        &mut tx,
+        CreateCompletedTrace {
+            space_id: trace_input.space_id,
+            namespace_id: Some(trace_input.namespace_id),
+            source_type: trace_source_type(trace_input.request.adapter),
+            task_type: TraceTaskType::Practice,
+            mode: trace_mode(trace_input.request.context.mode.as_deref())?,
+            runtime: trace_runtime(trace_input.request.context.runtime_preference),
+            input_summary: Some(format!("Performance submitAttempt in namespace {}", trace_input.request.namespace)),
+            output_summary: Some(format!("Attempt recorded for FeedbackLoop {}", feedback_loop.id)),
+            started_at: trace_input.started_at,
+            completed_at,
+            latency_ms: Some((completed_at - trace_input.started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(), generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(), generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: vec![feedback_loop.id],
+            user_feedback: Some(json!({"attempt": trace_input.attempt_summary})),
+            error: None,
+            metadata: json!({"surface_gateway": true, "surface": trace_input.request.surface,
+                "action": trace_input.request.action, "adapter": trace_input.request.adapter,
+                "namespace": trace_input.request.namespace, "input_source": trace_input.input_source,
+                "deep_consolidation": false, "dictation": trace_input.trace_metadata,
+                "event": "attempt_submitted"}),
+        },
+    )
+    .await
+    .map_err(AppError::Database)?;
+    sqlx::query(
+        r#"UPDATE performance_idempotency_records SET feedback_loop_id = $4, trace_id = $5
+            WHERE space_id = $1 AND namespace_id = $2 AND source_event_id = $3"#,
+    )
+    .bind(feedback_loop.space_id)
+    .bind(feedback_loop.namespace_id)
+    .bind(&idempotency.source_event_id)
+    .bind(feedback_loop.id)
+    .bind(trace.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::Database)?;
+    tx.commit().await.map_err(AppError::Database)?;
+    Ok(IdempotentSubmission::Created {
+        feedback_loop_id: feedback_loop.id,
+        trace_id: trace.id,
+    })
 }
 
 async fn review_evidence(
@@ -3603,6 +4018,50 @@ fn redacted_summary(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idempotent_outcome_validates_identity_and_stable_fingerprint() {
+        let payload = json!({
+            "space_id": Uuid::nil(), "source_event_id": "study-buddy.session:2026-07-13.1",
+            "task": "Daily spelling", "input_source": "typed",
+            "normalized_outcome": {"summary": "Completed five words", "mistake": {
+                "expected_text": "because", "actual_text": "becuase", "mistake_type": "letter_order"
+            }}
+        });
+        let first = prepare_submit_attempt_payload(
+            "child.english.spelling",
+            serde_json::from_value(payload.clone()).unwrap(),
+        )
+        .unwrap();
+        let second = prepare_submit_attempt_payload(
+            "child.english.spelling",
+            serde_json::from_value(payload).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            first.idempotency.as_ref().unwrap().payload_fingerprint,
+            second.idempotency.as_ref().unwrap().payload_fingerprint
+        );
+        assert!(!valid_source_event_id("provider session/with spaces"));
+    }
+
+    #[test]
+    fn idempotent_outcome_rejects_typed_confirmation_and_raw_provider_fields() {
+        let typed_confirmation: SubmitAttemptPayload = serde_json::from_value(json!({
+            "space_id": Uuid::nil(), "source_event_id": "event-1", "task": "Daily spelling",
+            "input_source": "typed", "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"},
+            "normalized_outcome": {"summary": "Completed session"}
+        }))
+        .unwrap();
+        assert!(
+            prepare_idempotent_learning_outcome("child.english.spelling", typed_confirmation)
+                .is_err()
+        );
+        assert!(reject_forbidden_idempotent_outcome_fields(&json!({
+            "source_event_id": "event-1", "provider_session_id": "do-not-store"
+        }))
+        .is_err());
+    }
 
     #[test]
     fn attempt_summary_keeps_target_and_submitted_text() {
