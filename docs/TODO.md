@@ -385,13 +385,82 @@ Non-goals:
 - Do not store full external source documents by default.
 - Do not let external knowledge directly overwrite GrowthModel or PracticePlan.
 
-## Current Open GitHub Issues
+## Current Execution Entry Points
 
+- #220 records M9's documentation and contract boundary. It closes when this PR
+  merges; the next M9 implementation entry point is #221. M9 tests a private
+  owner feedback loop in `personal.health.sleep`; it is neither a permanent
+  healthcare product commitment nor a replacement for Dictation Coach.
+- #221 -> #223 -> #224 -> #225 -> #226 is the Engine implementation path;
+  #222 + #226 unlock the later manual #227 owner/Coordinator gate.
+- #228 -> #229 is the adjacent P1 learning-adapter integration path. It remains
+  independent of M9 and does not block the next M9 implementation issue.
 - #129 Trial Profile plug-and-play remains blocked on one real Trial API URL and
   scoped token.
-- #130 is the next actionable issue: stand up a private self-use Mac mini Local
-  Lab, keep the first smoke on localhost, and validate the release-binary path.
-  It may provide the endpoint evidence needed for #129 if token policy allows.
+- #130 (P0) independently validates the private self-use Mac mini Local Lab.
+  It is a prerequisite for M9's real controlled-Adapter proof (#222), not for
+  #220 or #221; a localhost pass still does not close #129.
+
+## Milestone 9: Personal Feedback Dogfood
+
+Goal: prove, in private self-use, that the generic Engine can turn confirmed
+local evidence into a useful owner-selected next adjustment. The first narrow
+namespace is `personal.health.sleep`; M9 is not a healthcare product, clinical
+claim, public deployment, or replacement for Dictation Coach as the first
+upstream learning product/evaluation fixture.
+
+Status: active. #220 is the docs-first architecture and contract foundation.
+Implementation acceptance through #226 is necessary but not sufficient: #227
+is a later manual fourteen-calendar-day owner/Coordinator gate.
+
+Fixed evidence and authority boundaries:
+
+- One evening check-in per local calendar day; only confirmed, low-sensitivity,
+  typed sleep timing/duration, owner-reported energy, and bounded lifestyle
+  context are allowed.
+- `CognitiveSpace` remains the ownership boundary; Namespace is not a new ACL.
+  OCR and media remain Adapter-side; `agent_ocr` needs explicit acceptance or
+  explicit correction, and raw screenshots/OCR never enter Engine persistence.
+- Before three valid confirmed days, Observation returns an evidence gap. Day
+  seven is preliminary only. Deterministic policy may select at most one
+  reviewed low-risk reversible advisory experiment after the baseline threshold.
+- Day fourteen applies the non-movable final gate: pass requires at least ten
+  valid confirmed records, at least five tried suggestions, and at least one
+  owner-selected adjustment worth continuing. Fewer than ten records, or fewer
+  than five tried suggestions, is insufficient usage / Adapter failure;
+  sufficient usage without a retained useful adjustment is Engine feedback
+  failure.
+- Suggestions never operate reminders, calendars, messages, devices, or other
+  external systems. Observations, correlations, hypotheses, and owner decisions
+  stay distinct; M9 makes no medical, causal, diagnostic, or efficacy claim.
+
+Dependency order:
+
+```text
+#220 -> #221
+#221 -> #223 -> #224 -> #225 -> #226
+#130 + #221 -> #222
+#222 + #226 -> #227
+```
+
+#227 cannot close immediately after #226: it runs the real proven private
+Adapter path for fourteen calendar days and posts only sanitized aggregate
+evidence plus the precommitted classification. #130 remains an independent
+private deployment track; #129 remains independently blocked on a Trial URL
+and scoped token.
+
+### Adjacent P1 learning-adapter integration track
+
+This track is independent of M9 and must not become an M9 dependency:
+
+```text
+#228 -> #229
+```
+
+#228 adds a provider-neutral, idempotent confirmed upstream learning outcome to
+generic Performance. #229 adds a bounded parent-authorized seven-day learning
+Observation. Both preserve the Adapter/Surface/Engine boundary and do not add
+provider branches, raw media, a parent dashboard, or product roles to Engine.
 
 ## Supporting Distribution Track
 
@@ -402,7 +471,7 @@ These start after the accepted #160 Agent smoke and are not on the completed
   GitHub on 2026-06-30.
 - #129 Make Trial Profile plug-and-play for agent demos. Blocked on a real Trial
   API URL and scoped token.
-- #130 (P1, next actionable) stand up a private self-use Mac mini Local Lab,
+- #130 (P0, next actionable) stand up a private self-use Mac mini Local Lab,
   validate the release-binary path on localhost first, and document backup,
   restore, upgrade, and rollback before optional later hardening.
 

@@ -50,6 +50,10 @@
   quality、freshness、privacy opt-in 和 downstream links。V1 不加 Knowledge Surface、
   crawler、scheduler 或 full corpus storage；外部知识不是用户 Memory，不能直接更新
   GrowthModel 或 PracticePlan。
+- Personal Feedback Dogfood 边界见 ADR-025：当前 private self-use priority 是在
+  `personal.health.sleep` 用十四天、低敏感度、确认后的睡眠/精力记录验证 generic Engine
+  是否能给 owner 产生有用的下一步调整；这不是医疗产品承诺，也不替代 Dictation Coach
+  作为第一上游学习产品和评估 fixture。`CognitiveSpace` 仍是权限边界，Namespace 不是。
 - EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
   agent memory retrieval 系统。当前边界是：EverMemOS 偏 memory for agent reasoning；
   MemoryNexus 偏 user-owned cognitive perspective and feedback loops。
@@ -76,6 +80,8 @@
   `decisions/ADR-021-external-media-evidence-references.md`。
 - Namespace Knowledge Refresh 边界见
   `decisions/ADR-023-namespace-knowledge-refresh.md`。
+- Personal Feedback Dogfood 边界见
+  `decisions/ADR-025-personal-feedback-dogfood.md`。
 
 ## 开发规则
 
@@ -107,6 +113,12 @@
 - `EvidenceRefInput` 的 locator 或 metadata 任一位置包含 secret 时，必须把整条引用作为
   invalid reference 拒绝；redaction 只用于 diagnostics / log message。被拒绝的原始 payload
   和 secret 不得进入日志、Trace、metadata persistence 或任何其他持久化。
+- `personal.health.sleep` 只接受 ADR-025 / `docs/personal-feedback-dogfood-contract.md`
+  定义的 confirmed、typed、low-sensitivity 字段。不得加入诊断、药物、治疗、医疗报告、
+  provider advice、原始截图、raw OCR、自由文本健康史或 metadata bag；媒体/OCR 仍在
+  Adapter 外部，`agent_ocr` 必须带 role-neutral explicit acceptance 或 explicit correction。
+  不足三条有效确认记录时返回 evidence gap；一旦开始 M9，十四天的 ten-valid / five-tried /
+  one-retained-adjustment gate 不得事后移动。
 - `Namespace` 只是 `CognitiveSpace` 内的领域分区，不是新的权限边界；不要把权限从
   Space membership 挪到 Namespace。
 - `FeedbackLoop` 是长期方向，落地时应从具体 namespace 的最小验收场景反推字段，
@@ -193,6 +205,11 @@ cargo clippy --all-targets --all-features -- -D clippy::all
   Dashboard 是交互方式。Adapter 不直接访问 Engine 内部对象。
 - Phase 5 Memory Lifecycle issue 默认围绕 `Memory -> MemoryAtom -> CognitiveScene
   -> CognitiveProjection` 做小实验，不要把它实现成通用 agent retrieval engine。
+- M9 Personal Feedback Dogfood issue 必须按 `docs/personal-feedback-dogfood-contract.md`
+  的固定顺序和 allowlist 推进：#220 -> #221 -> #223 -> #224 -> #225 -> #226，#130 + #221
+  才可做 #222，#222 + #226 才可进入 #227。#227 是真实 fourteen-calendar-day owner/
+  Coordinator acceptance gate，不是实现完成后立即关闭的 worker issue。#228 -> #229 是
+  独立的 P1 learning-adapter track，不得让 M9 依赖它。
 - 涉及 ObserveMode 的 issue 必须明确前台低延迟行为、后台异步处理和用户主动 deep
   review 的触发条件。
 - Trace / runtime metrics issue 默认先做 contract、最小 schema 或 lightweight capture。
@@ -211,7 +228,9 @@ cargo clippy --all-targets --all-features -- -D clippy::all
    Observation 统一入口，自动写 Trace。
 2. Trace -> FeedbackLoop -> GrowthModel -> PracticePlan 闭环。
 3. Dictation Coach 最小闭环：录入词表、提交默写、错因归因、生成明日练习、7 天趋势。
-4. 文档口径统一：README、architecture、TODO 都应以 long-term feedback engine、
+4. Personal Feedback Dogfood：在 private self-use `personal.health.sleep` 用固定、
+   非临床十四天 gate 验证 generic Engine 的 owner next-action usefulness。
+5. 文档口径统一：README、architecture、TODO 都应以 long-term feedback engine、
    Rust 主线和 Cognitive Space 为准。
 
 ## 当前产品入口
@@ -225,6 +244,9 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - `learning.stem` 是 prior learning slice，不是下一阶段唯一产品入口。
 - Thought Review 属于 reflective namespace，可视为 `personal.thoughts` 的 demo。
   `learning.stem` 属于 Skill Namespace，必须通过单独 issue/验收场景推进。
+- Personal Feedback Dogfood 是 private owner-only 的 `personal.health.sleep` 验证入口：
+  一晚一次 confirmed check-in、三天 baseline、七天 preliminary review、十四天固定 gate。
+  它不构成医疗、公开部署或永久 health-product 入口。
 
 ## 文档位置
 
