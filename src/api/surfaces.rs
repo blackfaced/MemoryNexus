@@ -2220,13 +2220,22 @@ fn validate_normalized_outcome(outcome: &NormalizedLearningOutcome) -> Result<()
             "normalized_outcome.summary must be 1..=400 characters".to_string(),
         ));
     }
+    if has_secret_like_value(outcome.summary.trim()) {
+        return Err(AppError::BadRequest(
+            "normalized_outcome contains a secret-like text value".to_string(),
+        ));
+    }
     if let Some(mistake) = &outcome.mistake {
         for value in [
             &mistake.expected_text,
             &mistake.actual_text,
             &mistake.mistake_type,
         ] {
-            if value.trim().is_empty() || value.len() > 120 || value.chars().any(char::is_control) {
+            if value.trim().is_empty()
+                || value.len() > 120
+                || value.chars().any(char::is_control)
+                || has_secret_like_value(value.trim())
+            {
                 return Err(AppError::BadRequest(
                     "normalized_outcome mistake fields must be bounded non-control text"
                         .to_string(),
@@ -2287,6 +2296,7 @@ fn reject_forbidden_idempotent_outcome_fields(value: &Value) -> Result<(), AppEr
                     || visit(value, in_evidence_refs || key == "evidence_refs")
             }),
             Value::Array(values) => values.iter().any(|value| visit(value, in_evidence_refs)),
+            Value::String(value) => !in_evidence_refs && has_secret_like_value(value),
             _ => false,
         }
     }
@@ -4061,6 +4071,34 @@ mod tests {
             "source_event_id": "event-1", "provider_session_id": "do-not-store"
         }))
         .is_err());
+    }
+
+    #[test]
+    fn idempotent_outcome_rejects_secret_like_text_values() {
+        for field in ["summary", "expected_text", "actual_text", "mistake_type"] {
+            let mut outcome = json!({
+                "summary": "Completed session",
+                "mistake": {
+                    "expected_text": "because",
+                    "actual_text": "becuase",
+                    "mistake_type": "letter_order"
+                }
+            });
+            if field == "summary" {
+                outcome[field] = json!("Bearer should-not-persist");
+            } else {
+                outcome["mistake"][field] = json!("sk-should-not-persist");
+            }
+            let payload: SubmitAttemptPayload = serde_json::from_value(json!({
+                "space_id": Uuid::nil(), "source_event_id": format!("event-{field}"),
+                "task": "Daily spelling", "input_source": "typed",
+                "normalized_outcome": outcome
+            }))
+            .unwrap();
+            assert!(
+                prepare_idempotent_learning_outcome("child.english.spelling", payload).is_err()
+            );
+        }
     }
 
     #[test]

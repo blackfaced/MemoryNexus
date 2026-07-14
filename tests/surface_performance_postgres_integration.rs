@@ -553,6 +553,212 @@ async fn performance_surface_rejects_invalid_evidence_ref_before_feedback_or_tra
     assert_eq!(after_traces, before_traces);
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn idempotent_learning_outcome_replays_conflicts_and_preserves_zero_side_effect_rejections() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let event_id = format!("adapter.session:{}-1", Uuid::new_v4());
+    let request =
+        idempotent_outcome_request(&fixture, &event_id, "Completed five spelling words", "fast");
+
+    let first = post_surface(&client, &base_url, &token, request.clone()).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    let first: Value = first.json().await.expect("first response should be json");
+    let feedback_loop_id = uuid_field(&first, "/data/result/feedback_loop_id");
+    let trace_id = uuid_field(&first, "/data/generated_trace_id");
+
+    let replay = post_surface(&client, &base_url, &token, request.clone()).await;
+    assert_eq!(replay.status(), StatusCode::OK);
+    let replay: Value = replay.json().await.expect("replay response should be json");
+    assert_eq!(
+        replay
+            .pointer("/data/result/status")
+            .and_then(Value::as_str),
+        Some("attempt_replayed")
+    );
+    assert_eq!(
+        uuid_field(&replay, "/data/result/feedback_loop_id"),
+        feedback_loop_id
+    );
+    assert_eq!(uuid_field(&replay, "/data/generated_trace_id"), trace_id);
+
+    let conflict = post_surface(
+        &client,
+        &base_url,
+        &token,
+        idempotent_outcome_request(&fixture, &event_id, "Different completed session", "fast"),
+    )
+    .await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+
+    let rejected_event_id = format!("adapter.session:{}-secret", Uuid::new_v4());
+    let secret = post_surface(
+        &client,
+        &base_url,
+        &token,
+        idempotent_outcome_request(
+            &fixture,
+            &rejected_event_id,
+            "Bearer should-not-persist",
+            "fast",
+        ),
+    )
+    .await;
+    assert_eq!(secret.status(), StatusCode::BAD_REQUEST);
+
+    assert_eq!(count_for_event(&pool, &fixture, &event_id).await, 1);
+    assert_eq!(
+        count_for_event(&pool, &fixture, &rejected_event_id).await,
+        0
+    );
+    assert_eq!(
+        count_feedback_loops(&pool, fixture.space_id, fixture.namespace_id).await,
+        2
+    );
+    assert_eq!(
+        count_traces(&pool, fixture.space_id, fixture.namespace_id).await,
+        1
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn idempotent_learning_outcome_concurrent_retry_and_trace_failure_are_atomic() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let event_id = format!("adapter.session:{}-concurrent", Uuid::new_v4());
+    let request =
+        idempotent_outcome_request(&fixture, &event_id, "Completed five spelling words", "fast");
+    let left_client = Client::new();
+    let right_client = Client::new();
+    let (left, right) = tokio::join!(
+        post_surface(&left_client, &base_url, &token, request.clone()),
+        post_surface(&right_client, &base_url, &token, request),
+    );
+    let left = left
+        .json::<Value>()
+        .await
+        .expect("left response should be json");
+    let right = right
+        .json::<Value>()
+        .await
+        .expect("right response should be json");
+    assert_eq!(
+        uuid_field(&left, "/data/result/feedback_loop_id"),
+        uuid_field(&right, "/data/result/feedback_loop_id")
+    );
+    assert_eq!(
+        uuid_field(&left, "/data/generated_trace_id"),
+        uuid_field(&right, "/data/generated_trace_id")
+    );
+    assert_eq!(count_for_event(&pool, &fixture, &event_id).await, 1);
+    assert_eq!(
+        count_feedback_loops(&pool, fixture.space_id, fixture.namespace_id).await,
+        2
+    );
+    assert_eq!(
+        count_traces(&pool, fixture.space_id, fixture.namespace_id).await,
+        1
+    );
+
+    let rollback_event_id = format!("adapter.session:{}-rollback", Uuid::new_v4());
+    let failed = post_surface(
+        &Client::new(),
+        &base_url,
+        &token,
+        idempotent_outcome_request(
+            &fixture,
+            &rollback_event_id,
+            "Completed but invalid trace mode",
+            "not-a-mode",
+        ),
+    )
+    .await;
+    assert_eq!(failed.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        count_for_event(&pool, &fixture, &rollback_event_id).await,
+        0
+    );
+    assert_eq!(
+        count_feedback_loops(&pool, fixture.space_id, fixture.namespace_id).await,
+        2
+    );
+    assert_eq!(
+        count_traces(&pool, fixture.space_id, fixture.namespace_id).await,
+        1
+    );
+}
+
+fn idempotent_outcome_request(
+    fixture: &Fixture,
+    event_id: &str,
+    summary: &str,
+    mode: &str,
+) -> Value {
+    json!({
+        "namespace": "child.english.spelling", "surface": "performance", "action": "submit_attempt",
+        "actor": fixture.owner_user_id, "adapter": "mcp",
+        "payload": {"space_id": fixture.space_id, "source_event_id": event_id,
+            "task": "Daily spelling", "input_source": "typed",
+            "normalized_outcome": {"summary": summary, "mistake": {
+                "expected_text": "because", "actual_text": "becuase", "mistake_type": "letter_order"
+            }}},
+        "context": {"mode": mode, "runtime_preference": "deterministic"}
+    })
+}
+
+async fn post_surface(
+    client: &Client,
+    base_url: &str,
+    token: &str,
+    request: Value,
+) -> reqwest::Response {
+    client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(token)
+        .json(&request)
+        .send()
+        .await
+        .expect("surface request should send")
+}
+
+async fn count_for_event(pool: &PgPool, fixture: &Fixture, event_id: &str) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM performance_idempotency_records WHERE space_id = $1 AND namespace_id = $2 AND source_event_id = $3")
+        .bind(fixture.space_id).bind(fixture.namespace_id).bind(event_id).fetch_one(pool).await.expect("idempotency count should query")
+}
+
+async fn count_feedback_loops(pool: &PgPool, space_id: Uuid, namespace_id: Uuid) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM feedback_loops WHERE space_id = $1 AND namespace_id = $2",
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .fetch_one(pool)
+    .await
+    .expect("feedback loop count should query")
+}
+
+async fn count_traces(pool: &PgPool, space_id: Uuid, namespace_id: Uuid) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM traces WHERE space_id = $1 AND namespace_id = $2")
+        .bind(space_id)
+        .bind(namespace_id)
+        .fetch_one(pool)
+        .await
+        .expect("trace count should query")
+}
+
 struct Fixture {
     owner_user_id: Uuid,
     owner_email: String,
