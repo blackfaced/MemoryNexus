@@ -127,7 +127,7 @@ impl PostgresFeedbackLoopRepository {
     }
 }
 
-async fn insert_feedback_loop_in_tx(
+pub(crate) async fn insert_feedback_loop_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     feedback_loop: &CreateFeedbackLoop,
 ) -> Result<FeedbackLoopDb, Error> {
@@ -165,7 +165,7 @@ async fn insert_feedback_loop_in_tx(
     .await
 }
 
-async fn patch_feedback_loop_in_tx(
+pub(crate) async fn patch_feedback_loop_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     feedback_loop_id: Uuid,
     patch: &PatchFeedbackLoop,
