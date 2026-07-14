@@ -19,7 +19,7 @@ use memorynexus::{
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 use sqlx::PgPool;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::Barrier};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -376,6 +376,480 @@ async fn capture_surface_rejects_invalid_evidence_ref_before_memory_or_trace_wri
     assert_eq!(after_traces, before_traces);
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_capture_persists_only_confirmed_values_supports_readback_and_correction() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_capture_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+
+    let typed = post_sleep_capture(
+        &client,
+        &base_url,
+        &token,
+        fixture.owner_user_id,
+        json!({
+            "local_date": "2026-07-13",
+            "sleep_duration_minutes": 450,
+            "sleep_start_local_time": "22:30",
+            "sleep_end_local_time": "06:00",
+            "daytime_energy": 3,
+            "caffeine_within_six_hours_of_sleep": false,
+            "screen_minutes_in_final_hour": 20,
+            "input_source": "typed",
+            "input_confirmation": {
+                "status": "confirmed",
+                "method": "explicit_acceptance"
+            }
+        }),
+    )
+    .await;
+    assert_eq!(typed.status(), StatusCode::CREATED);
+    let typed_body: Value = typed.json().await.expect("response should be JSON");
+    let typed_memory_id = uuid_field(&typed_body, "/data/result/memory_id");
+    let typed_trace_id = uuid_field(&typed_body, "/data/generated_trace_id");
+    assert_eq!(
+        typed_body["data"]["result"]["namespace_id"],
+        fixture.sleep_namespace_id.to_string()
+    );
+
+    let readback = client
+        .get(format!("{base_url}/api/v1/memories/{typed_memory_id}"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("memory readback should send");
+    assert_eq!(readback.status(), StatusCode::OK);
+    let readback: Value = readback.json().await.expect("readback should be JSON");
+    assert_eq!(readback["data"]["id"], typed_memory_id.to_string());
+    assert_eq!(
+        readback["data"]["namespace_id"],
+        fixture.sleep_namespace_id.to_string()
+    );
+    assert!(readback["data"]["content"]
+        .as_str()
+        .expect("content should be text")
+        .contains("Confirmed sleep and energy check-in"));
+
+    let accepted_ocr = post_sleep_capture(
+        &client,
+        &base_url,
+        &token,
+        fixture.owner_user_id,
+        json!({
+            "local_date": "2026-07-14",
+            "sleep_duration_minutes": 420,
+            "daytime_energy": 4,
+            "input_source": "agent_ocr",
+            "input_confirmation": {
+                "status": "confirmed",
+                "method": "explicit_acceptance"
+            },
+            "evidence_refs": [{
+                "provider": "agent_ocr",
+                "locator": "s3://private/sleep-checkin-raw.png",
+                "media_type": "image/png",
+                "metadata": {"page": 1}
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(accepted_ocr.status(), StatusCode::CREATED);
+
+    let corrected = post_sleep_capture(
+        &client,
+        &base_url,
+        &token,
+        fixture.owner_user_id,
+        json!({
+            "local_date": "2026-07-13",
+            "sleep_duration_minutes": 480,
+            "daytime_energy": 4,
+            "input_source": "agent_ocr",
+            "input_confirmation": {
+                "status": "confirmed",
+                "method": "explicit_correction"
+            },
+            "corrects_record_id": typed_memory_id,
+            "evidence_refs": [{
+                "provider": "agent_ocr",
+                "locator": "s3://private/sleep-checkin-correction.png",
+                "media_type": "image/png",
+                "metadata": {"page": 1}
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(corrected.status(), StatusCode::CREATED);
+    let corrected: Value = corrected.json().await.expect("response should be JSON");
+    let corrected_memory_id = uuid_field(&corrected, "/data/result/memory_id");
+    let corrected_trace_id = uuid_field(&corrected, "/data/generated_trace_id");
+
+    let memory: (Value,) = sqlx::query_as("SELECT source_metadata FROM memories WHERE id = $1")
+        .bind(corrected_memory_id)
+        .fetch_one(&pool)
+        .await
+        .expect("corrected memory should exist");
+    assert_eq!(
+        memory.0["capture"]["personal_feedback"]["corrects_record_id"],
+        typed_memory_id.to_string()
+    );
+    let persisted = memory.0.to_string();
+    for forbidden in [
+        "sleep-checkin-raw.png",
+        "sleep-checkin-correction.png",
+        "evidence_refs",
+        "raw_ocr_text",
+        "provider_reasoning",
+    ] {
+        assert!(
+            !persisted.contains(forbidden),
+            "Memory metadata must not contain {forbidden}"
+        );
+    }
+
+    let old_memory: (Value,) = sqlx::query_as("SELECT source_metadata FROM memories WHERE id = $1")
+        .bind(typed_memory_id)
+        .fetch_one(&pool)
+        .await
+        .expect("superseded memory should remain as correction provenance");
+    assert_eq!(
+        old_memory.0["capture"]["personal_feedback"]["superseded_by_memory_id"],
+        corrected_memory_id.to_string()
+    );
+
+    let trace: (Option<String>, Value) =
+        sqlx::query_as("SELECT input_summary, metadata FROM traces WHERE id = $1")
+            .bind(corrected_trace_id)
+            .fetch_one(&pool)
+            .await
+            .expect("correction trace should exist");
+    let trace_text = format!("{}{}", trace.0.clone().unwrap_or_default(), trace.1);
+    assert_eq!(
+        trace.0.as_deref(),
+        Some(
+            "Sleep and energy check-in for 2026-07-13: sleep duration present; daytime energy present; sleep timing absent; caffeine context absent; screen-time context absent"
+        )
+    );
+    assert_eq!(
+        trace.1["capture"]["personal_feedback"]["corrects_record_id"],
+        typed_memory_id.to_string()
+    );
+    for forbidden in [
+        "480",
+        "Daytime energy",
+        "Screen time",
+        "sleep-checkin-correction.png",
+        "evidence_refs",
+        "raw_ocr_text",
+    ] {
+        assert!(
+            !trace_text.contains(forbidden),
+            "Trace metadata must not contain {forbidden}"
+        );
+    }
+    assert_ne!(typed_trace_id, corrected_trace_id);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_capture_keeps_one_current_record_under_concurrent_submissions() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_capture_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let barrier = Arc::new(Barrier::new(12));
+    let mut submissions = Vec::new();
+
+    for energy in 1..=12 {
+        let client = Client::new();
+        let base_url = base_url.clone();
+        let token = token.clone();
+        let barrier = barrier.clone();
+        let actor = fixture.owner_user_id;
+        submissions.push(tokio::spawn(async move {
+            barrier.wait().await;
+            post_sleep_capture(
+                &client,
+                &base_url,
+                &token,
+                actor,
+                json!({
+                    "local_date": "2026-07-16",
+                    "sleep_duration_minutes": 450,
+                    "daytime_energy": (energy - 1) % 5 + 1,
+                    "input_source": "typed",
+                    "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+                }),
+            )
+            .await
+            .status()
+        }));
+    }
+
+    let mut created = 0;
+    for submission in submissions {
+        if submission.await.expect("submission should complete") == StatusCode::CREATED {
+            created += 1;
+        }
+    }
+    let active_records: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM memories
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in'
+          AND source_metadata #>> '{capture,personal_feedback,local_date}' = '2026-07-16'
+          AND source_metadata #>> '{capture,personal_feedback,superseded_by_memory_id}' IS NULL
+        "#,
+    )
+    .bind(fixture.space_id)
+    .bind(fixture.sleep_namespace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("active record count should query");
+
+    assert_eq!(
+        created, 1,
+        "only one concurrent submission may create a record"
+    );
+    assert_eq!(
+        active_records, 1,
+        "there must be one current record per local date"
+    );
+
+    let original = post_sleep_capture(
+        &Client::new(),
+        &base_url,
+        &token,
+        fixture.owner_user_id,
+        json!({
+            "local_date": "2026-07-17",
+            "sleep_duration_minutes": 450,
+            "daytime_energy": 3,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+        }),
+    )
+    .await;
+    assert_eq!(original.status(), StatusCode::CREATED);
+    let original: Value = original
+        .json()
+        .await
+        .expect("original response should be JSON");
+    let original_memory_id = uuid_field(&original, "/data/result/memory_id");
+
+    let correction_barrier = Arc::new(Barrier::new(12));
+    let mut corrections = Vec::new();
+    for energy in 1..=12 {
+        let client = Client::new();
+        let base_url = base_url.clone();
+        let token = token.clone();
+        let barrier = correction_barrier.clone();
+        let actor = fixture.owner_user_id;
+        corrections.push(tokio::spawn(async move {
+            barrier.wait().await;
+            post_sleep_capture(
+                &client,
+                &base_url,
+                &token,
+                actor,
+                json!({
+                    "local_date": "2026-07-17",
+                    "sleep_duration_minutes": 450,
+                    "daytime_energy": (energy - 1) % 5 + 1,
+                    "input_source": "agent_ocr",
+                    "input_confirmation": {"status": "confirmed", "method": "explicit_correction"},
+                    "corrects_record_id": original_memory_id
+                }),
+            )
+            .await
+            .status()
+        }));
+    }
+    let mut corrected = 0;
+    for correction in corrections {
+        if correction.await.expect("correction should complete") == StatusCode::CREATED {
+            corrected += 1;
+        }
+    }
+    let corrected_active_records: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM memories
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in'
+          AND source_metadata #>> '{capture,personal_feedback,local_date}' = '2026-07-17'
+          AND source_metadata #>> '{capture,personal_feedback,superseded_by_memory_id}' IS NULL
+        "#,
+    )
+    .bind(fixture.space_id)
+    .bind(fixture.sleep_namespace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("corrected active record count should query");
+    assert_eq!(
+        corrected, 1,
+        "only one concurrent correction may create a record"
+    );
+    assert_eq!(
+        corrected_active_records, 1,
+        "a correction must leave exactly one current record"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_capture_rejects_invalid_or_cross_space_input_without_side_effects() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_capture_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let before_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memories")
+        .fetch_one(&pool)
+        .await
+        .expect("memory count should query");
+    let before_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces")
+        .fetch_one(&pool)
+        .await
+        .expect("trace count should query");
+
+    for payload in [
+        json!({
+            "local_date": "2026-07-13",
+            "sleep_duration_minutes": 59,
+            "daytime_energy": 3,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+        }),
+        json!({
+            "local_date": "2026-07-13",
+            "sleep_duration_minutes": 450,
+            "daytime_energy": 3,
+            "input_source": "agent_ocr"
+        }),
+        json!({
+            "local_date": "2026-07-13",
+            "sleep_duration_minutes": 450,
+            "daytime_energy": 3,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"},
+            "medical_notes": "must be rejected"
+        }),
+    ] {
+        let response =
+            post_sleep_capture(&client, &base_url, &token, fixture.owner_user_id, payload).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    let other_space_id = seed_space(&pool, fixture.owner_user_id, "Other Space").await;
+    let other_namespace_id = seed_namespace(
+        &pool,
+        other_space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep",
+        "reflective",
+    )
+    .await;
+    let cross_space_memory_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO memories (user_id, space_id, namespace_id, content, memory_type, is_shared, source_type, source_metadata)
+        VALUES ($1, $2, $3, 'other Space check-in', 'text', false, 'surface_capture',
+                '{"capture":{"personal_feedback":{"record_type":"sleep_energy_check_in","local_date":"2026-07-13"}}}')
+        RETURNING id
+        "#,
+    )
+    .bind(fixture.owner_user_id)
+    .bind(other_space_id)
+    .bind(other_namespace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("cross-Space check-in should seed");
+    let cross_space = post_sleep_capture(
+        &client,
+        &base_url,
+        &token,
+        fixture.owner_user_id,
+        json!({
+            "local_date": "2026-07-13",
+            "sleep_duration_minutes": 450,
+            "daytime_energy": 3,
+            "input_source": "agent_ocr",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_correction"},
+            "corrects_record_id": cross_space_memory_id
+        }),
+    )
+    .await;
+    assert_eq!(cross_space.status(), StatusCode::BAD_REQUEST);
+
+    let viewer_token = token_for(fixture.viewer_user_id, &fixture.viewer_email);
+    let viewer_write = post_sleep_capture(
+        &client,
+        &base_url,
+        &viewer_token,
+        fixture.viewer_user_id,
+        json!({
+            "local_date": "2026-07-15",
+            "sleep_duration_minutes": 450,
+            "daytime_energy": 3,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+        }),
+    )
+    .await;
+    assert_eq!(viewer_write.status(), StatusCode::UNAUTHORIZED);
+
+    sqlx::query("UPDATE namespaces SET status = 'archived' WHERE id = $1")
+        .bind(fixture.sleep_namespace_id)
+        .execute(&pool)
+        .await
+        .expect("sleep namespace should archive");
+    let inactive_namespace = post_sleep_capture(
+        &client,
+        &base_url,
+        &token,
+        fixture.owner_user_id,
+        json!({
+            "local_date": "2026-07-15",
+            "sleep_duration_minutes": 450,
+            "daytime_energy": 3,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+        }),
+    )
+    .await;
+    assert_eq!(inactive_namespace.status(), StatusCode::BAD_REQUEST);
+
+    let after_memories: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memories")
+        .fetch_one(&pool)
+        .await
+        .expect("memory count should query");
+    let after_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces")
+        .fetch_one(&pool)
+        .await
+        .expect("trace count should query");
+    assert_eq!(
+        after_memories,
+        before_memories + 1,
+        "only the cross-Space fixture may exist"
+    );
+    assert_eq!(after_traces, before_traces);
+}
+
 fn uuid_field(value: &Value, pointer: &str) -> Uuid {
     value
         .pointer(pointer)
@@ -473,6 +947,7 @@ struct CaptureFixture {
     viewer_email: String,
     space_id: Uuid,
     namespace_id: Uuid,
+    sleep_namespace_id: Uuid,
 }
 
 async fn postgres_pool() -> PgPool {
@@ -511,6 +986,14 @@ async fn seed_capture_fixture(pool: &PgPool) -> CaptureFixture {
         "skill",
     )
     .await;
+    let sleep_namespace_id = seed_namespace(
+        pool,
+        space_id,
+        owner_user_id,
+        "personal.health.sleep",
+        "reflective",
+    )
+    .await;
 
     CaptureFixture {
         owner_user_id,
@@ -519,7 +1002,32 @@ async fn seed_capture_fixture(pool: &PgPool) -> CaptureFixture {
         viewer_email,
         space_id,
         namespace_id,
+        sleep_namespace_id,
     }
+}
+
+async fn post_sleep_capture(
+    client: &Client,
+    base_url: &str,
+    token: &str,
+    actor: Uuid,
+    payload: Value,
+) -> reqwest::Response {
+    client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(token)
+        .json(&json!({
+            "namespace": "personal.health.sleep",
+            "surface": "capture",
+            "action": "capture_observation",
+            "actor": actor,
+            "adapter": "mcp",
+            "payload": payload,
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }))
+        .send()
+        .await
+        .expect("sleep Capture request should send")
 }
 
 async fn seed_user(pool: &PgPool, email: &str, username: &str) -> Uuid {

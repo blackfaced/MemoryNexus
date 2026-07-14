@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::{Error, FromRow, PgPool};
+use sqlx::{Error, FromRow, PgPool, Postgres};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
@@ -27,6 +29,9 @@ use crate::domain::event::{
 };
 use crate::domain::evidence::{validate_evidence_request, InputConfirmation};
 use crate::domain::growth_model::{EvidenceId, GrowthEvidenceRecord};
+use crate::domain::personal_feedback::{
+    ConfirmedSleepEnergyCheckIn, SleepEnergyCheckInInput, PERSONAL_HEALTH_SLEEP_NAMESPACE,
+};
 use crate::domain::practice_plan::{
     build_adjusted_plan, build_next_task_plan, AdjustPlanRequest, PlanningRequest,
 };
@@ -69,6 +74,8 @@ struct PreparedCapturePayload {
     metadata: Value,
     source_metadata: Value,
     trace_metadata: Value,
+    trace_input_summary: Option<String>,
+    sleep_check_in: Option<ConfirmedSleepEnergyCheckIn>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -624,9 +631,7 @@ async fn capture_observation(
     }
 
     let started_at = Utc::now();
-    let payload: CapturePayload = serde_json::from_value(request.payload.clone())
-        .map_err(|error| AppError::BadRequest(format!("invalid capture payload: {error}")))?;
-    let prepared = prepare_capture_payload(&request.namespace, payload)?;
+    let prepared = prepare_capture_payload(&request.namespace, request.payload.clone())?;
 
     let space = state
         .repositories
@@ -638,13 +643,114 @@ async fn capture_observation(
     require_space_writer(state, space.id, user_id).await?;
     let namespace = resolve_namespace_by_name(state, user_id, space.id, &request.namespace).await?;
 
+    if prepared.sleep_check_in.is_some() {
+        return capture_sleep_observation_with_lock(
+            state,
+            user_id,
+            request,
+            space.id,
+            namespace.id,
+            prepared,
+            started_at,
+        )
+        .await;
+    }
+
+    persist_capture_observation(
+        state,
+        user_id,
+        request,
+        space.id,
+        namespace.id,
+        prepared,
+        started_at,
+    )
+    .await
+}
+
+async fn capture_sleep_observation_with_lock(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    prepared: PreparedCapturePayload,
+    started_at: DateTime<Utc>,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let check_in = prepared
+        .sleep_check_in
+        .as_ref()
+        .expect("sleep Capture path requires a sleep check-in");
+    let lock_key = format!(
+        "personal.health.sleep:{space_id}:{namespace_id}:{}",
+        check_in.local_date
+    );
+    let lock_transaction = acquire_sleep_check_in_lock(state, &lock_key).await?;
+
+    let result = persist_capture_observation(
+        state,
+        user_id,
+        request,
+        space_id,
+        namespace_id,
+        prepared,
+        started_at,
+    )
+    .await;
+
+    match result {
+        Ok(response) => {
+            lock_transaction
+                .commit()
+                .await
+                .map_err(AppError::Database)?;
+            Ok(response)
+        }
+        Err(error) => {
+            let _ = lock_transaction.rollback().await;
+            Err(error)
+        }
+    }
+}
+
+async fn acquire_sleep_check_in_lock<'a>(
+    state: &'a AppState,
+    lock_key: &str,
+) -> Result<sqlx::Transaction<'a, Postgres>, AppError> {
+    loop {
+        let mut transaction = state.db.begin().await.map_err(AppError::Database)?;
+        let acquired: bool =
+            sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))")
+                .bind(lock_key)
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(AppError::Database)?;
+        if acquired {
+            return Ok(transaction);
+        }
+        transaction.rollback().await.map_err(AppError::Database)?;
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+async fn persist_capture_observation(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    prepared: PreparedCapturePayload,
+    started_at: DateTime<Utc>,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    validate_sleep_check_in_scope(state, space_id, namespace_id, &prepared).await?;
+
     let memory = state
         .repositories
         .memories
         .create(CreateMemory {
             user_id,
-            space_id: space.id,
-            namespace_id: Some(namespace.id),
+            space_id,
+            namespace_id: Some(namespace_id),
             feedback_loop_id: None,
             title: prepared.title.clone(),
             content: prepared.content.clone(),
@@ -675,13 +781,18 @@ async fn capture_observation(
         .repositories
         .traces
         .create_completed(CreateCompletedTrace {
-            space_id: space.id,
-            namespace_id: Some(namespace.id),
+            space_id,
+            namespace_id: Some(namespace_id),
             source_type: trace_source_type(request.adapter),
             task_type: TraceTaskType::Capture,
             mode: trace_mode(request.context.mode.as_deref())?,
             runtime: trace_runtime(request.context.runtime_preference),
-            input_summary: Some(redacted_summary(&prepared.content)),
+            input_summary: Some(
+                prepared
+                    .trace_input_summary
+                    .clone()
+                    .unwrap_or_else(|| redacted_summary(&prepared.content)),
+            ),
             output_summary: Some(format!("Captured observation as memory {}", memory.id)),
             started_at,
             completed_at,
@@ -712,9 +823,15 @@ async fn capture_observation(
         .await
         .map_err(AppError::Database)?;
 
+    if let Some(check_in) = &prepared.sleep_check_in {
+        if let Some(corrects_record_id) = check_in.corrects_record_id {
+            mark_sleep_check_in_superseded(state, corrects_record_id, memory.id).await?;
+        }
+    }
+
     let event = EngineEvent::ObservationCaptured(EngineEventEnvelope {
-        space_id: space.id,
-        namespace_id: namespace.id,
+        space_id,
+        namespace_id,
         source_trace_id: trace.id,
         payload_refs: vec![EnginePayloadRef {
             kind: EnginePayloadRefKind::Observation,
@@ -727,7 +844,7 @@ async fn capture_observation(
         SurfaceAction::CaptureObservation,
         json!({
             "memory_id": memory.id,
-            "namespace_id": namespace.id,
+            "namespace_id": namespace_id,
             "status": "captured",
             "event": event,
         }),
@@ -1652,8 +1769,14 @@ async fn validate_context_policy_state(
 
 fn prepare_capture_payload(
     namespace: &str,
-    payload: CapturePayload,
+    payload: Value,
 ) -> Result<PreparedCapturePayload, AppError> {
+    if namespace == PERSONAL_HEALTH_SLEEP_NAMESPACE {
+        return prepare_sleep_energy_capture_payload(payload);
+    }
+
+    let payload: CapturePayload = serde_json::from_value(payload)
+        .map_err(|error| AppError::BadRequest(format!("invalid capture payload: {error}")))?;
     if payload.task_kind.is_some() || payload.source.is_some() || !payload.prompt_items.is_empty() {
         return prepare_dictation_capture_payload(namespace, payload);
     }
@@ -1678,6 +1801,41 @@ fn prepare_capture_payload(
         metadata: payload.metadata,
         source_metadata: json!({}),
         trace_metadata: json!({}),
+        trace_input_summary: None,
+        sleep_check_in: None,
+    })
+}
+
+fn prepare_sleep_energy_capture_payload(
+    payload: Value,
+) -> Result<PreparedCapturePayload, AppError> {
+    let input: SleepEnergyCheckInInput = serde_json::from_value(payload).map_err(|_| {
+        AppError::BadRequest("invalid personal.health.sleep capture payload".to_string())
+    })?;
+    let check_in = input
+        .confirm()
+        .map_err(|error| AppError::BadRequest(error.to_string()))?;
+    let input_source = check_in.input_source.as_str().to_string();
+    let title = format!(
+        "Confirmed sleep and energy check-in — {}",
+        check_in.local_date
+    );
+
+    Ok(PreparedCapturePayload {
+        title: Some(title),
+        content: check_in.canonical_text(),
+        input_source: Some(input_source),
+        tags: Vec::new(),
+        metadata: json!({}),
+        source_metadata: json!({
+            "personal_feedback": check_in.persistence_metadata(),
+        }),
+        trace_metadata: json!({
+            "namespace": PERSONAL_HEALTH_SLEEP_NAMESPACE,
+            "personal_feedback": check_in.trace_metadata(),
+        }),
+        trace_input_summary: Some(check_in.trace_input_summary()),
+        sleep_check_in: Some(check_in),
     })
 }
 
@@ -1723,7 +1881,109 @@ fn prepare_dictation_capture_payload(
         metadata: capture.persistence_metadata["metadata"].clone(),
         source_metadata,
         trace_metadata,
+        trace_input_summary: None,
+        sleep_check_in: None,
     })
+}
+
+async fn validate_sleep_check_in_scope(
+    state: &AppState,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    prepared: &PreparedCapturePayload,
+) -> Result<(), AppError> {
+    let Some(check_in) = &prepared.sleep_check_in else {
+        return Ok(());
+    };
+    let local_date = check_in.local_date.to_string();
+
+    let active_record_id: Option<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM memories
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND source_type = 'surface_capture'
+          AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in'
+          AND source_metadata #>> '{capture,personal_feedback,local_date}' = $3
+          AND source_metadata #>> '{capture,personal_feedback,superseded_by_memory_id}' IS NULL
+        LIMIT 1
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(&local_date)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(AppError::Database)?;
+
+    match (check_in.corrects_record_id, active_record_id) {
+        (None, None) => Ok(()),
+        (None, Some(_)) => Err(AppError::BadRequest(
+            "a confirmed sleep check-in already exists for local_date".to_string(),
+        )),
+        (Some(corrects_record_id), Some(active_record_id))
+            if corrects_record_id == active_record_id =>
+        {
+            let corrected = state
+                .repositories
+                .memories
+                .find_by_id(corrects_record_id)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| {
+                    AppError::BadRequest("corrects_record_id was not found".to_string())
+                })?;
+            if corrected.space_id != space_id
+                || corrected.namespace_id != Some(namespace_id)
+                || corrected
+                    .source_metadata
+                    .pointer("/capture/personal_feedback/record_type")
+                    .and_then(Value::as_str)
+                    != Some("sleep_energy_check_in")
+                || corrected
+                    .source_metadata
+                    .pointer("/capture/personal_feedback/local_date")
+                    .and_then(Value::as_str)
+                    != Some(local_date.as_str())
+            {
+                return Err(AppError::BadRequest(
+                    "corrects_record_id must reference an earlier same-Space, same-Namespace check-in for local_date"
+                        .to_string(),
+                ));
+            }
+            Ok(())
+        }
+        (Some(_), _) => Err(AppError::BadRequest(
+            "corrects_record_id must reference the current same-day sleep check-in".to_string(),
+        )),
+    }
+}
+
+async fn mark_sleep_check_in_superseded(
+    state: &AppState,
+    corrected_record_id: Uuid,
+    replacement_record_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        UPDATE memories
+        SET source_metadata = jsonb_set(
+                source_metadata,
+                '{capture,personal_feedback,superseded_by_memory_id}',
+                to_jsonb($2::uuid),
+                true
+            ),
+            updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(corrected_record_id)
+    .bind(replacement_record_id)
+    .execute(&state.db)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(())
 }
 
 fn resolve_dictation_source(
@@ -3506,7 +3766,7 @@ mod tests {
 
     #[test]
     fn dictation_capture_payload_builds_canonical_text_and_descriptor_free_metadata() {
-        let payload: CapturePayload = serde_json::from_value(json!({
+        let payload = json!({
             "title": "Today's words",
             "task_kind": "english_spelling",
             "source": "typed",
@@ -3516,8 +3776,7 @@ mod tests {
             ],
             "tags": ["dictation"],
             "metadata": {"adapter_note": "typed list"}
-        }))
-        .unwrap();
+        });
 
         let prepared =
             prepare_capture_payload("child.english.spelling", payload).expect("valid dictation");
@@ -3548,7 +3807,7 @@ mod tests {
 
     #[test]
     fn typed_dictation_capture_payload_rejects_media_descriptors() {
-        let payload: CapturePayload = serde_json::from_value(json!({
+        let payload = json!({
             "task_kind": "english_spelling",
             "source": "typed",
             "input_confirmation": {
@@ -3558,8 +3817,7 @@ mod tests {
             "prompt_items": [
                 {"item_kind": "english_word", "expected_text": "because", "metadata": {}}
             ]
-        }))
-        .unwrap();
+        });
 
         let err = prepare_capture_payload("child.english.spelling", payload).unwrap_err();
 
@@ -3571,7 +3829,7 @@ mod tests {
 
     #[test]
     fn media_dictation_capture_payload_accepts_validated_refs_without_persisting_them() {
-        let payload: CapturePayload = serde_json::from_value(json!({
+        let payload = json!({
             "task_kind": "english_spelling",
             "source": "agent_ocr",
             "input_confirmation": {
@@ -3587,8 +3845,7 @@ mod tests {
             "prompt_items": [
                 {"item_kind": "english_word", "expected_text": "because", "metadata": {}}
             ]
-        }))
-        .unwrap();
+        });
 
         let prepared =
             prepare_capture_payload("child.english.spelling", payload).expect("media dictation");
