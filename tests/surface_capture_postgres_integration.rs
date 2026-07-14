@@ -19,7 +19,7 @@ use memorynexus::{
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 use sqlx::PgPool;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::Barrier};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -523,18 +523,27 @@ async fn personal_sleep_capture_persists_only_confirmed_values_supports_readback
         corrected_memory_id.to_string()
     );
 
-    let trace: (Value,) = sqlx::query_as("SELECT metadata FROM traces WHERE id = $1")
-        .bind(corrected_trace_id)
-        .fetch_one(&pool)
-        .await
-        .expect("correction trace should exist");
-    let trace_text = trace.0.to_string();
+    let trace: (Option<String>, Value) =
+        sqlx::query_as("SELECT input_summary, metadata FROM traces WHERE id = $1")
+            .bind(corrected_trace_id)
+            .fetch_one(&pool)
+            .await
+            .expect("correction trace should exist");
+    let trace_text = format!("{}{}", trace.0.clone().unwrap_or_default(), trace.1);
     assert_eq!(
-        trace.0["capture"]["personal_feedback"]["corrects_record_id"],
+        trace.0.as_deref(),
+        Some(
+            "Sleep and energy check-in for 2026-07-13: sleep duration present; daytime energy present; sleep timing absent; caffeine context absent; screen-time context absent"
+        )
+    );
+    assert_eq!(
+        trace.1["capture"]["personal_feedback"]["corrects_record_id"],
         typed_memory_id.to_string()
     );
     for forbidden in [
         "480",
+        "Daytime energy",
+        "Screen time",
         "sleep-checkin-correction.png",
         "evidence_refs",
         "raw_ocr_text",
@@ -545,6 +554,158 @@ async fn personal_sleep_capture_persists_only_confirmed_values_supports_readback
         );
     }
     assert_ne!(typed_trace_id, corrected_trace_id);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_capture_keeps_one_current_record_under_concurrent_submissions() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_capture_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let barrier = Arc::new(Barrier::new(12));
+    let mut submissions = Vec::new();
+
+    for energy in 1..=12 {
+        let client = Client::new();
+        let base_url = base_url.clone();
+        let token = token.clone();
+        let barrier = barrier.clone();
+        let actor = fixture.owner_user_id;
+        submissions.push(tokio::spawn(async move {
+            barrier.wait().await;
+            post_sleep_capture(
+                &client,
+                &base_url,
+                &token,
+                actor,
+                json!({
+                    "local_date": "2026-07-16",
+                    "sleep_duration_minutes": 450,
+                    "daytime_energy": (energy - 1) % 5 + 1,
+                    "input_source": "typed",
+                    "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+                }),
+            )
+            .await
+            .status()
+        }));
+    }
+
+    let mut created = 0;
+    for submission in submissions {
+        if submission.await.expect("submission should complete") == StatusCode::CREATED {
+            created += 1;
+        }
+    }
+    let active_records: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM memories
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in'
+          AND source_metadata #>> '{capture,personal_feedback,local_date}' = '2026-07-16'
+          AND source_metadata #>> '{capture,personal_feedback,superseded_by_memory_id}' IS NULL
+        "#,
+    )
+    .bind(fixture.space_id)
+    .bind(fixture.sleep_namespace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("active record count should query");
+
+    assert_eq!(
+        created, 1,
+        "only one concurrent submission may create a record"
+    );
+    assert_eq!(
+        active_records, 1,
+        "there must be one current record per local date"
+    );
+
+    let original = post_sleep_capture(
+        &Client::new(),
+        &base_url,
+        &token,
+        fixture.owner_user_id,
+        json!({
+            "local_date": "2026-07-17",
+            "sleep_duration_minutes": 450,
+            "daytime_energy": 3,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+        }),
+    )
+    .await;
+    assert_eq!(original.status(), StatusCode::CREATED);
+    let original: Value = original
+        .json()
+        .await
+        .expect("original response should be JSON");
+    let original_memory_id = uuid_field(&original, "/data/result/memory_id");
+
+    let correction_barrier = Arc::new(Barrier::new(12));
+    let mut corrections = Vec::new();
+    for energy in 1..=12 {
+        let client = Client::new();
+        let base_url = base_url.clone();
+        let token = token.clone();
+        let barrier = correction_barrier.clone();
+        let actor = fixture.owner_user_id;
+        corrections.push(tokio::spawn(async move {
+            barrier.wait().await;
+            post_sleep_capture(
+                &client,
+                &base_url,
+                &token,
+                actor,
+                json!({
+                    "local_date": "2026-07-17",
+                    "sleep_duration_minutes": 450,
+                    "daytime_energy": (energy - 1) % 5 + 1,
+                    "input_source": "agent_ocr",
+                    "input_confirmation": {"status": "confirmed", "method": "explicit_correction"},
+                    "corrects_record_id": original_memory_id
+                }),
+            )
+            .await
+            .status()
+        }));
+    }
+    let mut corrected = 0;
+    for correction in corrections {
+        if correction.await.expect("correction should complete") == StatusCode::CREATED {
+            corrected += 1;
+        }
+    }
+    let corrected_active_records: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM memories
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in'
+          AND source_metadata #>> '{capture,personal_feedback,local_date}' = '2026-07-17'
+          AND source_metadata #>> '{capture,personal_feedback,superseded_by_memory_id}' IS NULL
+        "#,
+    )
+    .bind(fixture.space_id)
+    .bind(fixture.sleep_namespace_id)
+    .fetch_one(&pool)
+    .await
+    .expect("corrected active record count should query");
+    assert_eq!(
+        corrected, 1,
+        "only one concurrent correction may create a record"
+    );
+    assert_eq!(
+        corrected_active_records, 1,
+        "a correction must leave exactly one current record"
+    );
 }
 
 #[tokio::test]

@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::{Error, FromRow, PgPool};
+use sqlx::{Error, FromRow, PgPool, Postgres};
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
@@ -72,6 +74,7 @@ struct PreparedCapturePayload {
     metadata: Value,
     source_metadata: Value,
     trace_metadata: Value,
+    trace_input_summary: Option<String>,
     sleep_check_in: Option<ConfirmedSleepEnergyCheckIn>,
 }
 
@@ -639,15 +642,115 @@ async fn capture_observation(
         .ok_or_else(|| AppError::NotFound("Cognitive space not found".to_string()))?;
     require_space_writer(state, space.id, user_id).await?;
     let namespace = resolve_namespace_by_name(state, user_id, space.id, &request.namespace).await?;
-    validate_sleep_check_in_scope(state, space.id, namespace.id, &prepared).await?;
+
+    if prepared.sleep_check_in.is_some() {
+        return capture_sleep_observation_with_lock(
+            state,
+            user_id,
+            request,
+            space.id,
+            namespace.id,
+            prepared,
+            started_at,
+        )
+        .await;
+    }
+
+    persist_capture_observation(
+        state,
+        user_id,
+        request,
+        space.id,
+        namespace.id,
+        prepared,
+        started_at,
+    )
+    .await
+}
+
+async fn capture_sleep_observation_with_lock(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    prepared: PreparedCapturePayload,
+    started_at: DateTime<Utc>,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let check_in = prepared
+        .sleep_check_in
+        .as_ref()
+        .expect("sleep Capture path requires a sleep check-in");
+    let lock_key = format!(
+        "personal.health.sleep:{space_id}:{namespace_id}:{}",
+        check_in.local_date
+    );
+    let lock_transaction = acquire_sleep_check_in_lock(state, &lock_key).await?;
+
+    let result = persist_capture_observation(
+        state,
+        user_id,
+        request,
+        space_id,
+        namespace_id,
+        prepared,
+        started_at,
+    )
+    .await;
+
+    match result {
+        Ok(response) => {
+            lock_transaction
+                .commit()
+                .await
+                .map_err(AppError::Database)?;
+            Ok(response)
+        }
+        Err(error) => {
+            let _ = lock_transaction.rollback().await;
+            Err(error)
+        }
+    }
+}
+
+async fn acquire_sleep_check_in_lock<'a>(
+    state: &'a AppState,
+    lock_key: &str,
+) -> Result<sqlx::Transaction<'a, Postgres>, AppError> {
+    loop {
+        let mut transaction = state.db.begin().await.map_err(AppError::Database)?;
+        let acquired: bool =
+            sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))")
+                .bind(lock_key)
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(AppError::Database)?;
+        if acquired {
+            return Ok(transaction);
+        }
+        transaction.rollback().await.map_err(AppError::Database)?;
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+async fn persist_capture_observation(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    prepared: PreparedCapturePayload,
+    started_at: DateTime<Utc>,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    validate_sleep_check_in_scope(state, space_id, namespace_id, &prepared).await?;
 
     let memory = state
         .repositories
         .memories
         .create(CreateMemory {
             user_id,
-            space_id: space.id,
-            namespace_id: Some(namespace.id),
+            space_id,
+            namespace_id: Some(namespace_id),
             feedback_loop_id: None,
             title: prepared.title.clone(),
             content: prepared.content.clone(),
@@ -678,13 +781,18 @@ async fn capture_observation(
         .repositories
         .traces
         .create_completed(CreateCompletedTrace {
-            space_id: space.id,
-            namespace_id: Some(namespace.id),
+            space_id,
+            namespace_id: Some(namespace_id),
             source_type: trace_source_type(request.adapter),
             task_type: TraceTaskType::Capture,
             mode: trace_mode(request.context.mode.as_deref())?,
             runtime: trace_runtime(request.context.runtime_preference),
-            input_summary: Some(redacted_summary(&prepared.content)),
+            input_summary: Some(
+                prepared
+                    .trace_input_summary
+                    .clone()
+                    .unwrap_or_else(|| redacted_summary(&prepared.content)),
+            ),
             output_summary: Some(format!("Captured observation as memory {}", memory.id)),
             started_at,
             completed_at,
@@ -722,8 +830,8 @@ async fn capture_observation(
     }
 
     let event = EngineEvent::ObservationCaptured(EngineEventEnvelope {
-        space_id: space.id,
-        namespace_id: namespace.id,
+        space_id,
+        namespace_id,
         source_trace_id: trace.id,
         payload_refs: vec![EnginePayloadRef {
             kind: EnginePayloadRefKind::Observation,
@@ -736,7 +844,7 @@ async fn capture_observation(
         SurfaceAction::CaptureObservation,
         json!({
             "memory_id": memory.id,
-            "namespace_id": namespace.id,
+            "namespace_id": namespace_id,
             "status": "captured",
             "event": event,
         }),
@@ -1693,6 +1801,7 @@ fn prepare_capture_payload(
         metadata: payload.metadata,
         source_metadata: json!({}),
         trace_metadata: json!({}),
+        trace_input_summary: None,
         sleep_check_in: None,
     })
 }
@@ -1725,6 +1834,7 @@ fn prepare_sleep_energy_capture_payload(
             "namespace": PERSONAL_HEALTH_SLEEP_NAMESPACE,
             "personal_feedback": check_in.trace_metadata(),
         }),
+        trace_input_summary: Some(check_in.trace_input_summary()),
         sleep_check_in: Some(check_in),
     })
 }
@@ -1771,6 +1881,7 @@ fn prepare_dictation_capture_payload(
         metadata: capture.persistence_metadata["metadata"].clone(),
         source_metadata,
         trace_metadata,
+        trace_input_summary: None,
         sleep_check_in: None,
     })
 }

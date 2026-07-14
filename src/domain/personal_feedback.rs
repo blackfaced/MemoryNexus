@@ -157,6 +157,16 @@ impl SleepEnergyCheckInInput {
 }
 
 impl ConfirmedSleepEnergyCheckIn {
+    pub fn trace_input_summary(&self) -> String {
+        format!(
+            "Sleep and energy check-in for {}: sleep duration present; daytime energy present; sleep timing {}; caffeine context {}; screen-time context {}",
+            self.local_date,
+            presence_label(self.sleep_start_local_time.is_some() && self.sleep_end_local_time.is_some()),
+            presence_label(self.caffeine_within_six_hours_of_sleep.is_some()),
+            presence_label(self.screen_minutes_in_final_hour.is_some()),
+        )
+    }
+
     pub fn canonical_text(&self) -> String {
         let mut lines = vec![
             format!(
@@ -261,6 +271,14 @@ impl ConfirmedSleepEnergyCheckIn {
             metadata.insert("corrects_record_id".to_string(), json!(corrects_record_id));
         }
         Value::Object(metadata)
+    }
+}
+
+fn presence_label(present: bool) -> &'static str {
+    if present {
+        "present"
+    } else {
+        "absent"
     }
 }
 
