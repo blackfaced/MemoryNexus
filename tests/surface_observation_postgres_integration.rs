@@ -210,6 +210,185 @@ async fn observation_surface_returns_state_summary_and_writes_observation_trace(
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn sleep_observation_returns_baseline_and_redacted_trace_provenance() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let sleep_namespace_id = seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep",
+        "active",
+    )
+    .await;
+    let selected_ids = [
+        seed_sleep_memory(
+            &pool,
+            fixture.space_id,
+            sleep_namespace_id,
+            fixture.owner_user_id,
+            SleepMemoryInput {
+                local_date: "2026-01-11",
+                duration: 420,
+                energy: 2,
+                timing: true,
+            },
+        )
+        .await,
+        seed_sleep_memory(
+            &pool,
+            fixture.space_id,
+            sleep_namespace_id,
+            fixture.owner_user_id,
+            SleepMemoryInput {
+                local_date: "2026-01-12",
+                duration: 450,
+                energy: 3,
+                timing: false,
+            },
+        )
+        .await,
+        seed_sleep_memory(
+            &pool,
+            fixture.space_id,
+            sleep_namespace_id,
+            fixture.owner_user_id,
+            SleepMemoryInput {
+                local_date: "2026-01-13",
+                duration: 480,
+                energy: 4,
+                timing: true,
+            },
+        )
+        .await,
+    ];
+    seed_raw_sleep_memory(
+        &pool,
+        fixture.space_id,
+        sleep_namespace_id,
+        fixture.owner_user_id,
+        json!({"capture": {"personal_feedback": {
+            "record_type": "sleep_energy_check_in", "local_date": "2026-01-14",
+            "sleep_duration_minutes": 600, "daytime_energy": 5,
+            "sleep_start_local_time": 42,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+        }}}),
+    )
+    .await;
+    seed_raw_sleep_memory(
+        &pool,
+        fixture.space_id,
+        sleep_namespace_id,
+        fixture.owner_user_id,
+        json!({"capture": {"personal_feedback": {
+            "record_type": "sleep_energy_check_in", "local_date": "2026-01-20",
+            "sleep_duration_minutes": 960, "daytime_energy": 5,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"},
+            "superseded_by_memory_id": Uuid::new_v4()
+        }}}),
+    )
+    .await;
+    let base_url = spawn_api(pool.clone()).await;
+    let response = Client::new()
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(token_for(fixture.owner_user_id, &fixture.owner_email))
+        .json(&json!({
+            "namespace": "personal.health.sleep", "surface": "observation", "action": "get_state_summary",
+            "actor": fixture.owner_user_id, "adapter": "web", "payload": {"space_id": fixture.space_id},
+            "context": {"mode": "focused", "runtime_preference": "deterministic"}
+        }))
+        .send().await.expect("request should send");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("response should be json");
+    assert_eq!(
+        body.pointer("/data/result/personal_feedback_observation/status")
+            .and_then(Value::as_str),
+        Some("baseline_ready")
+    );
+    assert_eq!(
+        body.pointer("/data/result/personal_feedback_observation/window/kind")
+            .and_then(Value::as_str),
+        Some("latest_evidence_anchored_rolling_local_dates")
+    );
+    assert_eq!(
+        body.pointer("/data/result/personal_feedback_observation/window/start_local_date")
+            .and_then(Value::as_str),
+        Some("2025-12-31")
+    );
+    assert_eq!(
+        body.pointer("/data/result/personal_feedback_observation/window/end_local_date")
+            .and_then(Value::as_str),
+        Some("2026-01-13")
+    );
+    assert_eq!(
+        body.pointer("/data/result/personal_feedback_observation/valid_record_count")
+            .and_then(Value::as_u64),
+        Some(3)
+    );
+    assert_eq!(
+        body.pointer(
+            "/data/result/personal_feedback_observation/observed/sleep_duration_minutes/median"
+        )
+        .and_then(Value::as_f64),
+        Some(450.0)
+    );
+    assert_eq!(
+        body.pointer("/data/result/personal_feedback_observation/supporting_evidence_ids/0/kind")
+            .and_then(Value::as_str),
+        Some("memory")
+    );
+    assert!(body
+        .pointer("/data/result/personal_feedback_observation/hypotheses")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty));
+    assert!(body
+        .pointer("/data/follow_up_suggestions")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty));
+
+    let trace_id = uuid_field(&body, "/data/generated_trace_id");
+    let metadata: Value = sqlx::query_scalar("SELECT metadata FROM traces WHERE id = $1")
+        .bind(trace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("trace should exist");
+    assert_eq!(
+        metadata["namespace_observation"]["selected_evidence_ids"]
+            .as_array()
+            .map(Vec::len),
+        Some(3)
+    );
+    for (index, id) in selected_ids.iter().enumerate() {
+        assert_eq!(
+            metadata["namespace_observation"]["selected_evidence_ids"][index]["kind"],
+            "memory"
+        );
+        assert_eq!(
+            metadata["namespace_observation"]["selected_evidence_ids"][index]["id"],
+            json!(id)
+        );
+    }
+    for forbidden in [
+        "sleep_duration_minutes",
+        "daytime_energy",
+        "sleep_start_local_time",
+        "sleep_end_local_time",
+        "locator",
+        "evidence_refs",
+        "provider",
+        "input_confirmation",
+    ] {
+        assert_json_key_absent(&metadata, forbidden);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
 async fn observation_surface_rejects_missing_auth_actor_mismatch_and_non_member() {
     let pool = postgres_pool().await;
     db::run_migrations(&pool)
@@ -607,6 +786,58 @@ async fn seed_memory(
     .expect("memory seed should insert")
 }
 
+async fn seed_sleep_memory(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    owner_user_id: Uuid,
+    input: SleepMemoryInput,
+) -> Uuid {
+    let mut record = json!({
+        "record_type": "sleep_energy_check_in", "local_date": input.local_date,
+        "sleep_duration_minutes": input.duration, "daytime_energy": input.energy,
+        "input_source": "typed",
+        "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+    });
+    if input.timing {
+        record["sleep_start_local_time"] = json!("22:30");
+        record["sleep_end_local_time"] = json!("06:00");
+    }
+    sqlx::query_scalar(
+        r#"INSERT INTO memories (user_id, space_id, namespace_id, content, memory_type, is_shared, source_type, source_metadata)
+           VALUES ($1, $2, $3, 'confirmed sleep check-in', 'text', false, 'test_fixture', $4) RETURNING id"#,
+    ).bind(owner_user_id).bind(space_id).bind(namespace_id)
+        .bind(json!({"capture": {"personal_feedback": record}}))
+        .fetch_one(pool).await.expect("sleep memory should insert")
+}
+
+async fn seed_raw_sleep_memory(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    owner_user_id: Uuid,
+    source_metadata: Value,
+) -> Uuid {
+    sqlx::query_scalar(
+        r#"INSERT INTO memories (user_id, space_id, namespace_id, content, memory_type, is_shared, source_type, source_metadata)
+           VALUES ($1, $2, $3, 'raw sleep fixture', 'text', false, 'test_fixture', $4) RETURNING id"#,
+    )
+    .bind(owner_user_id)
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(source_metadata)
+    .fetch_one(pool)
+    .await
+    .expect("raw sleep memory should insert")
+}
+
+struct SleepMemoryInput {
+    local_date: &'static str,
+    duration: i32,
+    energy: i32,
+    timing: bool,
+}
+
 async fn seed_trace(
     pool: &PgPool,
     space_id: Uuid,
@@ -740,6 +971,26 @@ fn uuid_field(value: &Value, pointer: &str) -> Uuid {
         .and_then(Value::as_str)
         .and_then(|value| value.parse().ok())
         .unwrap_or_else(|| panic!("expected uuid at {pointer}: {value}"))
+}
+
+fn assert_json_key_absent(value: &Value, forbidden: &str) {
+    match value {
+        Value::Object(object) => {
+            assert!(
+                !object.contains_key(forbidden),
+                "trace must not contain {forbidden}: {value}"
+            );
+            for nested in object.values() {
+                assert_json_key_absent(nested, forbidden);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                assert_json_key_absent(item, forbidden);
+            }
+        }
+        _ => {}
+    }
 }
 
 struct NoopVectorRepository;

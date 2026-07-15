@@ -36,6 +36,10 @@ use crate::domain::growth_model::{EvidenceId, GrowthEvidenceRecord};
 use crate::domain::personal_feedback::{
     ConfirmedSleepEnergyCheckIn, SleepEnergyCheckInInput, PERSONAL_HEALTH_SLEEP_NAMESPACE,
 };
+use crate::domain::personal_feedback_observation::{
+    build_personal_feedback_observation_summary, PersonalFeedbackObservationSummary,
+    SleepObservationEvidenceRecord,
+};
 use crate::domain::practice_plan::{
     build_adjusted_plan, build_next_task_plan, AdjustPlanRequest, PlanningRequest,
 };
@@ -349,20 +353,14 @@ async fn get_state_summary(
     let counts = load_observation_counts(&state.db, payload.space_id, namespace.id).await?;
     let latest_trace_task_type =
         latest_trace_task_type(&state.db, payload.space_id, namespace.id).await?;
-    let observation_window_end = started_at + chrono::Duration::minutes(1);
-    let dictation_evidence = load_recent_dictation_observation_evidence(
+    let namespace_observation = load_namespace_observation(
         &state.db,
         payload.space_id,
         namespace.id,
-        observation_window_end,
+        &request.namespace,
+        started_at + chrono::Duration::minutes(1),
     )
     .await?;
-    let dictation_observation = build_dictation_observation_summary(
-        payload.space_id,
-        namespace.id,
-        observation_window_end,
-        dictation_evidence,
-    );
     let knowledge_refresh =
         load_knowledge_refresh_observation(&state.db, payload.space_id, namespace.id).await?;
     let output_summary = format!(
@@ -373,7 +371,7 @@ async fn get_state_summary(
         counts.feedback_loop_total()
     );
 
-    let result = json!({
+    let mut result = json!({
         "status": "state_summary_ready",
         "space_id": payload.space_id,
         "namespace_id": namespace.id,
@@ -400,9 +398,15 @@ async fn get_state_summary(
             "growth_model_id": Value::Null,
             "note": "No persisted GrowthModel is available for this namespace yet.",
         },
-        "dictation_observation": dictation_observation,
         "knowledge_refresh": knowledge_refresh,
     });
+    result
+        .as_object_mut()
+        .expect("state summary result is an object")
+        .insert(
+            namespace_observation.response_key.to_string(),
+            namespace_observation.response.clone(),
+        );
 
     let completed_at = Utc::now();
     let trace = state
@@ -428,7 +432,7 @@ async fn get_state_summary(
             token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
             estimated_cost_usd: Some(0.0),
             local_processing_ratio: Some(1.0),
-            related_memory_ids: Vec::new(),
+            related_memory_ids: namespace_observation.related_memory_ids.clone(),
             generated_memory_ids: Vec::new(),
             generated_lens_run_ids: Vec::new(),
             generated_review_report_ids: Vec::new(),
@@ -446,8 +450,9 @@ async fn get_state_summary(
                 "trace_count": counts.trace_count,
                 "feedback_loop_count": counts.feedback_loop_total(),
                 "growth_model_status": "not_persisted",
-                "dictation_observation_status": dictation_observation.status,
-                "dictation_observation_evidence_record_count": dictation_observation.evidence_record_count,
+                "dictation_observation_status": if namespace_observation.response_key == "dictation_observation" { namespace_observation.trace_metadata["status"].clone() } else { Value::Null },
+                "dictation_observation_evidence_record_count": if namespace_observation.response_key == "dictation_observation" { namespace_observation.trace_metadata["evidence_record_count"].clone() } else { Value::Null },
+                "namespace_observation": namespace_observation.trace_metadata,
                 "knowledge_refresh_source_candidate_count": knowledge_refresh["source_candidates"].as_array().map(Vec::len).unwrap_or(0),
                 "knowledge_refresh_source_policy_count": knowledge_refresh["source_policies"].as_array().map(Vec::len).unwrap_or(0),
                 "knowledge_refresh_context_count": knowledge_refresh["knowledge_contexts"].as_array().map(Vec::len).unwrap_or(0),
@@ -461,7 +466,14 @@ async fn get_state_summary(
         SurfaceAction::GetStateSummary,
         result,
         trace.id,
-        vec!["Use Planning Surface when the observed state should become a next task.".to_string()],
+        if request.namespace == PERSONAL_HEALTH_SLEEP_NAMESPACE {
+            Vec::new()
+        } else {
+            vec![
+                "Use Planning Surface when the observed state should become a next task."
+                    .to_string(),
+            ]
+        },
         SurfaceVisibility::User,
     );
 
@@ -3375,6 +3387,105 @@ fn map_sleep_cycle_create_error(error: Error) -> AppError {
     } else {
         AppError::Database(error)
     }
+}
+
+struct NamespaceObservation {
+    response_key: &'static str,
+    response: Value,
+    trace_metadata: Value,
+    related_memory_ids: Vec<Uuid>,
+}
+
+async fn load_namespace_observation(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    namespace: &str,
+    now: DateTime<Utc>,
+) -> Result<NamespaceObservation, AppError> {
+    if namespace == PERSONAL_HEALTH_SLEEP_NAMESPACE {
+        let evidence =
+            load_personal_feedback_observation_evidence(pool, space_id, namespace_id).await?;
+        let summary = build_personal_feedback_observation_summary(evidence);
+        return Ok(NamespaceObservation {
+            response_key: "personal_feedback_observation",
+            trace_metadata: personal_feedback_observation_trace_metadata(&summary),
+            related_memory_ids: summary
+                .supporting_evidence_ids
+                .iter()
+                .filter_map(|evidence| match evidence {
+                    EvidenceId::Memory(id) => Some(*id),
+                    _ => None,
+                })
+                .collect(),
+            response: serde_json::to_value(summary)
+                .expect("personal feedback observation serializes"),
+        });
+    }
+
+    let evidence =
+        load_recent_dictation_observation_evidence(pool, space_id, namespace_id, now).await?;
+    let summary = build_dictation_observation_summary(space_id, namespace_id, now, evidence);
+    Ok(NamespaceObservation {
+        response_key: "dictation_observation",
+        trace_metadata: json!({
+            "kind": "dictation",
+            "status": summary.status,
+            "evidence_record_count": summary.evidence_record_count,
+        }),
+        related_memory_ids: Vec::new(),
+        response: serde_json::to_value(summary).expect("dictation observation serializes"),
+    })
+}
+
+#[derive(Debug, FromRow)]
+struct PersonalFeedbackObservationRow {
+    id: Uuid,
+    source_metadata: Value,
+}
+
+async fn load_personal_feedback_observation_evidence(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+) -> Result<Vec<SleepObservationEvidenceRecord>, AppError> {
+    let rows = sqlx::query_as::<_, PersonalFeedbackObservationRow>(
+        r#"
+        SELECT id, source_metadata
+        FROM memories
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in'
+          AND source_metadata #> '{capture,personal_feedback,superseded_by_memory_id}' IS NULL
+        ORDER BY source_metadata #>> '{capture,personal_feedback,local_date}' ASC, id ASC
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            SleepObservationEvidenceRecord::from_persistence_metadata(row.id, &row.source_metadata)
+        })
+        .collect())
+}
+
+fn personal_feedback_observation_trace_metadata(
+    summary: &PersonalFeedbackObservationSummary,
+) -> Value {
+    json!({
+        "kind": "personal_feedback_sleep",
+        "status": summary.status,
+        "window": summary.window,
+        "valid_record_count": summary.valid_record_count,
+        "threshold": summary.threshold,
+        "remaining_record_count": summary.remaining_record_count,
+        "selected_evidence_ids": summary.supporting_evidence_ids,
+        "has_observed_baseline": summary.observed.is_some(),
+    })
 }
 
 #[derive(Debug, FromRow)]
