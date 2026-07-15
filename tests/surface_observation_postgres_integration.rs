@@ -265,6 +265,34 @@ async fn sleep_observation_returns_baseline_and_redacted_trace_provenance() {
         )
         .await,
     ];
+    seed_raw_sleep_memory(
+        &pool,
+        fixture.space_id,
+        sleep_namespace_id,
+        fixture.owner_user_id,
+        json!({"capture": {"personal_feedback": {
+            "record_type": "sleep_energy_check_in", "local_date": "2026-01-14",
+            "sleep_duration_minutes": 600, "daytime_energy": 5,
+            "sleep_start_local_time": 42,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+        }}}),
+    )
+    .await;
+    seed_raw_sleep_memory(
+        &pool,
+        fixture.space_id,
+        sleep_namespace_id,
+        fixture.owner_user_id,
+        json!({"capture": {"personal_feedback": {
+            "record_type": "sleep_energy_check_in", "local_date": "2026-01-20",
+            "sleep_duration_minutes": 960, "daytime_energy": 5,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"},
+            "superseded_by_memory_id": Uuid::new_v4()
+        }}}),
+    )
+    .await;
     let base_url = spawn_api(pool.clone()).await;
     let response = Client::new()
         .post(format!("{base_url}/api/v1/surfaces"))
@@ -296,6 +324,11 @@ async fn sleep_observation_returns_baseline_and_redacted_trace_provenance() {
         body.pointer("/data/result/personal_feedback_observation/window/end_local_date")
             .and_then(Value::as_str),
         Some("2026-01-13")
+    );
+    assert_eq!(
+        body.pointer("/data/result/personal_feedback_observation/valid_record_count")
+            .and_then(Value::as_u64),
+        Some(3)
     );
     assert_eq!(
         body.pointer(
@@ -776,6 +809,26 @@ async fn seed_sleep_memory(
     ).bind(owner_user_id).bind(space_id).bind(namespace_id)
         .bind(json!({"capture": {"personal_feedback": record}}))
         .fetch_one(pool).await.expect("sleep memory should insert")
+}
+
+async fn seed_raw_sleep_memory(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    owner_user_id: Uuid,
+    source_metadata: Value,
+) -> Uuid {
+    sqlx::query_scalar(
+        r#"INSERT INTO memories (user_id, space_id, namespace_id, content, memory_type, is_shared, source_type, source_metadata)
+           VALUES ($1, $2, $3, 'raw sleep fixture', 'text', false, 'test_fixture', $4) RETURNING id"#,
+    )
+    .bind(owner_user_id)
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(source_metadata)
+    .fetch_one(pool)
+    .await
+    .expect("raw sleep memory should insert")
 }
 
 struct SleepMemoryInput {

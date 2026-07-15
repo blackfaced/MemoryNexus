@@ -5,6 +5,7 @@ use memorynexus::domain::personal_feedback_observation::{
     SleepObservationConfirmationMethod, SleepObservationEvidenceRecord,
     SleepObservationInputSource, BASELINE_WINDOW_DURATION_DAYS, BASELINE_WINDOW_KIND,
 };
+use serde_json::json;
 use uuid::Uuid;
 
 #[test]
@@ -89,6 +90,32 @@ fn duplicate_current_local_date_is_excluded_instead_of_arbitrarily_selected() {
     assert_eq!(summary.remaining_record_count, 1);
 }
 
+#[test]
+fn persisted_record_rejects_present_but_malformed_optional_fields_and_correction_ids() {
+    let memory_id = Uuid::new_v4();
+    for (field, value) in [
+        ("sleep_start_local_time", json!(42)),
+        ("sleep_end_local_time", json!("25:00")),
+        ("caffeine_within_six_hours_of_sleep", json!("yes")),
+        ("screen_minutes_in_final_hour", json!(61)),
+    ] {
+        let mut metadata = valid_persistence_metadata();
+        metadata["capture"]["personal_feedback"][field] = value;
+        assert!(
+            SleepObservationEvidenceRecord::from_persistence_metadata(memory_id, &metadata)
+                .is_none(),
+            "{field} must exclude malformed evidence"
+        );
+    }
+    let mut correction = valid_persistence_metadata();
+    correction["capture"]["personal_feedback"]["input_confirmation"]["method"] =
+        json!("explicit_correction");
+    correction["capture"]["personal_feedback"]["corrects_record_id"] = json!("not-a-uuid");
+    assert!(
+        SleepObservationEvidenceRecord::from_persistence_metadata(memory_id, &correction).is_none()
+    );
+}
+
 fn records(days: &[i64]) -> Vec<SleepObservationEvidenceRecord> {
     days.iter()
         .enumerate()
@@ -102,4 +129,15 @@ fn records(days: &[i64]) -> Vec<SleepObservationEvidenceRecord> {
             confirmation_method: SleepObservationConfirmationMethod::ExplicitAcceptance,
         })
         .collect()
+}
+
+fn valid_persistence_metadata() -> serde_json::Value {
+    json!({
+        "capture": {"personal_feedback": {
+            "record_type": "sleep_energy_check_in", "local_date": "2026-01-13",
+            "sleep_duration_minutes": 450, "daytime_energy": 3,
+            "input_source": "typed",
+            "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+        }}
+    })
 }

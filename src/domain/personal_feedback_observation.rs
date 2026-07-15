@@ -96,8 +96,7 @@ impl SleepObservationEvidenceRecord {
         if record.get("record_type")?.as_str()? != "sleep_energy_check_in" {
             return None;
         }
-        let local_date =
-            NaiveDate::parse_from_str(record.get("local_date")?.as_str()?, "%Y-%m-%d").ok()?;
+        let local_date = parse_date(record.get("local_date")?.as_str()?)?;
         let sleep_duration_minutes =
             i32::try_from(record.get("sleep_duration_minutes")?.as_i64()?).ok()?;
         let daytime_energy = i32::try_from(record.get("daytime_energy")?.as_i64()?).ok()?;
@@ -118,28 +117,17 @@ impl SleepObservationEvidenceRecord {
             "explicit_correction" => SleepObservationConfirmationMethod::ExplicitCorrection,
             _ => return None,
         };
-        if matches!(
-            confirmation_method,
-            SleepObservationConfirmationMethod::ExplicitCorrection
-        ) != record
-            .get("corrects_record_id")
-            .and_then(Value::as_str)
-            .is_some()
-        {
-            return None;
+        match (confirmation_method, record.get("corrects_record_id")) {
+            (SleepObservationConfirmationMethod::ExplicitAcceptance, None) => {}
+            (SleepObservationConfirmationMethod::ExplicitCorrection, Some(value)) => {
+                Uuid::parse_str(value.as_str()?).ok()?;
+            }
+            _ => return None,
         }
-        let start = record
-            .get("sleep_start_local_time")
-            .and_then(Value::as_str)
-            .map(parse_time)
-            .transpose()
-            .ok()?;
-        let end = record
-            .get("sleep_end_local_time")
-            .and_then(Value::as_str)
-            .map(parse_time)
-            .transpose()
-            .ok()?;
+        let start = optional_time(record, "sleep_start_local_time")?;
+        let end = optional_time(record, "sleep_end_local_time")?;
+        optional_boolean(record, "caffeine_within_six_hours_of_sleep")?;
+        optional_screen_minutes(record)?;
         if let (Some(start), Some(end)) = (start, end) {
             let circular_minutes = (end - start).num_minutes().rem_euclid(24 * 60);
             if (circular_minutes - i64::from(sleep_duration_minutes)).abs() > 60 {
@@ -280,4 +268,33 @@ fn parse_time(value: &str) -> Result<NaiveTime, ()> {
     (time.format("%H:%M").to_string() == value)
         .then_some(time)
         .ok_or(())
+}
+
+fn parse_date(value: &str) -> Option<NaiveDate> {
+    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
+    (date.format("%Y-%m-%d").to_string() == value).then_some(date)
+}
+
+fn optional_time(record: &Value, field: &str) -> Option<Option<NaiveTime>> {
+    match record.get(field) {
+        None => Some(None),
+        Some(value) => Some(Some(parse_time(value.as_str()?).ok()?)),
+    }
+}
+
+fn optional_boolean(record: &Value, field: &str) -> Option<Option<bool>> {
+    match record.get(field) {
+        None => Some(None),
+        Some(value) => Some(Some(value.as_bool()?)),
+    }
+}
+
+fn optional_screen_minutes(record: &Value) -> Option<Option<i32>> {
+    match record.get("screen_minutes_in_final_hour") {
+        None => Some(None),
+        Some(value) => {
+            let minutes = i32::try_from(value.as_i64()?).ok()?;
+            (0..=60).contains(&minutes).then_some(Some(minutes))
+        }
+    }
 }
