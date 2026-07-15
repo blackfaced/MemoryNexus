@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 use axum::Router;
+use chrono::NaiveDate;
 use memorynexus::{
     auth::JwtAuth,
     db::{
@@ -435,6 +436,260 @@ async fn planning_surface_rejects_cross_space_and_inactive_namespaces() {
     }
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_planning_creates_replays_and_keeps_provenance_scoped() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let sleep_namespace_id = seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep",
+        "active",
+    )
+    .await;
+    for day in 1..=3 {
+        seed_sleep_evidence(&pool, &fixture, sleep_namespace_id, day, Some(15)).await;
+    }
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let request = |owner_window: Option<Value>| {
+        let client = client.clone();
+        let url = format!("{base_url}/api/v1/surfaces");
+        let token = token.clone();
+        async move {
+            client
+                .post(url)
+                .bearer_auth(token)
+                .json(&json!({
+                    "namespace": "personal.health.sleep", "surface": "planning",
+                    "action": "generate_next_task", "actor": fixture.owner_user_id,
+                    "adapter": "mcp", "payload": {
+                        "space_id": fixture.space_id,
+                        "owner_selected_wake_time_window": owner_window
+                    }, "context": {"mode": "focused", "runtime_preference": "deterministic"}
+                }))
+                .send()
+                .await
+                .expect("sleep planning request should send")
+        }
+    };
+    let response = request(None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let first: Value = response.json().await.expect("response should be json");
+    assert_eq!(
+        first.pointer("/data/result/status").and_then(Value::as_str),
+        Some("experiment_ready")
+    );
+    assert_eq!(
+        first
+            .pointer("/data/result/experiment/action_id")
+            .and_then(Value::as_str),
+        Some("screen_free_final_hour")
+    );
+    assert_eq!(
+        first
+            .pointer("/data/result/experiment/expected_observable_signal")
+            .and_then(Value::as_str),
+        Some(
+            "Confirmed daily records have screen_minutes_in_final_hour == 0 during the experiment."
+        )
+    );
+    let lifecycle_id = uuid_field(&first, "/data/result/experiment/lifecycle_id");
+    let trace_id = uuid_field(&first, "/data/generated_trace_id");
+    let second: Value = request(Some(
+        json!({"start_local_time":"07:00","end_local_time":"07:30"}),
+    ))
+    .await
+    .json()
+    .await
+    .expect("replay response should be json");
+    assert_eq!(
+        uuid_field(&second, "/data/result/experiment/lifecycle_id"),
+        lifecycle_id
+    );
+    assert_eq!(
+        second
+            .pointer("/data/result/experiment/action_id")
+            .and_then(Value::as_str),
+        Some("screen_free_final_hour")
+    );
+    let row: (Uuid, Uuid, Uuid, Uuid, Value) = sqlx::query_as("SELECT id, space_id, namespace_id, planning_trace_id, action FROM planning_lifecycles WHERE id = $1")
+        .bind(lifecycle_id).fetch_one(&pool).await.expect("lifecycle should exist");
+    assert_eq!(row.1, fixture.space_id);
+    assert_eq!(row.2, sleep_namespace_id);
+    assert_eq!(row.3, trace_id);
+    assert_eq!(row.4["action_id"], json!("screen_free_final_hour"));
+    let other_space_id = seed_space(
+        &pool,
+        fixture.owner_user_id,
+        &format!("Other sleep scope {}", Uuid::new_v4()),
+    )
+    .await;
+    let other_namespace_id = seed_namespace(
+        &pool,
+        other_space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep.other",
+        "active",
+    )
+    .await;
+    let other_trace_id: Uuid = sqlx::query_scalar("INSERT INTO traces (space_id, namespace_id, source_type, task_type, mode, runtime, status) VALUES ($1,$2,'test_fixture','planning','focused','deterministic','completed') RETURNING id")
+        .bind(other_space_id).bind(other_namespace_id).fetch_one(&pool).await.unwrap();
+    let feedback_loop_id: Uuid =
+        sqlx::query_scalar("SELECT feedback_loop_id FROM planning_lifecycles WHERE id = $1")
+            .bind(lifecycle_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let cross_scope = sqlx::query("INSERT INTO planning_lifecycles (space_id, namespace_id, feedback_loop_id, planning_trace_id, policy_version, action_id, action, selected_evidence_ids, expected_signal) VALUES ($1,$2,$3,$4,'test','test','{}','[]','test')")
+        .bind(fixture.space_id).bind(sleep_namespace_id).bind(feedback_loop_id).bind(other_trace_id).execute(&pool).await;
+    assert!(
+        cross_scope.is_err(),
+        "trace provenance must be same Space/Namespace"
+    );
+    let trace: PlanningTraceRow = sqlx::query_as("SELECT space_id, namespace_id, source_type, task_type, mode, runtime, model_provider, output_summary, metadata FROM traces WHERE id = $1")
+        .bind(trace_id).fetch_one(&pool).await.expect("sleep planning trace should exist");
+    assert_eq!(trace.space_id, fixture.space_id);
+    assert_eq!(trace.namespace_id, Some(sleep_namespace_id));
+    assert!(!trace
+        .metadata
+        .to_string()
+        .contains("sleep_duration_minutes"));
+    assert!(!trace
+        .metadata
+        .to_string()
+        .contains("screen_minutes_in_final_hour"));
+    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM planning_lifecycles WHERE space_id = $1 AND namespace_id = $2 AND status = 'active'").bind(fixture.space_id).bind(sleep_namespace_id).fetch_one(&pool).await.unwrap(), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_planning_gaps_and_invalid_window_have_no_lifecycle_side_effects() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let sleep_namespace_id = seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep",
+        "active",
+    )
+    .await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let payload = |window: Value| {
+        json!({
+            "namespace":"personal.health.sleep", "surface":"planning", "action":"generate_next_task",
+            "actor":fixture.owner_user_id, "adapter":"mcp", "payload":{"space_id":fixture.space_id,"owner_selected_wake_time_window":window},
+            "context":{"mode":"focused","runtime_preference":"deterministic"}
+        })
+    };
+    let before = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM feedback_loops WHERE space_id = $1 AND namespace_id = $2",
+    )
+    .bind(fixture.space_id)
+    .bind(sleep_namespace_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let gap = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&payload(Value::Null))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(gap.status(), StatusCode::OK);
+    let gap_body: Value = gap.json().await.unwrap();
+    assert_eq!(
+        gap_body
+            .pointer("/data/result/status")
+            .and_then(Value::as_str),
+        Some("needs_more_evidence")
+    );
+    let after_gap = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM feedback_loops WHERE space_id = $1 AND namespace_id = $2",
+    )
+    .bind(fixture.space_id)
+    .bind(sleep_namespace_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(before, after_gap);
+    let invalid = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&payload(
+            json!({"start_local_time":"07:00","end_local_time":"this contains secret"}),
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+    let after_invalid = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM feedback_loops WHERE space_id = $1 AND namespace_id = $2",
+    )
+    .bind(fixture.space_id)
+    .bind(sleep_namespace_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(before, after_invalid);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_planning_concurrent_requests_converge_on_one_active_lifecycle() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let sleep_namespace_id = seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep",
+        "active",
+    )
+    .await;
+    for day in 1..=3 {
+        seed_sleep_evidence(&pool, &fixture, sleep_namespace_id, day, Some(20)).await;
+    }
+    let base_url = spawn_api(pool.clone()).await;
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let request = |client: Client| {
+        let token = token.clone();
+        let url = format!("{base_url}/api/v1/surfaces");
+        async move {
+            client.post(url).bearer_auth(token).json(&json!({
+                "namespace":"personal.health.sleep", "surface":"planning", "action":"generate_next_task",
+                "actor":fixture.owner_user_id, "adapter":"mcp", "payload":{"space_id":fixture.space_id},
+                "context":{"mode":"focused","runtime_preference":"deterministic"}
+            })).send().await.expect("concurrent request should send")
+        }
+    };
+    let (left, right) = tokio::join!(request(Client::new()), request(Client::new()));
+    assert_eq!(left.status(), StatusCode::OK);
+    assert_eq!(right.status(), StatusCode::OK);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM planning_lifecycles WHERE space_id = $1 AND namespace_id = $2 AND status = 'active'")
+        .bind(fixture.space_id).bind(sleep_namespace_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(count, 1);
+    let loop_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM feedback_loops WHERE space_id = $1 AND namespace_id = $2 AND status = 'active'")
+        .bind(fixture.space_id).bind(sleep_namespace_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(loop_count, 1);
+}
+
 struct Fixture {
     owner_user_id: Uuid,
     owner_email: String,
@@ -571,6 +826,45 @@ async fn seed_namespace(
     .fetch_one(pool)
     .await
     .expect("namespace seed should insert")
+}
+
+async fn seed_sleep_evidence(
+    pool: &PgPool,
+    fixture: &Fixture,
+    namespace_id: Uuid,
+    day: i64,
+    screen_minutes: Option<i32>,
+) -> Uuid {
+    let memory_id = Uuid::new_v4();
+    let local_date = NaiveDate::from_ymd_opt(2026, 7, 1)
+        .unwrap()
+        .checked_add_days(chrono::Days::new(day as u64))
+        .unwrap();
+    let mut personal_feedback = json!({
+        "record_type": "sleep_energy_check_in",
+        "local_date": local_date.to_string(),
+        "sleep_duration_minutes": 420,
+        "daytime_energy": 3,
+        "sleep_start_local_time": "23:00",
+        "sleep_end_local_time": "06:00",
+        "input_source": "typed",
+        "input_confirmation": {"status": "confirmed", "method": "explicit_acceptance"}
+    });
+    if let Some(minutes) = screen_minutes {
+        personal_feedback["screen_minutes_in_final_hour"] = json!(minutes);
+    }
+    sqlx::query(
+        "INSERT INTO memories (id, user_id, space_id, namespace_id, title, content, memory_type, source_type, source_metadata) VALUES ($1,$2,$3,$4,'sleep check-in','confirmed sleep check-in','text','surface_capture',$5)",
+    )
+    .bind(memory_id)
+    .bind(fixture.owner_user_id)
+    .bind(fixture.space_id)
+    .bind(namespace_id)
+    .bind(json!({"capture":{"personal_feedback":personal_feedback}}))
+    .execute(pool)
+    .await
+    .expect("sleep evidence should insert");
+    memory_id
 }
 
 async fn planning_trace_count(pool: &PgPool, space_id: Uuid, namespace_id: Uuid) -> i64 {

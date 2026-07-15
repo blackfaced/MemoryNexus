@@ -41,7 +41,8 @@ use crate::domain::personal_feedback_observation::{
     SleepObservationEvidenceRecord,
 };
 use crate::domain::personal_feedback_planning::{
-    select_personal_feedback_experiment, PersonalFeedbackPlanningStatus,
+    select_personal_feedback_experiment, PersonalFeedbackPlanningStatus, WakeTimeWindow,
+    WakeTimeWindowInput,
 };
 use crate::domain::practice_plan::{
     build_adjusted_plan, build_next_task_plan, AdjustPlanRequest, PlanningRequest,
@@ -170,7 +171,7 @@ struct ReviewEvidencePayload {
 struct GenerateNextTaskPayload {
     space_id: Uuid,
     objective: Option<String>,
-    owner_selected_wake_time_window: Option<String>,
+    owner_selected_wake_time_window: Option<WakeTimeWindowInput>,
 }
 
 #[derive(Debug, FromRow)]
@@ -606,10 +607,12 @@ async fn generate_personal_feedback_next_task(
     let evidence =
         load_personal_feedback_observation_evidence(&state.db, payload.space_id, namespace_id)
             .await?;
-    let planning = select_personal_feedback_experiment(
-        evidence,
-        payload.owner_selected_wake_time_window.as_deref(),
-    );
+    let wake_window = payload
+        .owner_selected_wake_time_window
+        .map(WakeTimeWindow::parse)
+        .transpose()
+        .map_err(|error| AppError::BadRequest(error.to_string()))?;
+    let planning = select_personal_feedback_experiment(evidence, wake_window.as_ref());
     let evidence_memory_ids = planning
         .supporting_evidence_ids
         .iter()
@@ -719,13 +722,17 @@ async fn generate_personal_feedback_next_task(
         sqlx::query("UPDATE planning_lifecycles SET planning_trace_id = $2, updated_at = NOW() WHERE id = $1 AND planning_trace_id IS NULL")
             .bind(lifecycle_id).bind(trace.id).execute(&state.db).await.map_err(AppError::Database)?;
     }
-    let guidance = if generated_feedback_loop_ids.is_empty() {
-        vec!["Add confirmed daily records before starting an experiment.".to_string()]
-    } else {
-        vec![
+    let guidance = match planning.status {
+        PersonalFeedbackPlanningStatus::NeedsMoreEvidence => {
+            vec!["Add confirmed daily records before starting an experiment.".to_string()]
+        }
+        PersonalFeedbackPlanningStatus::ActionEvidenceGap => vec![
+            "Provide the confirmed fields required by a reviewed sleep experiment, including a valid owner-selected wake-time window when using the wake-time action.".to_string(),
+        ],
+        PersonalFeedbackPlanningStatus::ExperimentReady => vec![
             "Keep recording confirmed daily check-ins while trying the selected experiment."
                 .to_string(),
-        ]
+        ],
     };
     Ok((
         StatusCode::OK,

@@ -3,8 +3,8 @@ use memorynexus::domain::personal_feedback_observation::{
     SleepObservationConfirmationMethod, SleepObservationEvidenceRecord, SleepObservationInputSource,
 };
 use memorynexus::domain::personal_feedback_planning::{
-    select_personal_feedback_experiment, PersonalFeedbackPlanningStatus,
-    CONSISTENT_WAKE_WINDOW_ACTION_ID, PERSONAL_FEEDBACK_POLICY_VERSION,
+    select_personal_feedback_experiment, PersonalFeedbackPlanningStatus, WakeTimeWindow,
+    WakeTimeWindowInput, CONSISTENT_WAKE_WINDOW_ACTION_ID, PERSONAL_FEEDBACK_POLICY_VERSION,
     SCREEN_FREE_FINAL_HOUR_ACTION_ID,
 };
 use uuid::Uuid;
@@ -50,7 +50,12 @@ fn policy_prefers_screen_experiment_then_timing_experiment() {
         SCREEN_FREE_FINAL_HOUR_ACTION_ID
     );
 
-    let timing = select_personal_feedback_experiment(records(None, true, 3), Some("07:00-07:30"));
+    let wake_window = WakeTimeWindow::parse(WakeTimeWindowInput {
+        start_local_time: "07:00".to_string(),
+        end_local_time: "07:30".to_string(),
+    })
+    .unwrap();
+    let timing = select_personal_feedback_experiment(records(None, true, 3), Some(&wake_window));
     assert_eq!(
         timing.status,
         PersonalFeedbackPlanningStatus::ExperimentReady
@@ -59,6 +64,27 @@ fn policy_prefers_screen_experiment_then_timing_experiment() {
         timing.action.unwrap().action_id,
         CONSISTENT_WAKE_WINDOW_ACTION_ID
     );
+}
+
+#[test]
+fn wake_window_is_strictly_bounded_and_typed() {
+    for (start, end) in [
+        ("7:00", "07:30"),
+        ("07:30", "07:00"),
+        ("07:00", "10:01"),
+        ("07:00", "07:xx"),
+    ] {
+        assert!(WakeTimeWindow::parse(WakeTimeWindowInput {
+            start_local_time: start.to_string(),
+            end_local_time: end.to_string()
+        })
+        .is_err());
+    }
+    assert!(WakeTimeWindow::parse(WakeTimeWindowInput {
+        start_local_time: "07:00".to_string(),
+        end_local_time: "07:30".to_string()
+    })
+    .is_ok());
 }
 
 #[test]
