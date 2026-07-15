@@ -519,6 +519,30 @@ async fn personal_sleep_planning_creates_replays_and_keeps_provenance_scoped() {
             .and_then(Value::as_str),
         Some("screen_free_final_hour")
     );
+    seed_sleep_evidence(&pool, &fixture, sleep_namespace_id, 4, None).await;
+    let changed_evidence: Value = request(Some(
+        json!({"start_local_time":"07:00","end_local_time":"07:30"}),
+    ))
+    .await
+    .json()
+    .await
+    .expect("changed evidence replay should be json");
+    assert_eq!(
+        uuid_field(&changed_evidence, "/data/result/experiment/lifecycle_id"),
+        lifecycle_id
+    );
+    assert_eq!(
+        changed_evidence
+            .pointer("/data/result/experiment/action_id")
+            .and_then(Value::as_str),
+        Some("screen_free_final_hour")
+    );
+    assert_eq!(
+        changed_evidence
+            .pointer("/data/follow_up_suggestions/0")
+            .and_then(Value::as_str),
+        Some("Keep recording confirmed daily check-ins while trying the selected experiment.")
+    );
     let row: (Uuid, Uuid, Uuid, Uuid, Value) = sqlx::query_as("SELECT id, space_id, namespace_id, planning_trace_id, action FROM planning_lifecycles WHERE id = $1")
         .bind(lifecycle_id).fetch_one(&pool).await.expect("lifecycle should exist");
     assert_eq!(row.1, fixture.space_id);

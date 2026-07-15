@@ -659,15 +659,48 @@ async fn generate_personal_feedback_next_task(
         }
         PersonalFeedbackPlanningStatus::NeedsMoreEvidence
         | PersonalFeedbackPlanningStatus::ActionEvidenceGap => {
-            let result = serde_json::to_value(&planning).map_err(|error| {
-                AppError::Internal(format!("planning response failed: {error}"))
-            })?;
-            (
-                result,
-                Vec::new(),
-                None,
-                "Planning returned an evidence gap without an experiment lifecycle.".to_string(),
+            if let Some(lifecycle) = find_active_personal_feedback_lifecycle_readonly(
+                &state.db,
+                payload.space_id,
+                namespace_id,
             )
+            .await?
+            {
+                let result = json!({
+                    "status": "experiment_ready",
+                    "policy_version": lifecycle.policy_version,
+                    "experiment": {
+                        "lifecycle_id": lifecycle.id,
+                        "status": lifecycle.status,
+                        "action_id": lifecycle.action_id,
+                        "action": lifecycle.action,
+                        "expected_observable_signal": lifecycle.expected_signal,
+                        "selected_evidence_ids": lifecycle.selected_evidence_ids,
+                        "feedback_loop_id": lifecycle.feedback_loop_id,
+                    },
+                    "window": planning.window,
+                    "valid_record_count": planning.valid_record_count,
+                    "threshold": planning.threshold,
+                });
+                (
+                    result,
+                    vec![lifecycle.feedback_loop_id],
+                    Some(lifecycle.id),
+                    "Reused the active reviewed personal experiment despite changed evidence coverage."
+                        .to_string(),
+                )
+            } else {
+                let result = serde_json::to_value(&planning).map_err(|error| {
+                    AppError::Internal(format!("planning response failed: {error}"))
+                })?;
+                (
+                    result,
+                    Vec::new(),
+                    None,
+                    "Planning returned an evidence gap without an experiment lifecycle."
+                        .to_string(),
+                )
+            }
         }
     };
     let completed_at = Utc::now();
@@ -722,17 +755,21 @@ async fn generate_personal_feedback_next_task(
         sqlx::query("UPDATE planning_lifecycles SET planning_trace_id = $2, updated_at = NOW() WHERE id = $1 AND planning_trace_id IS NULL")
             .bind(lifecycle_id).bind(trace.id).execute(&state.db).await.map_err(AppError::Database)?;
     }
-    let guidance = match planning.status {
-        PersonalFeedbackPlanningStatus::NeedsMoreEvidence => {
-            vec!["Add confirmed daily records before starting an experiment.".to_string()]
-        }
-        PersonalFeedbackPlanningStatus::ActionEvidenceGap => vec![
-            "Provide the confirmed fields required by a reviewed sleep experiment, including a valid owner-selected wake-time window when using the wake-time action.".to_string(),
-        ],
-        PersonalFeedbackPlanningStatus::ExperimentReady => vec![
+    let guidance = if !generated_feedback_loop_ids.is_empty() {
+        vec![
             "Keep recording confirmed daily check-ins while trying the selected experiment."
                 .to_string(),
-        ],
+        ]
+    } else {
+        match planning.status {
+            PersonalFeedbackPlanningStatus::NeedsMoreEvidence => {
+                vec!["Add confirmed daily records before starting an experiment.".to_string()]
+            }
+            PersonalFeedbackPlanningStatus::ActionEvidenceGap => vec![
+                "Provide the confirmed fields required by a reviewed sleep experiment, including a valid owner-selected wake-time window when using the wake-time action.".to_string(),
+            ],
+            PersonalFeedbackPlanningStatus::ExperimentReady => unreachable!("ready planning creates or reuses a lifecycle"),
+        }
     };
     Ok((
         StatusCode::OK,
@@ -808,6 +845,21 @@ async fn find_active_personal_feedback_lifecycle(
     sqlx::query_as::<_, PersonalFeedbackLifecycleRow>(
         "SELECT id, feedback_loop_id, planning_trace_id, policy_version, action_id, action, selected_evidence_ids, expected_signal, status FROM planning_lifecycles WHERE space_id = $1 AND namespace_id = $2 AND status = 'active' FOR UPDATE"
     ).bind(space_id).bind(namespace_id).fetch_optional(&mut **tx).await.map_err(AppError::Database)
+}
+
+async fn find_active_personal_feedback_lifecycle_readonly(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+) -> Result<Option<PersonalFeedbackLifecycleRow>, AppError> {
+    sqlx::query_as::<_, PersonalFeedbackLifecycleRow>(
+        "SELECT id, feedback_loop_id, planning_trace_id, policy_version, action_id, action, selected_evidence_ids, expected_signal, status FROM planning_lifecycles WHERE space_id = $1 AND namespace_id = $2 AND status = 'active'",
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Database)
 }
 
 async fn adjust_plan(
