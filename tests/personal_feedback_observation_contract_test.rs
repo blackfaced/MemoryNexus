@@ -125,6 +125,7 @@ fn records(days: &[i64]) -> Vec<SleepObservationEvidenceRecord> {
             sleep_duration_minutes: [420, 450, 480, 420, 480][index],
             daytime_energy: 3,
             sleep_timing_present: index % 2 == 0,
+            screen_minutes_before_sleep: None,
             input_source: SleepObservationInputSource::Typed,
             confirmation_method: SleepObservationConfirmationMethod::ExplicitAcceptance,
         })
