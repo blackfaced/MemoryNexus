@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use axum::{extract::State, http::StatusCode, Json};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -39,6 +39,9 @@ use crate::domain::personal_feedback::{
 use crate::domain::personal_feedback_observation::{
     build_personal_feedback_observation_summary, PersonalFeedbackObservationSummary,
     SleepObservationEvidenceRecord,
+};
+use crate::domain::personal_feedback_outcome::{
+    disposition_candidate, PersonalFeedbackDisposition, PersonalFeedbackOutcomeValue,
 };
 use crate::domain::personal_feedback_planning::{
     select_personal_feedback_experiment, PersonalFeedbackPlanningStatus, WakeTimeWindow,
@@ -111,6 +114,19 @@ struct SubmitAttemptPayload {
     evidence_refs: Vec<Value>,
     source_event_id: Option<String>,
     normalized_outcome: Option<NormalizedLearningOutcome>,
+    personal_feedback_outcome: Option<PersonalFeedbackOutcomeInput>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PersonalFeedbackOutcomeInput {
+    lifecycle_id: Uuid,
+    action_id: String,
+    local_date: String,
+    outcome: PersonalFeedbackOutcomeValue,
+    source_event_id: String,
+    evidence_memory_id: Option<Uuid>,
+    corrects_outcome_id: Option<Uuid>,
 }
 
 /// A deliberately small Adapter-to-Performance contract. It contains only
@@ -190,12 +206,37 @@ struct PersonalFeedbackLifecycleRow {
 #[derive(Debug, Deserialize)]
 struct AdjustPlanPayload {
     space_id: Uuid,
+    #[serde(default)]
     proposed_plan: Value,
     #[serde(default)]
     evidence: Vec<Value>,
     #[serde(default)]
     constraints: Vec<String>,
     objective: Option<String>,
+    personal_feedback_adjustment: Option<PersonalFeedbackAdjustmentInput>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PersonalFeedbackAdjustmentInput {
+    lifecycle_id: Uuid,
+    local_date: String,
+    owner_decision: Option<PersonalFeedbackDisposition>,
+}
+
+#[derive(Debug, FromRow)]
+struct PersonalFeedbackOutcomeRow {
+    id: Uuid,
+    lifecycle_id: Uuid,
+    feedback_loop_id: Uuid,
+    trace_id: Uuid,
+    local_date: NaiveDate,
+    action_id: String,
+    outcome: String,
+    source_event_id: String,
+    payload_fingerprint: String,
+    evidence_memory_id: Option<Uuid>,
+    corrects_outcome_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -871,6 +912,10 @@ async fn adjust_plan(
     let payload: AdjustPlanPayload = serde_json::from_value(request.payload.clone())
         .map_err(|error| AppError::BadRequest(format!("invalid adjustPlan payload: {error}")))?;
 
+    if request.namespace == PERSONAL_HEALTH_SLEEP_NAMESPACE {
+        return adjust_personal_feedback_plan(state, user_id, request, payload).await;
+    }
+
     require_space_writer(state, payload.space_id, user_id).await?;
     let namespace =
         resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
@@ -953,6 +998,103 @@ async fn adjust_plan(
     );
 
     Ok((StatusCode::OK, Json(ApiResponse::success(response))))
+}
+
+async fn adjust_personal_feedback_plan(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+    payload: AdjustPlanPayload,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    reject_untyped_personal_feedback_fields(
+        &request.payload,
+        &["space_id", "personal_feedback_adjustment"],
+    )?;
+    let input = payload.personal_feedback_adjustment.ok_or_else(|| {
+        AppError::BadRequest(
+            "personal.health.sleep adjustPlan requires personal_feedback_adjustment".to_string(),
+        )
+    })?;
+    if !payload.proposed_plan.is_null()
+        || !payload.evidence.is_empty()
+        || !payload.constraints.is_empty()
+        || payload.objective.is_some()
+    {
+        return Err(AppError::BadRequest(
+            "personal_feedback_adjustment does not accept generic plan prose, evidence, constraints, or objective".to_string(),
+        ));
+    }
+    let local_date = NaiveDate::parse_from_str(&input.local_date, "%Y-%m-%d")
+        .ok()
+        .filter(|date| date.format("%Y-%m-%d").to_string() == input.local_date)
+        .ok_or_else(|| AppError::BadRequest("local_date must use ISO YYYY-MM-DD".to_string()))?;
+    require_space_writer(state, payload.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+    let started_at = Utc::now();
+    let mut tx = state.db.begin().await.map_err(AppError::Database)?;
+    let lifecycle = sqlx::query_as::<_, PersonalFeedbackLifecycleRow>(
+        "SELECT id, feedback_loop_id, planning_trace_id, policy_version, action_id, action, selected_evidence_ids, expected_signal, status FROM planning_lifecycles WHERE id = $1 AND space_id = $2 AND namespace_id = $3 FOR UPDATE",
+    ).bind(input.lifecycle_id).bind(payload.space_id).bind(namespace.id).fetch_optional(&mut *tx).await.map_err(AppError::Database)?
+        .ok_or_else(|| AppError::BadRequest("unknown personal feedback lifecycle".to_string()))?;
+    if lifecycle.status != "active" {
+        return Err(AppError::BadRequest(
+            "an adjustment requires an active lifecycle".to_string(),
+        ));
+    }
+    let outcome = sqlx::query_as::<_, PersonalFeedbackOutcomeRow>(
+        "SELECT id, lifecycle_id, feedback_loop_id, trace_id, local_date, action_id, outcome, source_event_id, payload_fingerprint, evidence_memory_id, corrects_outcome_id FROM planning_lifecycle_outcomes WHERE lifecycle_id = $1 AND local_date = $2 AND is_current",
+    ).bind(lifecycle.id).bind(local_date).fetch_optional(&mut *tx).await.map_err(AppError::Database)?;
+    let outcome_value = outcome
+        .as_ref()
+        .map(|row| {
+            serde_json::from_value::<PersonalFeedbackOutcomeValue>(json!(row.outcome)).map_err(
+                |_| AppError::Internal("invalid persisted personal feedback outcome".to_string()),
+            )
+        })
+        .transpose()?;
+    let candidate = disposition_candidate(outcome_value);
+    let completed_at = Utc::now();
+    let trace = insert_completed_trace_in_tx(&mut tx, CreateCompletedTrace {
+        space_id: payload.space_id, namespace_id: Some(namespace.id), source_type: trace_source_type(request.adapter),
+        task_type: TraceTaskType::Planning, mode: trace_mode(request.context.mode.as_deref())?, runtime: deterministic_trace_runtime(request.context.runtime_preference),
+        input_summary: Some(format!("Planning lifecycle disposition for {} on {}.", lifecycle.id, local_date)),
+        output_summary: Some(match input.owner_decision { Some(PersonalFeedbackDisposition::Stop) => "Recorded owner stop decision without selecting a replacement.".to_string(), Some(_) => "Recorded owner lifecycle decision without inferring benefit.".to_string(), None => "Produced a deterministic owner-facing disposition candidate.".to_string() }),
+        started_at, completed_at, latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)), model_provider: Some("deterministic".to_string()), model_name: None,
+        token_usage: Some(json!({"input":0,"output":0,"total":0})), estimated_cost_usd: Some(0.0), local_processing_ratio: Some(1.0),
+        related_memory_ids: Vec::new(), generated_memory_ids: Vec::new(), generated_lens_run_ids: Vec::new(), generated_review_report_ids: Vec::new(), generated_feedback_loop_ids: vec![lifecycle.feedback_loop_id], user_feedback: None, error: None,
+        metadata: json!({"surface_gateway":true,"surface":request.surface,"action":request.action,"namespace":request.namespace,"personal_feedback":{"lifecycle_id":lifecycle.id,"feedback_loop_id":lifecycle.feedback_loop_id,"local_date":local_date,"outcome_id":outcome.as_ref().map(|row| row.id),"outcome_trace_id":outcome.as_ref().map(|row| row.trace_id),"outcome_state":candidate.outcome_state,"candidate":candidate.disposition,"owner_decision":input.owner_decision,"policy_version":candidate.policy_version}}),
+    }).await.map_err(AppError::Database)?;
+    if let Some(decision) = input.owner_decision {
+        sqlx::query("INSERT INTO planning_lifecycle_decisions (space_id, namespace_id, lifecycle_id, feedback_loop_id, outcome_id, outcome_trace_id, decision_trace_id, disposition, policy_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+            .bind(payload.space_id).bind(namespace.id).bind(lifecycle.id).bind(lifecycle.feedback_loop_id).bind(outcome.as_ref().map(|row| row.id)).bind(outcome.as_ref().map(|row| row.trace_id)).bind(trace.id)
+            .bind(serde_json::to_value(decision).expect("disposition serialize").as_str().expect("string")).bind(candidate.policy_version).execute(&mut *tx).await.map_err(AppError::Database)?;
+        if decision == PersonalFeedbackDisposition::Stop {
+            sqlx::query("UPDATE planning_lifecycles SET status = 'cancelled', updated_at = NOW() WHERE id = $1")
+                .bind(lifecycle.id).execute(&mut *tx).await.map_err(AppError::Database)?;
+            sqlx::query(
+                "UPDATE feedback_loops SET status = 'completed', updated_at = NOW() WHERE id = $1",
+            )
+            .bind(lifecycle.feedback_loop_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+        }
+    }
+    tx.commit().await.map_err(AppError::Database)?;
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::success(SurfaceResponse::new(
+            Surface::Planning,
+            SurfaceAction::AdjustPlan,
+            json!({"status":"lifecycle_disposition","lifecycle_id":lifecycle.id,"feedback_loop_id":lifecycle.feedback_loop_id,"action_id":lifecycle.action_id,"policy_version":candidate.policy_version,"selected_evidence_ids":lifecycle.selected_evidence_ids,"outcome":{"id":outcome.as_ref().map(|row|row.id),"trace_id":outcome.as_ref().map(|row|row.trace_id),"state":candidate.outcome_state},"candidate":{"disposition":candidate.disposition,"rationale":candidate.rationale},"owner_decision":input.owner_decision,"lifecycle_status":if input.owner_decision == Some(PersonalFeedbackDisposition::Stop) {"cancelled"} else {"active"}}),
+            trace.id,
+            vec![
+                "This advisory loop records owner choice and does not assess efficacy.".to_string(),
+            ],
+            SurfaceVisibility::User,
+        ))),
+    ))
 }
 
 async fn capture_observation(
@@ -2627,6 +2769,9 @@ async fn submit_attempt(
     }
     let payload: SubmitAttemptPayload = serde_json::from_value(request.payload.clone())
         .map_err(|error| AppError::BadRequest(format!("invalid submitAttempt payload: {error}")))?;
+    if request.namespace == PERSONAL_HEALTH_SLEEP_NAMESPACE {
+        return submit_personal_feedback_outcome(state, user_id, request, payload).await;
+    }
     let prepared = prepare_submit_attempt_payload(&request.namespace, payload)?;
 
     require_space_writer(state, prepared.space_id, user_id).await?;
@@ -2827,6 +2972,199 @@ async fn submit_attempt(
     );
 
     Ok((StatusCode::OK, Json(ApiResponse::success(response))))
+}
+
+async fn submit_personal_feedback_outcome(
+    state: &AppState,
+    user_id: Uuid,
+    request: SurfaceRequest,
+    payload: SubmitAttemptPayload,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    reject_untyped_personal_feedback_fields(
+        &request.payload,
+        &["space_id", "personal_feedback_outcome"],
+    )?;
+    let input = payload.personal_feedback_outcome.ok_or_else(|| {
+        AppError::BadRequest("personal.health.sleep requires personal_feedback_outcome".to_string())
+    })?;
+    if payload.feedback_loop_id.is_some()
+        || payload.goal.is_some()
+        || payload.task.is_some()
+        || payload.attempt.is_some()
+        || payload.task_kind.is_some()
+        || payload.source.is_some()
+        || payload.input_source.is_some()
+        || !payload.prompt_items.is_empty()
+        || !payload.submitted_items.is_empty()
+        || !payload.metadata.is_null()
+        || payload.input_confirmation.is_some()
+        || !payload.evidence_refs.is_empty()
+        || payload.source_event_id.is_some()
+        || payload.normalized_outcome.is_some()
+    {
+        return Err(AppError::BadRequest(
+            "personal_feedback_outcome does not accept generic attempt, media, metadata, or text outcome fields".to_string(),
+        ));
+    }
+    if !valid_source_event_id(&input.source_event_id) {
+        return Err(AppError::BadRequest("invalid source_event_id".to_string()));
+    }
+    if input.action_id.is_empty() || input.action_id.len() > 128 {
+        return Err(AppError::BadRequest(
+            "invalid personal feedback action_id".to_string(),
+        ));
+    }
+    let local_date = NaiveDate::parse_from_str(&input.local_date, "%Y-%m-%d")
+        .ok()
+        .filter(|date| date.format("%Y-%m-%d").to_string() == input.local_date)
+        .ok_or_else(|| AppError::BadRequest("local_date must use ISO YYYY-MM-DD".to_string()))?;
+
+    require_space_writer(state, payload.space_id, user_id).await?;
+    let namespace =
+        resolve_namespace_by_name(state, user_id, payload.space_id, &request.namespace).await?;
+    let fingerprint =
+        canonical_payload_fingerprint(&serde_json::to_value(&input).map_err(|error| {
+            AppError::Internal(format!(
+                "personal feedback outcome serialization failed: {error}"
+            ))
+        })?)?;
+    let started_at = Utc::now();
+    let mut tx = state.db.begin().await.map_err(AppError::Database)?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2 || ':' || $3))")
+        .bind(payload.space_id.to_string())
+        .bind(namespace.id.to_string())
+        .bind(format!("{}:{}", input.lifecycle_id, local_date))
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
+    if let Some(existing) = sqlx::query_as::<_, PersonalFeedbackOutcomeRow>(
+        "SELECT id, lifecycle_id, feedback_loop_id, trace_id, local_date, action_id, outcome, source_event_id, payload_fingerprint, evidence_memory_id, corrects_outcome_id FROM planning_lifecycle_outcomes WHERE space_id = $1 AND namespace_id = $2 AND source_event_id = $3",
+    )
+    .bind(payload.space_id).bind(namespace.id).bind(&input.source_event_id)
+    .fetch_optional(&mut *tx).await.map_err(AppError::Database)? {
+        if existing.payload_fingerprint != fingerprint {
+            return Err(AppError::Conflict("source_event_id was already used with a different outcome".to_string()));
+        }
+        tx.commit().await.map_err(AppError::Database)?;
+        return personal_feedback_outcome_response(existing, "outcome_replayed");
+    }
+
+    let lifecycle = sqlx::query_as::<_, PersonalFeedbackLifecycleRow>(
+        "SELECT id, feedback_loop_id, planning_trace_id, policy_version, action_id, action, selected_evidence_ids, expected_signal, status FROM planning_lifecycles WHERE id = $1 AND space_id = $2 AND namespace_id = $3 FOR UPDATE",
+    )
+    .bind(input.lifecycle_id).bind(payload.space_id).bind(namespace.id)
+    .fetch_optional(&mut *tx).await.map_err(AppError::Database)?
+    .ok_or_else(|| AppError::BadRequest("unknown personal feedback lifecycle".to_string()))?;
+    if lifecycle.status != "active" {
+        return Err(AppError::BadRequest(
+            "outcomes are allowed only for an active lifecycle".to_string(),
+        ));
+    }
+    if lifecycle.action_id != input.action_id {
+        return Err(AppError::BadRequest(
+            "outcome action_id was not offered by this lifecycle".to_string(),
+        ));
+    }
+    if let Some(memory_id) = input.evidence_memory_id {
+        let valid = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM memories WHERE id = $1 AND space_id = $2 AND namespace_id = $3 AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in')",
+        )
+        .bind(memory_id).bind(payload.space_id).bind(namespace.id).fetch_one(&mut *tx).await.map_err(AppError::Database)?;
+        if !valid {
+            return Err(AppError::BadRequest(
+                "outcome evidence_memory_id must be a same-Space confirmed sleep record"
+                    .to_string(),
+            ));
+        }
+    }
+    let current = sqlx::query_as::<_, PersonalFeedbackOutcomeRow>(
+        "SELECT id, lifecycle_id, feedback_loop_id, trace_id, local_date, action_id, outcome, source_event_id, payload_fingerprint, evidence_memory_id, corrects_outcome_id FROM planning_lifecycle_outcomes WHERE lifecycle_id = $1 AND local_date = $2 AND is_current FOR UPDATE",
+    ).bind(lifecycle.id).bind(local_date).fetch_optional(&mut *tx).await.map_err(AppError::Database)?;
+    match (current.as_ref(), input.corrects_outcome_id) {
+        (None, None) => {}
+        (Some(current), Some(target)) if current.id == target => {}
+        (Some(_), None) => {
+            return Err(AppError::Conflict(
+                "a current outcome exists; submit an explicit correction".to_string(),
+            ))
+        }
+        (None, Some(_)) => {
+            return Err(AppError::BadRequest(
+                "correction target is not the current same-date outcome".to_string(),
+            ))
+        }
+        (Some(_), Some(_)) => {
+            return Err(AppError::BadRequest(
+                "correction target is not the current same-date outcome".to_string(),
+            ))
+        }
+    }
+    let completed_at = Utc::now();
+    let trace = insert_completed_trace_in_tx(&mut tx, CreateCompletedTrace {
+        space_id: payload.space_id, namespace_id: Some(namespace.id), source_type: trace_source_type(request.adapter),
+        task_type: TraceTaskType::Practice, mode: trace_mode(request.context.mode.as_deref())?,
+        runtime: deterministic_trace_runtime(request.context.runtime_preference),
+        input_summary: Some(format!("Performance outcome for personal feedback lifecycle {} on {}.", lifecycle.id, local_date)),
+        output_summary: Some(format!("Owner-reported {} outcome recorded.", serde_json::to_value(input.outcome).expect("outcome serialize").as_str().expect("string"))),
+        started_at, completed_at, latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+        model_provider: Some("deterministic".to_string()), model_name: None,
+        token_usage: Some(json!({"input":0,"output":0,"total":0})), estimated_cost_usd: Some(0.0), local_processing_ratio: Some(1.0),
+        related_memory_ids: input.evidence_memory_id.into_iter().collect(), generated_memory_ids: Vec::new(), generated_lens_run_ids: Vec::new(), generated_review_report_ids: Vec::new(), generated_feedback_loop_ids: vec![lifecycle.feedback_loop_id],
+        user_feedback: None, error: None,
+        metadata: json!({"surface_gateway":true,"surface":request.surface,"action":request.action,"namespace":request.namespace,"personal_feedback":{"lifecycle_id":lifecycle.id,"feedback_loop_id":lifecycle.feedback_loop_id,"local_date":local_date,"action_id":input.action_id,"outcome":input.outcome,"corrects_outcome_id":input.corrects_outcome_id,"evidence_present":input.evidence_memory_id.is_some()}}),
+    }).await.map_err(AppError::Database)?;
+    // Clear the old current row before inserting the replacement so the
+    // partial unique index is valid throughout the transaction. A later error
+    // rolls this update back together with the trace and replacement insert.
+    if let Some(previous) = current.as_ref() {
+        sqlx::query("UPDATE planning_lifecycle_outcomes SET is_current = FALSE WHERE id = $1 AND is_current")
+            .bind(previous.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+    }
+    let row = sqlx::query_as::<_, PersonalFeedbackOutcomeRow>(
+        "INSERT INTO planning_lifecycle_outcomes (space_id, namespace_id, lifecycle_id, feedback_loop_id, trace_id, local_date, action_id, outcome, source_event_id, payload_fingerprint, evidence_memory_id, corrects_outcome_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, lifecycle_id, feedback_loop_id, trace_id, local_date, action_id, outcome, source_event_id, payload_fingerprint, evidence_memory_id, corrects_outcome_id",
+    ).bind(payload.space_id).bind(namespace.id).bind(lifecycle.id).bind(lifecycle.feedback_loop_id).bind(trace.id).bind(local_date).bind(&input.action_id).bind(serde_json::to_value(input.outcome).expect("outcome serialize").as_str().expect("string")).bind(&input.source_event_id).bind(&fingerprint).bind(input.evidence_memory_id).bind(input.corrects_outcome_id).fetch_one(&mut *tx).await.map_err(AppError::Database)?;
+    if let Some(previous) = current {
+        sqlx::query("UPDATE planning_lifecycle_outcomes SET superseded_by_outcome_id = $2 WHERE id = $1 AND NOT is_current")
+            .bind(previous.id).bind(row.id).execute(&mut *tx).await.map_err(AppError::Database)?;
+    }
+    tx.commit().await.map_err(AppError::Database)?;
+    personal_feedback_outcome_response(row, "outcome_recorded")
+}
+
+fn reject_untyped_personal_feedback_fields(
+    payload: &Value,
+    allowed: &[&str],
+) -> Result<(), AppError> {
+    let object = payload.as_object().ok_or_else(|| {
+        AppError::BadRequest("personal feedback payload must be an object".to_string())
+    })?;
+    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err(AppError::BadRequest(
+            "personal feedback payload accepts only its typed envelope".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn personal_feedback_outcome_response(
+    row: PersonalFeedbackOutcomeRow,
+    status: &str,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::success(SurfaceResponse::new(
+            Surface::Performance,
+            SurfaceAction::SubmitAttempt,
+            json!({"status":status,"outcome_id":row.id,"lifecycle_id":row.lifecycle_id,"feedback_loop_id":row.feedback_loop_id,"trace_id":row.trace_id,"local_date":row.local_date,"action_id":row.action_id,"outcome":row.outcome,"corrects_outcome_id":row.corrects_outcome_id,"evidence_memory_id":row.evidence_memory_id}),
+            row.trace_id,
+            vec!["This records an owner-reported outcome; it does not assess benefit.".to_string()],
+            SurfaceVisibility::User,
+        ))),
+    ))
 }
 
 struct AttemptTraceInput<'a> {

@@ -714,6 +714,262 @@ async fn personal_sleep_planning_concurrent_requests_converge_on_one_active_life
     assert_eq!(loop_count, 1);
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_adjustment_uses_current_outcome_and_stop_closes_only_that_lifecycle() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let namespace_id = seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep",
+        "active",
+    )
+    .await;
+    for day in 1..=3 {
+        seed_sleep_evidence(&pool, &fixture, namespace_id, day, Some(20)).await;
+    }
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let generated: Value = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace":"personal.health.sleep", "surface":"planning", "action":"generate_next_task",
+            "actor":fixture.owner_user_id, "adapter":"mcp", "payload":{"space_id":fixture.space_id},
+            "context":{"mode":"focused","runtime_preference":"deterministic"}
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let lifecycle_id = uuid_field(&generated, "/data/result/experiment/lifecycle_id");
+    let feedback_loop_id = uuid_field(&generated, "/data/result/experiment/feedback_loop_id");
+    let outcome_trace_id: Uuid = sqlx::query_scalar("INSERT INTO traces (space_id, namespace_id, source_type, task_type, mode, runtime, status) VALUES ($1,$2,'test_fixture','practice','fast','deterministic','completed') RETURNING id")
+        .bind(fixture.space_id).bind(namespace_id).fetch_one(&pool).await.unwrap();
+    let outcome_id: Uuid = sqlx::query_scalar("INSERT INTO planning_lifecycle_outcomes (space_id, namespace_id, lifecycle_id, feedback_loop_id, trace_id, local_date, action_id, outcome, source_event_id, payload_fingerprint) VALUES ($1,$2,$3,$4,$5,'2026-07-20','screen_free_final_hour','skipped','planning.fixture.1',$6) RETURNING id")
+        .bind(fixture.space_id).bind(namespace_id).bind(lifecycle_id).bind(feedback_loop_id).bind(outcome_trace_id).bind("f".repeat(64)).fetch_one(&pool).await.unwrap();
+    let adjust = |decision: Option<&str>| {
+        json!({
+            "namespace":"personal.health.sleep", "surface":"planning", "action":"adjust_plan",
+            "actor":fixture.owner_user_id, "adapter":"mcp", "payload":{"space_id":fixture.space_id,"personal_feedback_adjustment":{"lifecycle_id":lifecycle_id,"local_date":"2026-07-20","owner_decision":decision}},
+            "context":{"mode":"focused","runtime_preference":"deterministic"}
+        })
+    };
+    let candidate: Value = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&adjust(None))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        candidate
+            .pointer("/data/result/candidate/disposition")
+            .and_then(Value::as_str),
+        Some("retest")
+    );
+    assert_eq!(
+        candidate
+            .pointer("/data/result/outcome/id")
+            .and_then(Value::as_str),
+        Some(outcome_id.to_string().as_str())
+    );
+    let stopped: Value = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&adjust(Some("stop")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        stopped
+            .pointer("/data/result/lifecycle_status")
+            .and_then(Value::as_str),
+        Some("cancelled")
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT status FROM planning_lifecycles WHERE id = $1")
+            .bind(lifecycle_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "cancelled"
+    );
+    let decision: (Uuid, Uuid, Uuid) = sqlx::query_as("SELECT outcome_id, outcome_trace_id, decision_trace_id FROM planning_lifecycle_decisions WHERE lifecycle_id = $1 ORDER BY created_at DESC LIMIT 1")
+        .bind(lifecycle_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(decision.0, outcome_id);
+    assert_eq!(decision.1, outcome_trace_id);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_adjustment_uses_current_outcome_and_records_owner_stop() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let sleep_namespace_id = seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep",
+        "active",
+    )
+    .await;
+    for day in 1..=3 {
+        seed_sleep_evidence(&pool, &fixture, sleep_namespace_id, day, Some(20)).await;
+    }
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+
+    let lifecycle: Value = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace":"personal.health.sleep", "surface":"planning", "action":"generate_next_task",
+            "actor":fixture.owner_user_id, "adapter":"mcp", "payload":{"space_id":fixture.space_id},
+            "context":{"mode":"focused","runtime_preference":"deterministic"}
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let lifecycle_id = uuid_field(&lifecycle, "/data/result/experiment/lifecycle_id");
+    let selected_evidence_ids =
+        lifecycle["data"]["result"]["experiment"]["selected_evidence_ids"].clone();
+
+    let adjustment = |local_date: &str, owner_decision: Option<&str>| {
+        json!({
+            "namespace":"personal.health.sleep", "surface":"planning", "action":"adjust_plan",
+            "actor":fixture.owner_user_id, "adapter":"mcp",
+            "payload":{"space_id":fixture.space_id,"personal_feedback_adjustment":{
+                "lifecycle_id":lifecycle_id,"local_date":local_date,"owner_decision":owner_decision
+            }}, "context":{"mode":"focused","runtime_preference":"deterministic"}
+        })
+    };
+    let missing: Value = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&adjustment("2026-07-20", None))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        missing["data"]["result"]["outcome"]["state"],
+        "awaiting_outcome"
+    );
+    assert!(missing["data"]["result"]["candidate"]["disposition"].is_null());
+    assert_eq!(
+        missing["data"]["result"]["selected_evidence_ids"],
+        selected_evidence_ids
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM planning_lifecycle_outcomes WHERE lifecycle_id = $1"
+        )
+        .bind(lifecycle_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+
+    let outcome: Value = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "namespace":"personal.health.sleep", "surface":"performance", "action":"submit_attempt",
+            "actor":fixture.owner_user_id, "adapter":"mcp", "payload":{"space_id":fixture.space_id,
+            "personal_feedback_outcome":{"lifecycle_id":lifecycle_id,"action_id":"screen_free_final_hour",
+            "local_date":"2026-07-20","outcome":"skipped","source_event_id":"sleep-adjustment-1"}},
+            "context":{"mode":"fast","runtime_preference":"deterministic"}
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let outcome_id = uuid_field(&outcome, "/data/result/outcome_id");
+    let outcome_trace_id = uuid_field(&outcome, "/data/generated_trace_id");
+    let retest: Value = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&adjustment("2026-07-20", None))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(retest["data"]["result"]["outcome"]["state"], "skipped");
+    assert_eq!(
+        retest["data"]["result"]["candidate"]["disposition"],
+        "retest"
+    );
+    assert!(retest.to_string().contains("not ineffectiveness"));
+
+    let stopped: Value = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&adjustment("2026-07-20", Some("stop")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let decision_trace_id = uuid_field(&stopped, "/data/generated_trace_id");
+    assert_eq!(stopped["data"]["result"]["lifecycle_status"], "cancelled");
+    let decision: (Uuid, Uuid, Uuid, String) = sqlx::query_as(
+        "SELECT outcome_id, outcome_trace_id, decision_trace_id, disposition FROM planning_lifecycle_decisions WHERE lifecycle_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(lifecycle_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        decision,
+        (
+            outcome_id,
+            outcome_trace_id,
+            decision_trace_id,
+            "stop".to_string()
+        )
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT status FROM planning_lifecycles WHERE id = $1")
+            .bind(lifecycle_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "cancelled"
+    );
+    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM planning_lifecycles WHERE space_id = $1 AND namespace_id = $2 AND status = 'active'")
+        .bind(fixture.space_id).bind(sleep_namespace_id).fetch_one(&pool).await.unwrap(), 0);
+}
+
 struct Fixture {
     owner_user_id: Uuid,
     owner_email: String,

@@ -555,6 +555,127 @@ async fn performance_surface_rejects_invalid_evidence_ref_before_feedback_or_tra
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn personal_sleep_outcome_is_idempotent_and_correction_keeps_only_one_current_row() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let namespace_id = seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep",
+        "reflective",
+    )
+    .await;
+    let feedback_loop_id =
+        seed_feedback_loop(&pool, fixture.space_id, namespace_id, fixture.owner_user_id).await;
+    let planning_trace_id: Uuid = sqlx::query_scalar("INSERT INTO traces (space_id, namespace_id, source_type, task_type, mode, runtime, status) VALUES ($1,$2,'test_fixture','planning','focused','deterministic','completed') RETURNING id")
+        .bind(fixture.space_id).bind(namespace_id).fetch_one(&pool).await.unwrap();
+    let lifecycle_id: Uuid = sqlx::query_scalar("INSERT INTO planning_lifecycles (space_id, namespace_id, feedback_loop_id, planning_trace_id, policy_version, action_id, action, selected_evidence_ids, expected_signal) VALUES ($1,$2,$3,$4,'personal_feedback_sleep_v1','screen_free_final_hour','{}','[]','coverage') RETURNING id")
+        .bind(fixture.space_id).bind(namespace_id).bind(feedback_loop_id).bind(planning_trace_id).fetch_one(&pool).await.unwrap();
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let request = |local_date: &str, outcome: &str, event: &str, corrects: Option<Uuid>| {
+        json!({
+            "namespace":"personal.health.sleep", "surface":"performance", "action":"submit_attempt",
+            "actor":fixture.owner_user_id, "adapter":"mcp",
+            "payload":{"space_id":fixture.space_id,"personal_feedback_outcome":{
+                "lifecycle_id":lifecycle_id,"action_id":"screen_free_final_hour","local_date":local_date,
+                "outcome":outcome,"source_event_id":event,"corrects_outcome_id":corrects
+            }}, "context":{"mode":"fast","runtime_preference":"deterministic"}
+        })
+    };
+    let first: Value = post_surface(
+        &client,
+        &base_url,
+        &token,
+        request("2026-07-20", "performed", "sleep.1", None),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    let outcome_id = uuid_field(&first, "/data/result/outcome_id");
+    let trace_id = uuid_field(&first, "/data/generated_trace_id");
+    let replay: Value = post_surface(
+        &client,
+        &base_url,
+        &token,
+        request("2026-07-20", "performed", "sleep.1", None),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(uuid_field(&replay, "/data/result/outcome_id"), outcome_id);
+    assert_eq!(uuid_field(&replay, "/data/generated_trace_id"), trace_id);
+    let conflict = post_surface(
+        &client,
+        &base_url,
+        &token,
+        request("2026-07-20", "skipped", "sleep.2", None),
+    )
+    .await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    let corrected: Value = post_surface(
+        &client,
+        &base_url,
+        &token,
+        request("2026-07-20", "skipped", "sleep.3", Some(outcome_id)),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(
+        corrected
+            .pointer("/data/result/outcome")
+            .and_then(Value::as_str),
+        Some("skipped")
+    );
+    let current: (i64, String) = sqlx::query_as("SELECT COUNT(*), max(outcome) FROM planning_lifecycle_outcomes WHERE lifecycle_id = $1 AND is_current")
+        .bind(lifecycle_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(current, (1, "skipped".to_string()));
+    let event_conflict = post_surface(
+        &client,
+        &base_url,
+        &token,
+        request("2026-07-21", "not_evaluable", "sleep.1", None),
+    )
+    .await;
+    assert_eq!(event_conflict.status(), StatusCode::CONFLICT);
+    let not_evaluable: Value = post_surface(
+        &client,
+        &base_url,
+        &token,
+        request("2026-07-21", "not_evaluable", "sleep.4", None),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(
+        not_evaluable
+            .pointer("/data/result/outcome")
+            .and_then(Value::as_str),
+        Some("not_evaluable")
+    );
+    let trace_metadata: Value = sqlx::query_scalar("SELECT metadata FROM traces WHERE id = $1")
+        .bind(trace_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!trace_metadata
+        .to_string()
+        .contains("sleep_duration_minutes"));
+    assert!(!trace_metadata.to_string().contains("daytime_energy"));
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
 async fn idempotent_learning_outcome_replays_conflicts_and_preserves_zero_side_effect_rejections() {
     let pool = postgres_pool().await;
     db::run_migrations(&pool)
