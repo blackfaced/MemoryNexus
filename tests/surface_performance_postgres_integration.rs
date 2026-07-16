@@ -575,6 +575,30 @@ async fn personal_sleep_outcome_is_idempotent_and_correction_keeps_only_one_curr
         .bind(fixture.space_id).bind(namespace_id).fetch_one(&pool).await.unwrap();
     let lifecycle_id: Uuid = sqlx::query_scalar("INSERT INTO planning_lifecycles (space_id, namespace_id, feedback_loop_id, planning_trace_id, policy_version, action_id, action, selected_evidence_ids, expected_signal) VALUES ($1,$2,$3,$4,'personal_feedback_sleep_v1','screen_free_final_hour','{}','[]','coverage') RETURNING id")
         .bind(fixture.space_id).bind(namespace_id).bind(feedback_loop_id).bind(planning_trace_id).fetch_one(&pool).await.unwrap();
+    let wrong_date_memory_id = Uuid::new_v4();
+    let superseded_memory_id = Uuid::new_v4();
+    for (memory_id, local_date, superseded) in [
+        (wrong_date_memory_id, "2026-07-19", false),
+        (superseded_memory_id, "2026-07-20", true),
+    ] {
+        let mut personal_feedback = json!({
+            "record_type":"sleep_energy_check_in",
+            "local_date":local_date,
+            "input_confirmation":{"status":"confirmed","method":"explicit_acceptance"}
+        });
+        if superseded {
+            personal_feedback["superseded_by_memory_id"] = json!(Uuid::new_v4());
+        }
+        sqlx::query("INSERT INTO memories (id, user_id, space_id, namespace_id, content, memory_type, source_type, source_metadata) VALUES ($1,$2,$3,$4,'confirmed sleep check-in','text','surface_capture',$5)")
+            .bind(memory_id)
+            .bind(fixture.owner_user_id)
+            .bind(fixture.space_id)
+            .bind(namespace_id)
+            .bind(json!({"capture":{"personal_feedback":personal_feedback}}))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
     let base_url = spawn_api(pool.clone()).await;
     let client = Client::new();
     let token = token_for(fixture.owner_user_id, &fixture.owner_email);
@@ -588,6 +612,32 @@ async fn personal_sleep_outcome_is_idempotent_and_correction_keeps_only_one_curr
             }}, "context":{"mode":"fast","runtime_preference":"deterministic"}
         })
     };
+    for evidence_memory_id in [wrong_date_memory_id, superseded_memory_id] {
+        let rejected = post_surface(
+            &client,
+            &base_url,
+            &token,
+            json!({
+                "namespace":"personal.health.sleep", "surface":"performance", "action":"submit_attempt",
+                "actor":fixture.owner_user_id, "adapter":"mcp", "payload":{"space_id":fixture.space_id,
+                "personal_feedback_outcome":{"lifecycle_id":lifecycle_id,"action_id":"screen_free_final_hour",
+                "local_date":"2026-07-20","outcome":"performed","source_event_id":format!("sleep.invalid.{evidence_memory_id}"),"evidence_memory_id":evidence_memory_id}},
+                "context":{"mode":"fast","runtime_preference":"deterministic"}
+            }),
+        )
+        .await;
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM planning_lifecycle_outcomes WHERE lifecycle_id = $1"
+        )
+        .bind(lifecycle_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
     let first: Value = post_surface(
         &client,
         &base_url,

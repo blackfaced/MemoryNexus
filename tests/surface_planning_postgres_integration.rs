@@ -813,6 +813,37 @@ async fn personal_sleep_adjustment_uses_current_outcome_and_stop_closes_only_tha
         .bind(lifecycle_id).fetch_one(&pool).await.unwrap();
     assert_eq!(decision.0, outcome_id);
     assert_eq!(decision.1, outcome_trace_id);
+
+    let other_space_id = seed_space(
+        &pool,
+        fixture.owner_user_id,
+        &format!("Other decision scope {}", Uuid::new_v4()),
+    )
+    .await;
+    let other_namespace_id = seed_namespace(
+        &pool,
+        other_space_id,
+        fixture.owner_user_id,
+        "personal.health.sleep.other",
+        "active",
+    )
+    .await;
+    let other_feedback_loop_id: Uuid = sqlx::query_scalar("INSERT INTO feedback_loops (space_id, namespace_id, goal, task, status, created_by) VALUES ($1,$2,'other','other','active',$3) RETURNING id")
+        .bind(other_space_id).bind(other_namespace_id).bind(fixture.owner_user_id).fetch_one(&pool).await.unwrap();
+    let other_planning_trace_id: Uuid = sqlx::query_scalar("INSERT INTO traces (space_id, namespace_id, source_type, task_type, mode, runtime, status) VALUES ($1,$2,'test_fixture','planning','focused','deterministic','completed') RETURNING id")
+        .bind(other_space_id).bind(other_namespace_id).fetch_one(&pool).await.unwrap();
+    let other_lifecycle_id: Uuid = sqlx::query_scalar("INSERT INTO planning_lifecycles (space_id, namespace_id, feedback_loop_id, planning_trace_id, policy_version, action_id, action, selected_evidence_ids, expected_signal) VALUES ($1,$2,$3,$4,'test','screen_free_final_hour','{}','[]','test') RETURNING id")
+        .bind(other_space_id).bind(other_namespace_id).bind(other_feedback_loop_id).bind(other_planning_trace_id).fetch_one(&pool).await.unwrap();
+    let other_outcome_trace_id: Uuid = sqlx::query_scalar("INSERT INTO traces (space_id, namespace_id, source_type, task_type, mode, runtime, status) VALUES ($1,$2,'test_fixture','practice','fast','deterministic','completed') RETURNING id")
+        .bind(other_space_id).bind(other_namespace_id).fetch_one(&pool).await.unwrap();
+    let other_outcome_id: Uuid = sqlx::query_scalar("INSERT INTO planning_lifecycle_outcomes (space_id, namespace_id, lifecycle_id, feedback_loop_id, trace_id, local_date, action_id, outcome, source_event_id, payload_fingerprint) VALUES ($1,$2,$3,$4,$5,'2026-07-20','screen_free_final_hour','performed','other-outcome','fixture') RETURNING id")
+        .bind(other_space_id).bind(other_namespace_id).bind(other_lifecycle_id).bind(other_feedback_loop_id).bind(other_outcome_trace_id).fetch_one(&pool).await.unwrap();
+    let cross_scope_outcome = sqlx::query("UPDATE planning_lifecycle_decisions SET outcome_id = $2, outcome_trace_id = $3 WHERE lifecycle_id = $1")
+        .bind(lifecycle_id).bind(other_outcome_id).bind(other_outcome_trace_id).execute(&pool).await;
+    assert!(
+        cross_scope_outcome.is_err(),
+        "decision lineage must reject an outcome or outcome Trace from another scope"
+    );
 }
 
 #[tokio::test]
@@ -893,6 +924,45 @@ async fn personal_sleep_adjustment_uses_current_outcome_and_records_owner_stop()
         .await
         .unwrap(),
         0
+    );
+    let decision_count_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM planning_lifecycle_decisions WHERE lifecycle_id = $1",
+    )
+    .bind(lifecycle_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let decision_trace_count_before =
+        planning_trace_count(&pool, fixture.space_id, sleep_namespace_id).await;
+    let missing_decision = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(&token)
+        .json(&adjustment("2026-07-20", Some("stop")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing_decision.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM planning_lifecycle_decisions WHERE lifecycle_id = $1"
+        )
+        .bind(lifecycle_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        decision_count_before
+    );
+    assert_eq!(
+        planning_trace_count(&pool, fixture.space_id, sleep_namespace_id).await,
+        decision_trace_count_before
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT status FROM planning_lifecycles WHERE id = $1")
+            .bind(lifecycle_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "active"
     );
 
     let outcome: Value = client
