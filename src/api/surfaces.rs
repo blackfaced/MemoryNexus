@@ -1054,6 +1054,11 @@ async fn adjust_personal_feedback_plan(
         })
         .transpose()?;
     let candidate = disposition_candidate(outcome_value);
+    if input.owner_decision.is_some() && outcome.is_none() {
+        return Err(AppError::BadRequest(
+            "an owner decision requires a current outcome and outcome trace".to_string(),
+        ));
+    }
     let completed_at = Utc::now();
     let trace = insert_completed_trace_in_tx(&mut tx, CreateCompletedTrace {
         space_id: payload.space_id, namespace_id: Some(namespace.id), source_type: trace_source_type(request.adapter),
@@ -3068,13 +3073,18 @@ async fn submit_personal_feedback_outcome(
     }
     if let Some(memory_id) = input.evidence_memory_id {
         let valid = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM memories WHERE id = $1 AND space_id = $2 AND namespace_id = $3 AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in')",
+            "SELECT EXISTS (SELECT 1 FROM memories WHERE id = $1 AND space_id = $2 AND namespace_id = $3 AND source_metadata #>> '{capture,personal_feedback,record_type}' = 'sleep_energy_check_in' AND source_metadata #>> '{capture,personal_feedback,local_date}' = $4 AND source_metadata #>> '{capture,personal_feedback,input_confirmation,status}' = 'confirmed' AND source_metadata #> '{capture,personal_feedback,superseded_by_memory_id}' IS NULL)",
         )
-        .bind(memory_id).bind(payload.space_id).bind(namespace.id).fetch_one(&mut *tx).await.map_err(AppError::Database)?;
+        .bind(memory_id)
+        .bind(payload.space_id)
+        .bind(namespace.id)
+        .bind(local_date.to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
         if !valid {
             return Err(AppError::BadRequest(
-                "outcome evidence_memory_id must be a same-Space confirmed sleep record"
-                    .to_string(),
+                "outcome evidence_memory_id must be a current same-scope confirmed sleep record for local_date".to_string(),
             ));
         }
     }

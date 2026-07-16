@@ -38,7 +38,9 @@ CREATE TABLE planning_lifecycle_outcomes (
     CONSTRAINT planning_lifecycle_outcomes_superseded_fkey
         FOREIGN KEY (superseded_by_outcome_id) REFERENCES planning_lifecycle_outcomes(id) ON DELETE RESTRICT,
     CONSTRAINT planning_lifecycle_outcomes_event_scope_unique
-        UNIQUE (space_id, namespace_id, source_event_id)
+        UNIQUE (space_id, namespace_id, source_event_id),
+    CONSTRAINT planning_lifecycle_outcomes_decision_lineage_unique
+        UNIQUE (id, space_id, namespace_id, lifecycle_id, feedback_loop_id, trace_id)
 );
 CREATE UNIQUE INDEX planning_lifecycle_outcomes_one_current_per_date
     ON planning_lifecycle_outcomes (lifecycle_id, local_date) WHERE is_current;
@@ -99,8 +101,8 @@ CREATE TABLE planning_lifecycle_decisions (
     namespace_id UUID NOT NULL,
     lifecycle_id UUID NOT NULL,
     feedback_loop_id UUID NOT NULL,
-    outcome_id UUID,
-    outcome_trace_id UUID,
+    outcome_id UUID NOT NULL,
+    outcome_trace_id UUID NOT NULL,
     decision_trace_id UUID NOT NULL,
     disposition VARCHAR(32) NOT NULL,
     policy_version VARCHAR(128) NOT NULL,
@@ -113,11 +115,10 @@ CREATE TABLE planning_lifecycle_decisions (
     CONSTRAINT planning_lifecycle_decisions_feedback_loop_scope_fkey
         FOREIGN KEY (feedback_loop_id, space_id, namespace_id)
         REFERENCES feedback_loops(id, space_id, namespace_id) ON DELETE CASCADE,
-    CONSTRAINT planning_lifecycle_decisions_outcome_fkey
-        FOREIGN KEY (outcome_id) REFERENCES planning_lifecycle_outcomes(id) ON DELETE RESTRICT,
-    CONSTRAINT planning_lifecycle_decisions_outcome_trace_scope_fkey
-        FOREIGN KEY (outcome_trace_id, space_id, namespace_id)
-        REFERENCES traces(id, space_id, namespace_id) ON DELETE RESTRICT,
+    CONSTRAINT planning_lifecycle_decisions_outcome_lineage_fkey
+        FOREIGN KEY (outcome_id, space_id, namespace_id, lifecycle_id, feedback_loop_id, outcome_trace_id)
+        REFERENCES planning_lifecycle_outcomes(id, space_id, namespace_id, lifecycle_id, feedback_loop_id, trace_id)
+        ON DELETE RESTRICT,
     CONSTRAINT planning_lifecycle_decisions_decision_trace_scope_fkey
         FOREIGN KEY (decision_trace_id, space_id, namespace_id)
         REFERENCES traces(id, space_id, namespace_id) ON DELETE RESTRICT
