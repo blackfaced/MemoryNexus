@@ -15,6 +15,7 @@ pub mod growth_model;
 pub mod memory_atom;
 pub mod personal_feedback;
 pub mod personal_feedback_observation;
+pub mod personal_feedback_planning;
 pub mod practice_plan;
 pub mod reflection;
 pub mod surface;

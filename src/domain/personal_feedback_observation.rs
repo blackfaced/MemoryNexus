@@ -18,6 +18,7 @@ pub struct SleepObservationEvidenceRecord {
     pub sleep_duration_minutes: i32,
     pub daytime_energy: i32,
     pub sleep_timing_present: bool,
+    pub screen_minutes_before_sleep: Option<i32>,
     pub input_source: SleepObservationInputSource,
     pub confirmation_method: SleepObservationConfirmationMethod,
 }
@@ -127,7 +128,7 @@ impl SleepObservationEvidenceRecord {
         let start = optional_time(record, "sleep_start_local_time")?;
         let end = optional_time(record, "sleep_end_local_time")?;
         optional_boolean(record, "caffeine_within_six_hours_of_sleep")?;
-        optional_screen_minutes(record)?;
+        let screen_minutes_before_sleep = optional_screen_minutes(record)?;
         if let (Some(start), Some(end)) = (start, end) {
             let circular_minutes = (end - start).num_minutes().rem_euclid(24 * 60);
             if (circular_minutes - i64::from(sleep_duration_minutes)).abs() > 60 {
@@ -140,6 +141,7 @@ impl SleepObservationEvidenceRecord {
             sleep_duration_minutes,
             daytime_energy,
             sleep_timing_present: start.is_some() && end.is_some(),
+            screen_minutes_before_sleep,
             input_source,
             confirmation_method,
         })
