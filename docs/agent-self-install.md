@@ -74,6 +74,10 @@ what was tried, and which later phases can still be completed.
   creating a local test account.
 - Do not reintroduce the old Python/FastAPI backend.
 - Do not make MemoryNexus agent-owned memory; use `CognitiveSpace`.
+- Keep the API, PostgreSQL, and Qdrant on `127.0.0.1` for private Local
+  One-click use unless the user explicitly approves a hardened network change.
+- Treat MCP config as secret-bearing; `install.sh --mcp-config` writes it with
+  mode `0600`.
 
 ## Prerequisites
 
@@ -489,6 +493,11 @@ the API, PostgreSQL, and Qdrant already exist elsewhere. Production Profile uses
 stable hosted or self-hosted services instead of per-user Docker-managed
 dependencies. Developer Profile may use the same local Docker services for
 contributor testing.
+
+For a durable private Apple Silicon installation, read the
+[Mac mini Local Lab runbook](mac-mini-local-lab.md) before the first start. It
+documents Compose project/volume identity, data locations, paired PostgreSQL +
+Qdrant backup/restore, upgrade/rollback, and the external-media boundary.
 
 Start PostgreSQL and Qdrant:
 
