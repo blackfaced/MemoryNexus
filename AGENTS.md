@@ -233,6 +233,20 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 5. 文档口径统一：README、architecture、TODO 都应以 long-term feedback engine、
    Rust 主线和 Cognitive Space 为准。
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `blackfaced/MemoryNexus`; external PRs are not a triage request surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the configured five-label triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo; read repo-level domain context when present and architecture decisions from `decisions/`. See `docs/agents/domain.md`.
+
 ## 当前产品入口
 
 - Thought Review 是 reflective demo 和项目演讲入口：写下一条混乱想法，用多个
