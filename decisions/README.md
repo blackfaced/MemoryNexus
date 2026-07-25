@@ -30,6 +30,7 @@ decisions/
 ├── ADR-021-external-media-evidence-references.md ✅ 外部媒体证据引用
 ├── ADR-022-memorynexus-brand-semantics.md ✅ MemoryNexus 品牌语义
 ├── ADR-023-namespace-knowledge-refresh.md ✅ Namespace Knowledge Refresh
+├── ADR-024-private-mac-mini-local-lab.md ✅ Private Mac mini Local Lab
 └── ADR-025-personal-feedback-dogfood.md ✅ Personal Feedback Dogfood
 ```
 

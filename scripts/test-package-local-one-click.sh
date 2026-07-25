@@ -69,6 +69,15 @@ test -f "$package_dir/README.local-one-click.md"
 test -f "$package_dir/MANIFEST.json"
 test -f "$package_dir/SHA256SUMS"
 
+grep -F 'MEMORYNEXUS_BIND_ADDR=127.0.0.1:8080' \
+  "$package_dir/.env.runtime.example" >/dev/null
+grep -F '127.0.0.1:${POSTGRES_PORT:-5432}:5432' \
+  "$package_dir/docker-compose.runtime.yml" >/dev/null
+grep -F '127.0.0.1:${QDRANT_HTTP_PORT:-6333}:6333' \
+  "$package_dir/docker-compose.runtime.yml" >/dev/null
+grep -F '127.0.0.1:${QDRANT_GRPC_PORT:-6334}:6334' \
+  "$package_dir/docker-compose.runtime.yml" >/dev/null
+
 if grep -E '\b(cargo|rustc|rustup)\b' "$package_dir/install.sh" >/dev/null; then
   printf 'install.sh must not call cargo, rustc, or rustup\n' >&2
   exit 1
@@ -97,6 +106,8 @@ printf '%s\n' "$printed_config" | grep -F "$prefix_dir/bin/memorynexus-mcp" >/de
   --mcp-config "$mcp_config" >/dev/null
 python3 -m json.tool "$mcp_config" >/dev/null
 grep -F "$prefix_dir/bin/memorynexus-mcp" "$mcp_config" >/dev/null
+python3 -c 'import os, stat, sys; assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o600' \
+  "$mcp_config"
 
 MEMORYNEXUS_DUMMY_LOG="$dummy_log" MEMORYNEXUS_DUMMY_STDIN="$dummy_stdin" \
   "$package_dir/install.sh" \

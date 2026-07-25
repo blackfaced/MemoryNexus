@@ -97,7 +97,8 @@ profiles in [Agent Self-Install](docs/agent-self-install.md):
   on the local machine.
 - Local One-click Profile: use the release archive containing `memorynexus`,
   `memorynexus-cli`, and `memorynexus-mcp`, verify the checksum, then run local
-  PostgreSQL and Qdrant through Docker.
+  PostgreSQL and Qdrant through Docker. For private Apple Silicon self-use,
+  follow the [Mac mini Local Lab runbook](docs/mac-mini-local-lab.md).
 - Production Profile: run release binaries against stable hosted or
   self-hosted PostgreSQL/Qdrant services. It is not Supabase-only.
 - Developer Profile: use the source checkout and Cargo for contribution work.
@@ -241,6 +242,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [CLI](docs/cli.md)
 - [MCP Server](docs/mcp.md)
 - [Agent Self-Install](docs/agent-self-install.md)
+- [Mac mini Local Lab](docs/mac-mini-local-lab.md)
 - [Lens Evaluation](docs/evaluation.md)
 - [Phase 2 Completion](docs/phase2-completion.md)
 - [Development](docs/development.md)
@@ -259,6 +261,7 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - [Thought Review UI MVP ADR](decisions/ADR-013-thought-review-ui-mvp.md)
 - [Namespace and Feedback Loop ADR](decisions/ADR-014-namespace-feedback-loop.md)
 - [Local-first Trace Learning Runtime ADR](decisions/ADR-016-local-first-trace-learning-runtime.md)
+- [Private Mac mini Local Lab ADR](decisions/ADR-024-private-mac-mini-local-lab.md)
 - [Architecture Decisions](decisions/)
 
 ## License

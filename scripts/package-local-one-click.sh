@@ -246,6 +246,7 @@ JSON
 if [ -n "$MCP_CONFIG_PATH" ]; then
   mkdir -p "$(dirname "$MCP_CONFIG_PATH")"
   printf '%s\n' "$mcp_json" > "$MCP_CONFIG_PATH"
+  chmod 0600 "$MCP_CONFIG_PATH"
   printf 'Wrote MCP config snippet to %s\n' "$MCP_CONFIG_PATH"
 fi
 

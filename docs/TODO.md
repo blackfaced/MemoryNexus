@@ -398,8 +398,11 @@ Non-goals:
 - #129 Trial Profile plug-and-play remains blocked on one real Trial API URL and
   scoped token.
 - #130 (P0) independently validates the private self-use Mac mini Local Lab.
-  It is a prerequisite for M9's real controlled-Adapter proof (#222), not for
-  #220 or #221; a localhost pass still does not close #129.
+  Its release-binary, restart-persistence, and paired-restore validation is
+  recorded in the [Mac mini Local Lab runbook](mac-mini-local-lab.md); remaining
+  work is PR review/CI and optional later service hardening. It is a prerequisite
+  for M9's real controlled-Adapter proof (#222), not for #220 or #221; a
+  localhost pass still does not close #129.
 
 ## Milestone 9: Personal Feedback Dogfood
 
