@@ -31,7 +31,8 @@ decisions/
 ├── ADR-022-memorynexus-brand-semantics.md ✅ MemoryNexus 品牌语义
 ├── ADR-023-namespace-knowledge-refresh.md ✅ Namespace Knowledge Refresh
 ├── ADR-024-private-mac-mini-local-lab.md ✅ Private Mac mini Local Lab
-└── ADR-025-personal-feedback-dogfood.md ✅ Personal Feedback Dogfood
+├── ADR-025-personal-feedback-dogfood.md ✅ Personal Feedback Dogfood
+└── ADR-026-loose-coupled-source-adapter-sync.md ✅ Loose-Coupled Source Adapter Synchronization
 ```
 
 ## 📖 ADR 是什么？

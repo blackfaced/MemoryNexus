@@ -54,6 +54,11 @@
   `personal.health.sleep` 用十四天、低敏感度、确认后的睡眠/精力记录验证 generic Engine
   是否能给 owner 产生有用的下一步调整；这不是医疗产品承诺，也不替代 Dictation Coach
   作为第一上游学习产品和评估 fixture。`CognitiveSpace` 仍是权限边界，Namespace 不是。
+- 外部学习数据同步边界见 ADR-026：DeepTutor / Study Buddy 独立运行；MemoryNexus
+  维护独立 Rust Reference Adapter Runner，经 provider-native localhost API 获取数据，
+  再以强类型 Normalized Outcome 幂等提交 Surface Gateway。不要把 Adapter 做成 Axum
+  后台线程、直读上游数据库、复制 raw chat、以 Provider 命名 Namespace，或让来源 payload
+  选择任意 CognitiveSpace。
 - EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
   agent memory retrieval 系统。当前边界是：EverMemOS 偏 memory for agent reasoning；
   MemoryNexus 偏 user-owned cognitive perspective and feedback loops。
@@ -82,10 +87,23 @@
   `decisions/ADR-023-namespace-knowledge-refresh.md`。
 - Personal Feedback Dogfood 边界见
   `decisions/ADR-025-personal-feedback-dogfood.md`。
+- DeepTutor / Study Buddy 松耦合同步边界见
+  `decisions/ADR-026-loose-coupled-source-adapter-sync.md`。
 
 ## 开发规则
 
 - 新增 API、数据库访问、对象存储、向量检索、AI 编排默认落在 Rust 服务。
+- ADR-026 Reference Adapter 必须作为独立 Rust 进程运行，通过受限 localhost API
+  获取 Source Record，并通过 Surface Gateway 提交强类型 Normalized Outcome。
+  provider-specific cursor / polling / reconciliation 只保存在 Adapter ledger；Engine
+  不保存上游分页游标。Study Buddy 使用事务型 source-event feed，DeepTutor 第一版使用
+  正式 sessions API 扫描；两者都禁止 direct DB access。
+- `learning.self-directed` 属于 owner CognitiveSpace，`learning.foundation` 属于 child
+  Managed CognitiveSpace。Adapter credential 必须分别 pin 到一个 Space、Namespace
+  allowlist 和 Surface action；Namespace 不能代替 Space 权限或承载 Provider 名。
+- Learner Journey Summary 只保存有来源引用的 bounded paraphrase，不保存 raw chat，
+  不做心理诊断、人格判断或隐藏动机推断。`model_derived_unreviewed` 摘要只能用于观察和
+  review question；owner 确认或修正前不得直接更新权威 GrowthModel 或触发重要计划调整。
 - 如果接入 Supabase，默认先验证 `DATABASE_URL` 指向 Supabase Postgres 的兼容性。
   不要绕过 Rust API 直接用 Supabase REST / PostgREST 操作核心表。
 - 不要用 Supabase RLS 取代 MemoryNexus 的 `CognitiveSpace` membership / Rust 权限检查。
@@ -203,6 +221,10 @@ cargo clippy --all-targets --all-features -- -D clippy::all
 - Surface Gateway issue 必须把 Surface 和 Adapter 区分清楚：Capture / Performance /
   Reflection / Planning / Observation 是能力面；Chat Agent / MCP / CLI / Web / Mobile /
   Dashboard 是交互方式。Adapter 不直接访问 Engine 内部对象。
+- ADR-026 Adapter issue 必须明确 Source Identity、revision/tombstone、durable cursor、
+  Summary Window ledger、lost-response idempotency、launchd one-shot catch-up 和本地
+  Mac mini failure acceptance。第一版只能单向 L1 ingestion，不得自动回写 DeepTutor /
+  Study Buddy 或做通用 connector framework。
 - Phase 5 Memory Lifecycle issue 默认围绕 `Memory -> MemoryAtom -> CognitiveScene
   -> CognitiveProjection` 做小实验，不要把它实现成通用 agent retrieval engine。
 - M9 Personal Feedback Dogfood issue 必须按 `docs/personal-feedback-dogfood-contract.md`
