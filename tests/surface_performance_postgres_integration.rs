@@ -492,7 +492,8 @@ async fn performance_surface_rejects_invalid_evidence_ref_before_feedback_or_tra
             .fetch_one(&pool)
             .await
             .expect("attempt should query");
-    let before_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces")
+    let before_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces WHERE space_id = $1")
+        .bind(fixture.space_id)
         .fetch_one(&pool)
         .await
         .expect("trace count should query");
@@ -545,7 +546,8 @@ async fn performance_surface_rejects_invalid_evidence_ref_before_feedback_or_tra
             .fetch_one(&pool)
             .await
             .expect("attempt should query");
-    let after_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces")
+    let after_traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traces WHERE space_id = $1")
+        .bind(fixture.space_id)
         .fetch_one(&pool)
         .await
         .expect("trace count should query");
@@ -726,6 +728,190 @@ async fn personal_sleep_outcome_is_idempotent_and_correction_keeps_only_one_curr
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn source_evidence_learning_attempt_accepts_and_replays_full_identity() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = source_token_for(
+        fixture.owner_user_id,
+        &fixture.owner_email,
+        fixture.space_id,
+        &["learning.foundation"],
+    );
+    let installation_id = Uuid::new_v4();
+    let record_id = format!("writing-attempt-{}", Uuid::new_v4());
+    let request = source_evidence_request(&fixture, installation_id, &record_id);
+
+    let first = post_surface(&client, &base_url, &token, request.clone()).await;
+    let first_status = first.status();
+    let first: Value = first.json().await.expect("first response should be json");
+    assert_eq!(first_status, StatusCode::OK, "response: {first}");
+    let trace_id = uuid_field(&first, "/data/generated_trace_id");
+    assert_eq!(
+        first.pointer("/data/result/status").and_then(Value::as_str),
+        Some("learning_attempt_accepted")
+    );
+    assert_eq!(
+        first.pointer("/data/result/source_identity"),
+        request.pointer("/payload/source_evidence/source_identity")
+    );
+    assert!(first.pointer("/data/result/feedback_loop_id").is_none());
+
+    let replay = post_surface(&client, &base_url, &token, request.clone()).await;
+    assert_eq!(replay.status(), StatusCode::OK);
+    let replay: Value = replay.json().await.expect("replay response should be json");
+    assert_eq!(replay["data"]["result"], first["data"]["result"]);
+    assert_eq!(uuid_field(&replay, "/data/generated_trace_id"), trace_id);
+    assert_eq!(first["data"]["visibility"], "adapter");
+    assert_eq!(first["data"]["follow_up_suggestions"], json!([]));
+
+    let mut conflicting = request.clone();
+    conflicting["payload"]["source_evidence"]["evidence"]["summary"] =
+        json!("A different normalized result");
+    let conflict = post_surface(&client, &base_url, &token, conflicting).await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+
+    let persisted: (i64, Value, Value, String) = sqlx::query_as(
+        r#"
+        SELECT COUNT(*) OVER (), normalized_evidence, provenance, evidence_trust
+        FROM source_evidence_records
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND source_product = 'study_buddy'
+          AND source_installation_id = $3
+          AND source_record_type = 'writing_attempt'
+          AND source_record_id = $4
+          AND revision = 1
+        "#,
+    )
+    .bind(fixture.space_id)
+    .bind(fixture.source_namespace_id)
+    .bind(installation_id)
+    .bind(&record_id)
+    .fetch_one(&pool)
+    .await
+    .expect("source evidence should query");
+    assert_eq!(persisted.0, 1);
+    assert_eq!(persisted.1["kind"], "learning_attempt");
+    assert_eq!(persisted.1["summary"], "Completed five spelling words");
+    assert_eq!(persisted.2["adapter_id"], "study_buddy_reference");
+    assert_eq!(persisted.3, "contract_trusted");
+
+    let trace: (Option<Value>, Value) =
+        sqlx::query_as("SELECT user_feedback, metadata FROM traces WHERE id = $1")
+            .bind(trace_id)
+            .fetch_one(&pool)
+            .await
+            .expect("trace should exist");
+    assert!(trace.0.is_none());
+    assert_eq!(trace.1["source_identity"]["source_product"], "study_buddy");
+    assert_eq!(trace.1["provenance"]["adapter_id"], "study_buddy_reference");
+    let trace_text = trace.1.to_string();
+    assert!(!trace_text.contains("Completed five spelling words"));
+    assert!(!trace_text.contains("becuase"));
+
+    assert_eq!(
+        count_feedback_loops(&pool, fixture.space_id, fixture.source_namespace_id).await,
+        1
+    );
+    assert_eq!(
+        count_traces(&pool, fixture.space_id, fixture.source_namespace_id).await,
+        1
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn source_evidence_rejects_untrusted_shape_and_scope_without_side_effects() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = source_token_for(
+        fixture.owner_user_id,
+        &fixture.owner_email,
+        fixture.space_id,
+        &["learning.foundation"],
+    );
+    let installation_id = Uuid::new_v4();
+    let base = source_evidence_request(&fixture, installation_id, "rejected-attempt");
+
+    let mut malformed_identity = base.clone();
+    malformed_identity["payload"]["source_evidence"]["source_identity"]["source_product"] =
+        json!("study buddy");
+    let mut nil_installation_id = base.clone();
+    nil_installation_id["payload"]["source_evidence"]["source_identity"]
+        ["source_installation_id"] = json!(Uuid::nil());
+    let mut secret = base.clone();
+    secret["payload"]["source_evidence"]["evidence"]["summary"] =
+        json!("Bearer should-not-persist");
+    let mut raw_provider_payload = base.clone();
+    raw_provider_payload["payload"]["source_evidence"]["provider_payload"] =
+        json!({"provider_session": "raw"});
+    let mut redirected_scope = base.clone();
+    redirected_scope["payload"]["source_evidence"]["space_id"] = json!(fixture.other_space_id);
+    redirected_scope["payload"]["source_evidence"]["namespace"] = json!("child.chinese.dictation");
+    let mut cross_space = base.clone();
+    cross_space["payload"]["space_id"] = json!(fixture.other_space_id);
+    let mut non_allowlisted_namespace = base.clone();
+    non_allowlisted_namespace["namespace"] = json!("child.english.spelling");
+    let mut unknown_evidence_field = base;
+    unknown_evidence_field["payload"]["source_evidence"]["evidence"]["provider_score"] =
+        json!(0.91);
+    let mut unknown_top_level =
+        source_evidence_request(&fixture, installation_id, "rejected-top-level-attempt");
+    unknown_top_level["provider_payload"] = json!({"raw": true});
+    let mut unknown_context =
+        source_evidence_request(&fixture, installation_id, "rejected-context-attempt");
+    unknown_context["context"]["provider_payload"] = json!({"raw": true});
+
+    for request in [
+        malformed_identity,
+        nil_installation_id,
+        secret,
+        raw_provider_payload,
+        redirected_scope,
+        cross_space,
+        non_allowlisted_namespace,
+        unknown_evidence_field,
+        unknown_top_level,
+        unknown_context,
+    ] {
+        let response = post_surface(&client, &base_url, &token, request).await;
+        assert!(
+            response.status().is_client_error(),
+            "rejected source evidence returned {}",
+            response.status()
+        );
+    }
+
+    let source_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM source_evidence_records WHERE source_installation_id = $1",
+    )
+    .bind(installation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("source evidence count should query");
+    assert_eq!(source_count, 0);
+    assert_eq!(
+        count_feedback_loops(&pool, fixture.space_id, fixture.source_namespace_id).await,
+        0
+    );
+    assert_eq!(
+        count_traces(&pool, fixture.space_id, fixture.source_namespace_id).await,
+        0
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
 async fn idempotent_learning_outcome_replays_conflicts_and_preserves_zero_side_effect_rejections() {
     let pool = postgres_pool().await;
     db::run_migrations(&pool)
@@ -890,6 +1076,49 @@ fn idempotent_outcome_request(
     })
 }
 
+fn source_evidence_request(fixture: &Fixture, installation_id: Uuid, record_id: &str) -> Value {
+    json!({
+        "namespace": "learning.foundation",
+        "surface": "performance",
+        "action": "submit_attempt",
+        "actor": fixture.owner_user_id,
+        "adapter": "mcp",
+        "payload": {
+            "space_id": fixture.space_id,
+            "source_evidence": {
+                "contract_version": 1,
+                "source_identity": {
+                    "source_product": "study_buddy",
+                    "source_installation_id": installation_id,
+                    "record_type": "writing_attempt",
+                    "record_id": record_id,
+                    "revision": 1
+                },
+                "occurred_at": "2026-08-10T08:00:00Z",
+                "observed_at": "2026-08-10T08:00:02Z",
+                "evidence_trust": "contract_trusted",
+                "provenance": {
+                    "adapter_id": "study_buddy_reference",
+                    "adapter_version": "0.1.0",
+                    "source_schema_version": "1"
+                },
+                "evidence": {
+                    "kind": "learning_attempt",
+                    "goal": "Practice learning.foundation",
+                    "task": "Daily spelling",
+                    "summary": "Completed five spelling words",
+                    "mistake": {
+                        "expected_text": "because",
+                        "actual_text": "becuase",
+                        "mistake_type": "letter_order"
+                    }
+                }
+            }
+        },
+        "context": {"mode": "fast", "runtime_preference": "deterministic"}
+    })
+}
+
 async fn post_surface(
     client: &Client,
     base_url: &str,
@@ -936,6 +1165,7 @@ struct Fixture {
     space_id: Uuid,
     other_space_id: Uuid,
     namespace_id: Uuid,
+    source_namespace_id: Uuid,
     feedback_loop_id: Uuid,
 }
 
@@ -972,6 +1202,14 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
         "skill",
     )
     .await;
+    let source_namespace_id = seed_namespace(
+        pool,
+        space_id,
+        owner_user_id,
+        "learning.foundation",
+        "skill",
+    )
+    .await;
     let feedback_loop_id = seed_feedback_loop(pool, space_id, namespace_id, owner_user_id).await;
 
     Fixture {
@@ -980,6 +1218,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
         space_id,
         other_space_id,
         namespace_id,
+        source_namespace_id,
         feedback_loop_id,
     }
 }
@@ -1120,6 +1359,20 @@ fn token_for(user_id: Uuid, email: &str) -> String {
     JwtAuth::default()
         .generate(user_id, email)
         .expect("test jwt should generate")
+}
+
+fn source_token_for(user_id: Uuid, email: &str, space_id: Uuid, namespaces: &[&str]) -> String {
+    JwtAuth::default()
+        .generate_source_credential(
+            user_id,
+            email,
+            space_id,
+            namespaces
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+        )
+        .expect("source credential jwt should generate")
 }
 
 fn uuid_field(value: &Value, pointer: &str) -> Uuid {

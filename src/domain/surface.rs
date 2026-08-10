@@ -65,6 +65,7 @@ pub enum RuntimePreference {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SurfaceContext {
     pub mode: Option<String>,
     pub locale: Option<String>,
@@ -73,6 +74,7 @@ pub struct SurfaceContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SurfaceRequest {
     pub namespace: String,
     pub surface: Surface,

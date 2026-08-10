@@ -28,8 +28,18 @@ impl Default for JwtConfig {
 pub struct Claims {
     pub sub: Uuid, // user_id
     pub email: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_scope: Option<SourceCredentialScope>,
     pub exp: i64,
     pub iat: i64,
+}
+
+/// Immutable authorization scope carried by a source Adapter credential.
+/// The source payload cannot override either value.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SourceCredentialScope {
+    pub space_id: Uuid,
+    pub namespaces: Vec<String>,
 }
 
 impl Claims {
@@ -38,9 +48,25 @@ impl Claims {
         Self {
             sub: user_id,
             email,
+            source_scope: None,
             exp: (now + expiration).timestamp(),
             iat: now.timestamp(),
         }
+    }
+
+    fn new_source_credential(
+        user_id: Uuid,
+        email: String,
+        expiration: Duration,
+        space_id: Uuid,
+        namespaces: Vec<String>,
+    ) -> Self {
+        let mut claims = Self::new(user_id, email, expiration);
+        claims.source_scope = Some(SourceCredentialScope {
+            space_id,
+            namespaces,
+        });
+        claims
     }
 }
 
@@ -62,6 +88,27 @@ impl JwtAuth {
         email: &str,
     ) -> Result<String, jsonwebtoken::errors::Error> {
         let claims = Claims::new(user_id, email.to_string(), self.config.expiration);
+        encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(self.config.secret.as_bytes()),
+        )
+    }
+
+    pub fn generate_source_credential(
+        &self,
+        user_id: Uuid,
+        email: &str,
+        space_id: Uuid,
+        namespaces: Vec<String>,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
+        let claims = Claims::new_source_credential(
+            user_id,
+            email.to_string(),
+            self.config.expiration,
+            space_id,
+            namespaces,
+        );
         encode(
             &Header::default(),
             &claims,
@@ -91,6 +138,7 @@ impl Default for JwtAuth {
 pub struct AuthenticatedUser {
     pub user_id: Uuid,
     pub email: String,
+    pub source_scope: Option<SourceCredentialScope>,
 }
 
 #[async_trait::async_trait]
@@ -119,6 +167,7 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthenticatedUser {
         Ok(AuthenticatedUser {
             user_id: claims.sub,
             email: claims.email,
+            source_scope: claims.source_scope,
         })
     }
 }
