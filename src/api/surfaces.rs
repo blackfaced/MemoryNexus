@@ -94,6 +94,7 @@ struct PreparedCapturePayload {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SubmitAttemptPayload {
     space_id: Uuid,
     feedback_loop_id: Option<Uuid>,
@@ -115,6 +116,59 @@ struct SubmitAttemptPayload {
     source_event_id: Option<String>,
     normalized_outcome: Option<NormalizedLearningOutcome>,
     personal_feedback_outcome: Option<PersonalFeedbackOutcomeInput>,
+    source_evidence: Option<SourceEvidenceInput>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SourceEvidenceInput {
+    contract_version: u16,
+    source_identity: SourceIdentityInput,
+    occurred_at: DateTime<Utc>,
+    observed_at: DateTime<Utc>,
+    evidence_trust: EvidenceTrust,
+    provenance: SourceProvenanceInput,
+    evidence: LearningAttemptEvidenceInput,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SourceIdentityInput {
+    source_product: String,
+    source_installation_id: Uuid,
+    record_type: String,
+    record_id: String,
+    revision: i64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum EvidenceTrust {
+    ContractTrusted,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SourceProvenanceInput {
+    adapter_id: String,
+    adapter_version: String,
+    source_schema_version: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct LearningAttemptEvidenceInput {
+    kind: LearningAttemptEvidenceKind,
+    goal: Option<String>,
+    task: String,
+    summary: String,
+    mistake: Option<ConfirmedLearningMistake>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum LearningAttemptEvidenceKind {
+    LearningAttempt,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -138,7 +192,7 @@ struct NormalizedLearningOutcome {
     mistake: Option<ConfirmedLearningMistake>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ConfirmedLearningMistake {
     expected_text: String,
@@ -364,13 +418,14 @@ pub async fn handle(
     if request.actor != auth_user.user_id {
         return Err(AppError::Unauthorized);
     }
+    enforce_source_credential_surface_scope(&auth_user, &request)?;
 
     match (request.surface, request.action) {
         (Surface::Capture, SurfaceAction::CaptureObservation) => {
             capture_observation(&state, auth_user.user_id, request).await
         }
         (Surface::Performance, SurfaceAction::SubmitAttempt) => {
-            submit_attempt(&state, auth_user.user_id, request).await
+            submit_attempt(&state, &auth_user, request).await
         }
         (Surface::Reflection, SurfaceAction::ReviewEvidence) => {
             review_evidence(&state, auth_user.user_id, request).await
@@ -392,6 +447,32 @@ pub async fn handle(
             request.surface, request.action
         ))),
     }
+}
+
+fn enforce_source_credential_surface_scope(
+    auth_user: &AuthenticatedUser,
+    request: &SurfaceRequest,
+) -> Result<(), AppError> {
+    let Some(scope) = auth_user.source_scope.as_ref() else {
+        return Ok(());
+    };
+    let requested_space = request
+        .payload
+        .get("space_id")
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse::<Uuid>().ok());
+    if request.surface != Surface::Performance
+        || request.action != SurfaceAction::SubmitAttempt
+        || request.payload.get("source_evidence").is_none()
+        || requested_space != Some(scope.space_id)
+        || !scope
+            .namespaces
+            .iter()
+            .any(|namespace| namespace == &request.namespace)
+    {
+        return Err(AppError::Unauthorized);
+    }
+    Ok(())
 }
 
 async fn get_state_summary(
@@ -2660,12 +2741,7 @@ fn prepare_idempotent_learning_outcome(
 }
 
 fn valid_source_event_id(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    (1..=128).contains(&bytes.len())
-        && bytes[0].is_ascii_alphanumeric()
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+    valid_source_identifier(value, 128)
 }
 
 fn validate_normalized_outcome(outcome: &NormalizedLearningOutcome) -> Result<(), AppError> {
@@ -2765,17 +2841,24 @@ fn reject_forbidden_idempotent_outcome_fields(value: &Value) -> Result<(), AppEr
 
 async fn submit_attempt(
     state: &AppState,
-    user_id: Uuid,
+    auth_user: &AuthenticatedUser,
     request: SurfaceRequest,
 ) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
     let started_at = Utc::now();
-    if request.payload.get("source_event_id").is_some() {
+    if request.payload.get("source_event_id").is_some()
+        || request.payload.get("source_evidence").is_some()
+    {
         reject_forbidden_idempotent_outcome_fields(&request.payload)?;
     }
     let payload: SubmitAttemptPayload = serde_json::from_value(request.payload.clone())
         .map_err(|error| AppError::BadRequest(format!("invalid submitAttempt payload: {error}")))?;
+    let user_id = auth_user.user_id;
     if request.namespace == PERSONAL_HEALTH_SLEEP_NAMESPACE {
         return submit_personal_feedback_outcome(state, user_id, request, payload).await;
+    }
+    if payload.source_evidence.is_some() {
+        return submit_source_learning_attempt(state, auth_user, request, payload, started_at)
+            .await;
     }
     let prepared = prepare_submit_attempt_payload(&request.namespace, payload)?;
 
@@ -2979,6 +3062,391 @@ async fn submit_attempt(
     Ok((StatusCode::OK, Json(ApiResponse::success(response))))
 }
 
+#[derive(Debug, FromRow)]
+struct SourceEvidenceRecord {
+    space_id: Uuid,
+    namespace_id: Uuid,
+    payload_fingerprint: String,
+    acknowledgement: Option<Value>,
+    feedback_loop_id: Option<Uuid>,
+    trace_id: Option<Uuid>,
+}
+
+struct SourceEvidenceSubmission {
+    acknowledgement: Value,
+    trace_id: Uuid,
+}
+
+async fn submit_source_learning_attempt(
+    state: &AppState,
+    auth_user: &AuthenticatedUser,
+    request: SurfaceRequest,
+    payload: SubmitAttemptPayload,
+    started_at: DateTime<Utc>,
+) -> Result<(StatusCode, Json<ApiResponse<SurfaceResponse>>), AppError> {
+    let source_scope = auth_user
+        .source_scope
+        .as_ref()
+        .ok_or(AppError::Unauthorized)?;
+    if source_scope.space_id != payload.space_id
+        || !source_scope
+            .namespaces
+            .iter()
+            .any(|namespace| namespace == &request.namespace)
+    {
+        return Err(AppError::Unauthorized);
+    }
+    reject_source_evidence_companion_fields(&payload)?;
+    let source_evidence = payload.source_evidence.ok_or_else(|| {
+        AppError::Internal("validated source evidence payload was missing".to_string())
+    })?;
+    validate_source_evidence(&source_evidence)?;
+    require_space_writer(state, payload.space_id, auth_user.user_id).await?;
+    let namespace = resolve_namespace_by_name(
+        state,
+        auth_user.user_id,
+        payload.space_id,
+        &request.namespace,
+    )
+    .await?;
+
+    let submission = persist_source_learning_attempt(
+        &state.db,
+        auth_user.user_id,
+        payload.space_id,
+        namespace.id,
+        &request,
+        &source_evidence,
+        started_at,
+    )
+    .await?;
+    let response = SurfaceResponse::new(
+        Surface::Performance,
+        SurfaceAction::SubmitAttempt,
+        submission.acknowledgement,
+        submission.trace_id,
+        Vec::new(),
+        SurfaceVisibility::Adapter,
+    );
+    Ok((StatusCode::OK, Json(ApiResponse::success(response))))
+}
+
+fn reject_source_evidence_companion_fields(payload: &SubmitAttemptPayload) -> Result<(), AppError> {
+    if payload.feedback_loop_id.is_some()
+        || payload.goal.is_some()
+        || payload.task.is_some()
+        || payload.attempt.is_some()
+        || payload.task_kind.is_some()
+        || payload.source.is_some()
+        || payload.input_source.is_some()
+        || !payload.prompt_items.is_empty()
+        || !payload.submitted_items.is_empty()
+        || !payload.metadata.is_null()
+        || payload.input_confirmation.is_some()
+        || !payload.evidence_refs.is_empty()
+        || payload.source_event_id.is_some()
+        || payload.normalized_outcome.is_some()
+        || payload.personal_feedback_outcome.is_some()
+    {
+        return Err(AppError::BadRequest(
+            "source_evidence does not accept legacy attempt, media, metadata, or outcome fields"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_source_evidence(input: &SourceEvidenceInput) -> Result<(), AppError> {
+    if input.contract_version != 1 {
+        return Err(AppError::BadRequest(
+            "source_evidence.contract_version must be 1".to_string(),
+        ));
+    }
+    if input.source_identity.revision != 1 {
+        return Err(AppError::BadRequest(
+            "the initial source evidence contract accepts revision 1 only".to_string(),
+        ));
+    }
+    if input.source_identity.source_installation_id.is_nil() {
+        return Err(AppError::BadRequest(
+            "source_evidence source_installation_id must not be nil".to_string(),
+        ));
+    }
+    if input.occurred_at > input.observed_at {
+        return Err(AppError::BadRequest(
+            "source_evidence occurred_at must not be after observed_at".to_string(),
+        ));
+    }
+    for (field, value, max_len) in [
+        (
+            "source_product",
+            input.source_identity.source_product.as_str(),
+            64,
+        ),
+        (
+            "record_type",
+            input.source_identity.record_type.as_str(),
+            64,
+        ),
+        ("record_id", input.source_identity.record_id.as_str(), 128),
+        ("adapter_id", input.provenance.adapter_id.as_str(), 64),
+        (
+            "adapter_version",
+            input.provenance.adapter_version.as_str(),
+            64,
+        ),
+        (
+            "source_schema_version",
+            input.provenance.source_schema_version.as_str(),
+            64,
+        ),
+    ] {
+        if !valid_source_identifier(value, max_len) {
+            return Err(AppError::BadRequest(format!(
+                "source_evidence {field} is malformed"
+            )));
+        }
+    }
+    validate_bounded_source_text("task", &input.evidence.task, 200)?;
+    if let Some(goal) = &input.evidence.goal {
+        validate_bounded_source_text("goal", goal, 200)?;
+    }
+    validate_normalized_outcome(&NormalizedLearningOutcome {
+        summary: input.evidence.summary.clone(),
+        mistake: input.evidence.mistake.clone(),
+    })
+}
+
+fn valid_source_identifier(value: &str, max_len: usize) -> bool {
+    let bytes = value.as_bytes();
+    (1..=max_len).contains(&bytes.len())
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+}
+
+fn validate_bounded_source_text(field: &str, value: &str, max_len: usize) -> Result<(), AppError> {
+    if value.trim().is_empty()
+        || value.len() > max_len
+        || value.chars().any(char::is_control)
+        || has_secret_like_value(value.trim())
+    {
+        return Err(AppError::BadRequest(format!(
+            "source_evidence {field} must be bounded non-secret text"
+        )));
+    }
+    Ok(())
+}
+
+async fn persist_source_learning_attempt(
+    pool: &PgPool,
+    user_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    request: &SurfaceRequest,
+    input: &SourceEvidenceInput,
+    started_at: DateTime<Utc>,
+) -> Result<SourceEvidenceSubmission, AppError> {
+    let fingerprint =
+        canonical_payload_fingerprint(&serde_json::to_value(input).map_err(|error| {
+            AppError::Internal(format!("source evidence serialization failed: {error}"))
+        })?)?;
+    let provenance = serde_json::to_value(&input.provenance).map_err(|error| {
+        AppError::Internal(format!("source provenance serialization failed: {error}"))
+    })?;
+    let normalized_evidence = serde_json::to_value(&input.evidence).map_err(|error| {
+        AppError::Internal(format!("source evidence serialization failed: {error}"))
+    })?;
+    let evidence_trust = "contract_trusted";
+    let mut tx = pool.begin().await.map_err(AppError::Database)?;
+    let claimed: Option<bool> = sqlx::query_scalar(
+        r#"
+        INSERT INTO source_evidence_records (
+            space_id, namespace_id, contract_version, source_product,
+            source_installation_id, source_record_type, source_record_id, revision,
+            occurred_at, observed_at, evidence_trust, provenance,
+            normalized_evidence, payload_fingerprint
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        ON CONFLICT (
+            source_product, source_installation_id, source_record_type,
+            source_record_id, revision
+        ) DO NOTHING
+        RETURNING true
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(i16::try_from(input.contract_version).expect("validated contract version fits i16"))
+    .bind(&input.source_identity.source_product)
+    .bind(input.source_identity.source_installation_id)
+    .bind(&input.source_identity.record_type)
+    .bind(&input.source_identity.record_id)
+    .bind(input.source_identity.revision)
+    .bind(input.occurred_at)
+    .bind(input.observed_at)
+    .bind(evidence_trust)
+    .bind(&provenance)
+    .bind(&normalized_evidence)
+    .bind(&fingerprint)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(AppError::Database)?;
+
+    if claimed.is_none() {
+        let existing = load_source_evidence_record(&mut tx, &input.source_identity).await?;
+        if existing.space_id != space_id || existing.namespace_id != namespace_id {
+            return Err(AppError::Conflict(
+                "Source Identity is already bound to a different authorization scope".to_string(),
+            ));
+        }
+        if existing.payload_fingerprint != fingerprint {
+            return Err(AppError::Conflict(
+                "Source Identity conflicts with different evidence".to_string(),
+            ));
+        }
+        let acknowledgement = existing.acknowledgement.ok_or_else(|| {
+            AppError::Internal("source evidence acknowledgement is incomplete".to_string())
+        })?;
+        let _feedback_loop_id = existing.feedback_loop_id.ok_or_else(|| {
+            AppError::Internal("source evidence FeedbackLoop is incomplete".to_string())
+        })?;
+        let trace_id = existing
+            .trace_id
+            .ok_or_else(|| AppError::Internal("source evidence Trace is incomplete".to_string()))?;
+        tx.commit().await.map_err(AppError::Database)?;
+        return Ok(SourceEvidenceSubmission {
+            acknowledgement,
+            trace_id,
+        });
+    }
+
+    let outcome = NormalizedLearningOutcome {
+        summary: input.evidence.summary.clone(),
+        mistake: input.evidence.mistake.clone(),
+    };
+    let feedback_loop = insert_feedback_loop_in_tx(
+        &mut tx,
+        &CreateFeedbackLoop {
+            space_id,
+            namespace_id,
+            goal: input
+                .evidence
+                .goal
+                .clone()
+                .unwrap_or_else(|| format!("Practice {}", request.namespace)),
+            task: input.evidence.task.clone(),
+            attempt: Some(normalized_outcome_summary(&outcome)),
+            evaluation: None,
+            feedback: None,
+            adjustment: None,
+            next_task: None,
+            status: "active".to_string(),
+            created_by: user_id,
+        },
+    )
+    .await
+    .map_err(AppError::Database)?;
+    let completed_at = Utc::now();
+    let trace = insert_completed_trace_in_tx(
+        &mut tx,
+        CreateCompletedTrace {
+            space_id,
+            namespace_id: Some(namespace_id),
+            source_type: trace_source_type(request.adapter),
+            task_type: TraceTaskType::Practice,
+            mode: trace_mode(request.context.mode.as_deref())?,
+            runtime: deterministic_trace_runtime(request.context.runtime_preference),
+            input_summary: Some("Authenticated source Learning Attempt accepted".to_string()),
+            output_summary: Some("Source evidence stored for feedback processing".to_string()),
+            started_at,
+            completed_at,
+            latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
+            model_provider: Some("deterministic".to_string()),
+            model_name: None,
+            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
+            estimated_cost_usd: Some(0.0),
+            local_processing_ratio: Some(1.0),
+            related_memory_ids: Vec::new(),
+            generated_memory_ids: Vec::new(),
+            generated_lens_run_ids: Vec::new(),
+            generated_review_report_ids: Vec::new(),
+            generated_feedback_loop_ids: vec![feedback_loop.id],
+            user_feedback: None,
+            error: None,
+            metadata: json!({
+                "surface_gateway": true,
+                "source_identity": input.source_identity,
+                "occurred_at": input.occurred_at,
+                "observed_at": input.observed_at,
+                "evidence_trust": input.evidence_trust,
+                "provenance": input.provenance,
+            }),
+        },
+    )
+    .await
+    .map_err(AppError::Database)?;
+    let acknowledgement = json!({
+        "status": "learning_attempt_accepted",
+        "source_identity": input.source_identity,
+        "occurred_at": input.occurred_at,
+        "observed_at": input.observed_at,
+        "evidence_trust": input.evidence_trust,
+        "provenance": input.provenance,
+    });
+    sqlx::query(
+        r#"
+        UPDATE source_evidence_records
+        SET acknowledgement = $8, feedback_loop_id = $9, trace_id = $10
+        WHERE space_id = $1 AND namespace_id = $2
+          AND source_product = $3 AND source_installation_id = $4
+          AND source_record_type = $5 AND source_record_id = $6 AND revision = $7
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(&input.source_identity.source_product)
+    .bind(input.source_identity.source_installation_id)
+    .bind(&input.source_identity.record_type)
+    .bind(&input.source_identity.record_id)
+    .bind(input.source_identity.revision)
+    .bind(&acknowledgement)
+    .bind(feedback_loop.id)
+    .bind(trace.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::Database)?;
+    tx.commit().await.map_err(AppError::Database)?;
+    Ok(SourceEvidenceSubmission {
+        acknowledgement,
+        trace_id: trace.id,
+    })
+}
+
+async fn load_source_evidence_record(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    identity: &SourceIdentityInput,
+) -> Result<SourceEvidenceRecord, AppError> {
+    sqlx::query_as::<_, SourceEvidenceRecord>(
+        r#"
+        SELECT space_id, namespace_id, payload_fingerprint, acknowledgement,
+               feedback_loop_id, trace_id
+        FROM source_evidence_records
+        WHERE source_product = $1 AND source_installation_id = $2
+          AND source_record_type = $3 AND source_record_id = $4 AND revision = $5
+        "#,
+    )
+    .bind(&identity.source_product)
+    .bind(identity.source_installation_id)
+    .bind(&identity.record_type)
+    .bind(&identity.record_id)
+    .bind(identity.revision)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::Database)
+}
+
 async fn submit_personal_feedback_outcome(
     state: &AppState,
     user_id: Uuid,
@@ -3006,6 +3474,7 @@ async fn submit_personal_feedback_outcome(
         || !payload.evidence_refs.is_empty()
         || payload.source_event_id.is_some()
         || payload.normalized_outcome.is_some()
+        || payload.source_evidence.is_some()
     {
         return Err(AppError::BadRequest(
             "personal_feedback_outcome does not accept generic attempt, media, metadata, or text outcome fields".to_string(),

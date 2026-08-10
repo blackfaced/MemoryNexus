@@ -3,5 +3,5 @@ pub mod jwt;
 pub mod password;
 
 #[allow(unused_imports)]
-pub use jwt::{AuthenticatedUser, Claims, JwtAuth};
+pub use jwt::{AuthenticatedUser, Claims, JwtAuth, SourceCredentialScope};
 pub use password::PasswordHasher;
