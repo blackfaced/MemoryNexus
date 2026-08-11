@@ -18,6 +18,7 @@ use memorynexus::{
 };
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use uuid::Uuid;
@@ -852,6 +853,12 @@ async fn source_evidence_rejects_untrusted_shape_and_scope_without_side_effects(
     let mut secret = base.clone();
     secret["payload"]["source_evidence"]["evidence"]["summary"] =
         json!("Bearer should-not-persist");
+    let mut secret_identity = base.clone();
+    secret_identity["payload"]["source_evidence"]["source_identity"]["record_id"] =
+        json!("ghp_should_not_persist");
+    let mut secret_provenance = base.clone();
+    secret_provenance["payload"]["source_evidence"]["provenance"]["adapter_id"] =
+        json!("ghp_should_not_persist");
     let mut raw_provider_payload = base.clone();
     raw_provider_payload["payload"]["source_evidence"]["provider_payload"] =
         json!({"provider_session": "raw"});
@@ -862,7 +869,7 @@ async fn source_evidence_rejects_untrusted_shape_and_scope_without_side_effects(
     cross_space["payload"]["space_id"] = json!(fixture.other_space_id);
     let mut non_allowlisted_namespace = base.clone();
     non_allowlisted_namespace["namespace"] = json!("child.english.spelling");
-    let mut unknown_evidence_field = base;
+    let mut unknown_evidence_field = base.clone();
     unknown_evidence_field["payload"]["source_evidence"]["evidence"]["provider_score"] =
         json!(0.91);
     let mut unknown_top_level =
@@ -871,11 +878,23 @@ async fn source_evidence_rejects_untrusted_shape_and_scope_without_side_effects(
     let mut unknown_context =
         source_evidence_request(&fixture, installation_id, "rejected-context-attempt");
     unknown_context["context"]["provider_payload"] = json!({"raw": true});
+    let mut first_tombstone = base;
+    first_tombstone["payload"]["source_evidence"]["source_identity"]["revision"] = json!(2);
+    first_tombstone["payload"]["source_evidence"]
+        .as_object_mut()
+        .unwrap()
+        .remove("evidence");
+    first_tombstone["payload"]["source_evidence"]["tombstone"] = json!({
+        "withdrawn_at": "2026-08-10T09:00:00Z",
+        "reason": "deleted_at_source"
+    });
 
     for request in [
         malformed_identity,
         nil_installation_id,
         secret,
+        secret_identity,
+        secret_provenance,
         raw_provider_payload,
         redirected_scope,
         cross_space,
@@ -883,6 +902,7 @@ async fn source_evidence_rejects_untrusted_shape_and_scope_without_side_effects(
         unknown_evidence_field,
         unknown_top_level,
         unknown_context,
+        first_tombstone,
     ] {
         let response = post_surface(&client, &base_url, &token, request).await;
         assert!(
@@ -907,6 +927,329 @@ async fn source_evidence_rejects_untrusted_shape_and_scope_without_side_effects(
     assert_eq!(
         count_traces(&pool, fixture.space_id, fixture.source_namespace_id).await,
         0
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn source_evidence_revisions_converge_and_tombstone_excludes_current_content() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = source_token_for(
+        fixture.owner_user_id,
+        &fixture.owner_email,
+        fixture.space_id,
+        &["learning.foundation"],
+    );
+    let installation_id = Uuid::new_v4();
+    let record_id = format!("revisioned-attempt-{}", Uuid::new_v4());
+    let revision_one = source_evidence_request(&fixture, installation_id, &record_id);
+    assert_eq!(
+        post_surface(&client, &base_url, &token, revision_one.clone())
+            .await
+            .status(),
+        StatusCode::OK
+    );
+
+    let mut revision_two = revision_one.clone();
+    revision_two["payload"]["source_evidence"]["source_identity"]["revision"] = json!(2);
+    revision_two["payload"]["source_evidence"]["evidence"]["summary"] =
+        json!("Corrected five-word result");
+    let corrected = post_surface(&client, &base_url, &token, revision_two.clone()).await;
+    assert_eq!(corrected.status(), StatusCode::OK);
+    let corrected: Value = corrected.json().await.unwrap();
+    assert_eq!(
+        corrected
+            .pointer("/data/result/status")
+            .and_then(Value::as_str),
+        Some("learning_attempt_superseded")
+    );
+    assert_eq!(
+        post_surface(&client, &base_url, &token, revision_one)
+            .await
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let replay = post_surface(&client, &base_url, &token, revision_two.clone()).await;
+    assert_eq!(replay.status(), StatusCode::OK);
+    assert_eq!(
+        replay.json::<Value>().await.unwrap()["data"]["result"],
+        corrected["data"]["result"]
+    );
+
+    let mut tombstone = revision_two;
+    tombstone["payload"]["source_evidence"]["source_identity"]["revision"] = json!(3);
+    tombstone["payload"]["source_evidence"]
+        .as_object_mut()
+        .unwrap()
+        .remove("evidence");
+    tombstone["payload"]["source_evidence"]["tombstone"] = json!({
+        "withdrawn_at": "2026-08-10T09:00:00Z",
+        "reason": "deleted_at_source"
+    });
+    let withdrawn = post_surface(&client, &base_url, &token, tombstone.clone()).await;
+    assert_eq!(withdrawn.status(), StatusCode::OK);
+    let withdrawn: Value = withdrawn.json().await.unwrap();
+    assert_eq!(
+        withdrawn
+            .pointer("/data/result/status")
+            .and_then(Value::as_str),
+        Some("source_tombstone_withdrawn")
+    );
+    assert_eq!(
+        post_surface(&client, &base_url, &token, tombstone)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+
+    let current_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM current_source_evidence WHERE source_installation_id = $1 AND source_record_id = $2",
+    )
+    .bind(installation_id)
+    .bind(&record_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(current_count, 0);
+    let tombstone_shape: (bool, Option<Value>, i64) = sqlx::query_as(
+        "SELECT is_tombstone, normalized_evidence, revision FROM source_evidence_records WHERE source_installation_id = $1 AND source_record_id = $2 AND is_current",
+    )
+    .bind(installation_id)
+    .bind(&record_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(tombstone_shape.0);
+    assert!(tombstone_shape.1.is_none());
+    assert_eq!(tombstone_shape.2, 3);
+    let invalidations: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM source_evidence_invalidations WHERE source_evidence_id IN (SELECT id FROM source_evidence_records WHERE source_installation_id = $1 AND source_record_id = $2)",
+    )
+    .bind(installation_id)
+    .bind(&record_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(invalidations, 4);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn concurrent_source_revisions_converge_on_the_highest_revision() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let token = source_token_for(
+        fixture.owner_user_id,
+        &fixture.owner_email,
+        fixture.space_id,
+        &["learning.foundation"],
+    );
+    let installation_id = Uuid::new_v4();
+    let record_id = format!("concurrent-revisions-{}", Uuid::new_v4());
+    let revision_one = source_evidence_request(&fixture, installation_id, &record_id);
+    assert_eq!(
+        post_surface(&Client::new(), &base_url, &token, revision_one.clone())
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    let mut revision_two = revision_one.clone();
+    revision_two["payload"]["source_evidence"]["source_identity"]["revision"] = json!(2);
+    revision_two["payload"]["source_evidence"]["evidence"]["summary"] = json!("revision two");
+    let mut revision_three = revision_one;
+    revision_three["payload"]["source_evidence"]["source_identity"]["revision"] = json!(3);
+    revision_three["payload"]["source_evidence"]["evidence"]["summary"] = json!("revision three");
+    let client_two = Client::new();
+    let client_three = Client::new();
+    let (two, three) = tokio::join!(
+        post_surface(&client_two, &base_url, &token, revision_two),
+        post_surface(&client_three, &base_url, &token, revision_three),
+    );
+    assert!(matches!(
+        two.status(),
+        StatusCode::OK | StatusCode::CONFLICT
+    ));
+    assert_eq!(three.status(), StatusCode::OK);
+    let current: (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*) OVER (), revision FROM source_evidence_records WHERE source_installation_id = $1 AND source_record_id = $2 AND is_current",
+    )
+    .bind(installation_id)
+    .bind(&record_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(current, (1, 3));
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn source_evidence_accepts_session_and_unreviewed_summary_with_distinct_authority() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::new();
+    let token = source_token_for(
+        fixture.owner_user_id,
+        &fixture.owner_email,
+        fixture.space_id,
+        &["learning.foundation"],
+    );
+    let installation_id = Uuid::new_v4();
+    let mut session = source_evidence_request(&fixture, installation_id, "session-1");
+    session["payload"]["source_evidence"]["source_identity"]["record_type"] =
+        json!("learning_session");
+    session["payload"]["source_evidence"]["evidence"] = json!({
+        "kind": "learning_session", "goal": "Practice learning.foundation",
+        "task": "Complete a bounded practice session",
+        "started_at": "2026-08-10T08:00:00Z", "ended_at": "2026-08-10T08:30:00Z",
+        "activity_count": 5, "successful_activity_count": 4
+    });
+    assert_eq!(
+        post_surface(&client, &base_url, &token, session)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+
+    let mut summary = source_evidence_request(&fixture, installation_id, "summary-1");
+    summary["payload"]["source_evidence"]["source_identity"]["record_type"] =
+        json!("learner_journey_summary");
+    summary["payload"]["source_evidence"]["evidence_trust"] = json!("model_derived_unreviewed");
+    summary["payload"]["source_evidence"]["evidence"] = json!({
+        "kind": "learner_journey_summary",
+        "period_start": "2026-08-01T00:00:00Z", "period_end": "2026-08-10T00:00:00Z",
+        "summary": "The learner appears more consistent with short sessions.",
+        "strengths": ["Returns to practice"], "next_steps": ["Review with the owner"],
+        "source_refs": [{
+            "source_product": "study_buddy",
+            "source_installation_id": installation_id,
+            "record_type": "learning_session",
+            "record_id": "session-1",
+            "revision": 1
+        }]
+    });
+    let accepted = post_surface(&client, &base_url, &token, summary.clone()).await;
+    assert_eq!(accepted.status(), StatusCode::OK);
+    let accepted: Value = accepted.json().await.unwrap();
+    assert_eq!(
+        accepted
+            .pointer("/data/result/status")
+            .and_then(Value::as_str),
+        Some("learner_journey_summary_accepted")
+    );
+    let summary_loop: Option<Uuid> = sqlx::query_scalar(
+        "SELECT feedback_loop_id FROM source_evidence_records WHERE source_installation_id = $1 AND source_record_id = 'summary-1'",
+    )
+    .bind(installation_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(summary_loop.is_none());
+    let dependency_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM source_evidence_dependencies WHERE derived_source_evidence_id = (SELECT id FROM source_evidence_records WHERE source_installation_id = $1 AND source_record_id = 'summary-1')",
+    )
+    .bind(installation_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(dependency_count, 1);
+
+    summary["payload"]["source_evidence"]["evidence_trust"] = json!("contract_trusted");
+    summary["payload"]["source_evidence"]["source_identity"]["record_id"] =
+        json!("summary-invalid-trust");
+    assert_eq!(
+        post_surface(&client, &base_url, &token, summary)
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let mut tombstone = source_evidence_request(&fixture, installation_id, "session-1");
+    tombstone["payload"]["source_evidence"]["source_identity"]["record_type"] =
+        json!("learning_session");
+    tombstone["payload"]["source_evidence"]["source_identity"]["revision"] = json!(2);
+    tombstone["payload"]["source_evidence"]
+        .as_object_mut()
+        .unwrap()
+        .remove("evidence");
+    tombstone["payload"]["source_evidence"]["tombstone"] = json!({
+        "withdrawn_at": "2026-08-10T09:00:00Z",
+        "reason": "deleted_at_source"
+    });
+    assert_eq!(
+        post_surface(&client, &base_url, &token, tombstone)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+
+    let summary_state: (bool, i64) = sqlx::query_as(
+        "SELECT is_stale, (SELECT COUNT(*) FROM current_source_evidence WHERE source_installation_id = $1 AND source_record_id = 'summary-1') FROM source_evidence_records WHERE source_installation_id = $1 AND source_record_id = 'summary-1'",
+    )
+    .bind(installation_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(summary_state, (true, 0));
+    let dependent_invalidations: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM source_evidence_invalidations WHERE target_kind = 'dependent_summary' AND target_id = (SELECT id FROM source_evidence_records WHERE source_installation_id = $1 AND source_record_id = 'summary-1')",
+    )
+    .bind(installation_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(dependent_invalidations, 1);
+
+    let owner_token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let observation = post_surface(
+        &client,
+        &base_url,
+        &owner_token,
+        json!({
+            "namespace": "learning.foundation", "surface": "observation",
+            "action": "get_state_summary", "actor": fixture.owner_user_id,
+            "adapter": "mcp", "payload": {"space_id": fixture.space_id},
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }),
+    )
+    .await;
+    assert_eq!(observation.status(), StatusCode::OK);
+    let observation: Value = observation.json().await.unwrap();
+    assert_eq!(
+        observation.pointer("/data/result/counts/current_source_evidence"),
+        Some(&json!(0))
+    );
+
+    let planning = post_surface(
+        &client,
+        &base_url,
+        &owner_token,
+        json!({
+            "namespace": "learning.foundation", "surface": "planning",
+            "action": "generate_next_task", "actor": fixture.owner_user_id,
+            "adapter": "mcp", "payload": {"space_id": fixture.space_id},
+            "context": {"mode": "fast", "runtime_preference": "deterministic"}
+        }),
+    )
+    .await;
+    assert_eq!(planning.status(), StatusCode::OK);
+    let planning: Value = planning.json().await.unwrap();
+    assert_eq!(
+        planning.pointer("/data/result/evidence_context/eligible_source_evidence_count"),
+        Some(&json!(0))
     );
 }
 
@@ -1058,6 +1401,81 @@ async fn idempotent_learning_outcome_concurrent_retry_and_trace_failure_are_atom
     );
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn legacy_idempotency_record_is_adopted_without_duplicate_feedback_or_trace() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    let event_id = format!("adapter.session:{}-legacy", Uuid::new_v4());
+    let trace_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO traces (space_id, namespace_id, source_type, task_type, mode, runtime, status) VALUES ($1,$2,'test_fixture','practice','fast','deterministic','completed') RETURNING id",
+    )
+    .bind(fixture.space_id)
+    .bind(fixture.namespace_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let legacy_fingerprint = canonical_test_fingerprint(&json!({
+        "namespace": "child.english.spelling",
+        "goal": "Practice child.english.spelling",
+        "task": "Daily spelling",
+        "input_source": "typed",
+        "input_confirmation": null,
+        "normalized_outcome": {
+            "summary": "Completed five spelling words",
+            "mistake": {
+                "expected_text": "because", "actual_text": "becuase", "mistake_type": "letter_order"
+            }
+        }
+    }));
+    sqlx::query(
+        "INSERT INTO performance_idempotency_records (space_id, namespace_id, source_event_id, payload_fingerprint, feedback_loop_id, trace_id) VALUES ($1,$2,$3,$4,$5,$6)",
+    )
+    .bind(fixture.space_id)
+    .bind(fixture.namespace_id)
+    .bind(&event_id)
+    .bind(legacy_fingerprint)
+    .bind(fixture.feedback_loop_id)
+    .bind(trace_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let base_url = spawn_api(pool.clone()).await;
+    let response = post_surface(
+        &Client::new(),
+        &base_url,
+        &token_for(fixture.owner_user_id, &fixture.owner_email),
+        idempotent_outcome_request(&fixture, &event_id, "Completed five spelling words", "fast"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response: Value = response.json().await.unwrap();
+    assert_eq!(
+        response
+            .pointer("/data/result/status")
+            .and_then(Value::as_str),
+        Some("attempt_replayed")
+    );
+    assert_eq!(
+        uuid_field(&response, "/data/result/feedback_loop_id"),
+        fixture.feedback_loop_id
+    );
+    assert_eq!(uuid_field(&response, "/data/generated_trace_id"), trace_id);
+    assert_eq!(
+        count_feedback_loops(&pool, fixture.space_id, fixture.namespace_id).await,
+        1
+    );
+    assert_eq!(
+        count_traces(&pool, fixture.space_id, fixture.namespace_id).await,
+        1
+    );
+    assert_eq!(count_for_event(&pool, &fixture, &event_id).await, 1);
+}
+
 fn idempotent_outcome_request(
     fixture: &Fixture,
     event_id: &str,
@@ -1119,6 +1537,11 @@ fn source_evidence_request(fixture: &Fixture, installation_id: Uuid, record_id: 
     })
 }
 
+fn canonical_test_fingerprint(value: &Value) -> String {
+    let bytes = serde_json::to_vec(value).unwrap();
+    format!("{:x}", Sha256::digest(bytes))
+}
+
 async fn post_surface(
     client: &Client,
     base_url: &str,
@@ -1135,7 +1558,7 @@ async fn post_surface(
 }
 
 async fn count_for_event(pool: &PgPool, fixture: &Fixture, event_id: &str) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM performance_idempotency_records WHERE space_id = $1 AND namespace_id = $2 AND source_event_id = $3")
+    sqlx::query_scalar("SELECT COUNT(*) FROM source_evidence_records WHERE space_id = $1 AND namespace_id = $2 AND source_product = 'memorynexus_compat' AND source_record_id = $3")
         .bind(fixture.space_id).bind(fixture.namespace_id).bind(event_id).fetch_one(pool).await.expect("idempotency count should query")
 }
 

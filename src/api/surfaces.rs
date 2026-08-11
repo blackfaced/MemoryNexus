@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, NaiveDate, Utc};
@@ -128,10 +128,11 @@ struct SourceEvidenceInput {
     observed_at: DateTime<Utc>,
     evidence_trust: EvidenceTrust,
     provenance: SourceProvenanceInput,
-    evidence: LearningAttemptEvidenceInput,
+    evidence: Option<SourceEvidenceBody>,
+    tombstone: Option<SourceTombstoneInput>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields)]
 struct SourceIdentityInput {
     source_product: String,
@@ -141,10 +142,11 @@ struct SourceIdentityInput {
     revision: i64,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum EvidenceTrust {
     ContractTrusted,
+    ModelDerivedUnreviewed,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -158,17 +160,57 @@ struct SourceProvenanceInput {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct LearningAttemptEvidenceInput {
-    kind: LearningAttemptEvidenceKind,
     goal: Option<String>,
     task: String,
     summary: String,
     mistake: Option<ConfirmedLearningMistake>,
+    input_source: Option<String>,
+    input_confirmation: Option<InputConfirmation>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SourceEvidenceBody {
+    LearningAttempt(LearningAttemptEvidenceInput),
+    LearningSession(LearningSessionEvidenceInput),
+    LearnerJourneySummary(LearnerJourneySummaryEvidenceInput),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct LearningSessionEvidenceInput {
+    goal: Option<String>,
+    task: String,
+    started_at: DateTime<Utc>,
+    ended_at: DateTime<Utc>,
+    activity_count: u32,
+    successful_activity_count: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct LearnerJourneySummaryEvidenceInput {
+    period_start: DateTime<Utc>,
+    period_end: DateTime<Utc>,
+    summary: String,
+    strengths: Vec<String>,
+    next_steps: Vec<String>,
+    source_refs: Vec<SourceIdentityInput>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SourceTombstoneInput {
+    withdrawn_at: DateTime<Utc>,
+    reason: SourceWithdrawalReason,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum LearningAttemptEvidenceKind {
-    LearningAttempt,
+enum SourceWithdrawalReason {
+    CorrectedAtSource,
+    DeletedAtSource,
+    ConsentWithdrawn,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -185,7 +227,7 @@ struct PersonalFeedbackOutcomeInput {
 
 /// A deliberately small Adapter-to-Performance contract. It contains only
 /// confirmed text outcomes, never provider conversations or raw media.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct NormalizedLearningOutcome {
     summary: String,
@@ -211,12 +253,13 @@ struct PreparedSubmitAttemptPayload {
     trace_metadata: Value,
     input_source: Option<String>,
     idempotency: Option<PerformanceIdempotency>,
+    normalized_outcome: Option<NormalizedLearningOutcome>,
+    input_confirmation: Option<InputConfirmation>,
 }
 
 #[derive(Debug)]
 struct PerformanceIdempotency {
     source_event_id: String,
-    payload_fingerprint: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -528,6 +571,7 @@ async fn get_state_summary(
             },
             "review_reports": counts.review_report_count,
             "sleep_cycles": counts.sleep_cycle_count,
+            "current_source_evidence": counts.current_source_evidence_count,
         },
         "trends": {
             "recent_trace_count": counts.trace_count,
@@ -589,6 +633,7 @@ async fn get_state_summary(
                 "memory_count": counts.memory_count,
                 "trace_count": counts.trace_count,
                 "feedback_loop_count": counts.feedback_loop_total(),
+                "current_source_evidence_count": counts.current_source_evidence_count,
                 "growth_model_status": "not_persisted",
                 "dictation_observation_status": if namespace_observation.response_key == "dictation_observation" { namespace_observation.trace_metadata["status"].clone() } else { Value::Null },
                 "dictation_observation_evidence_record_count": if namespace_observation.response_key == "dictation_observation" { namespace_observation.trace_metadata["evidence_record_count"].clone() } else { Value::Null },
@@ -646,6 +691,20 @@ async fn generate_next_task(
         .await;
     }
 
+    let eligible_source_evidence_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM current_source_evidence
+        WHERE space_id = $1 AND namespace_id = $2
+          AND evidence_trust = 'contract_trusted'
+        "#,
+    )
+    .bind(payload.space_id)
+    .bind(namespace.id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(AppError::Database)?;
+
     let plan = build_next_task_plan(&PlanningRequest {
         space_id: payload.space_id,
         namespace_id: namespace.id,
@@ -699,13 +758,24 @@ async fn generate_next_task(
                 "deterministic": true,
                 "plan_kind": plan.plan_kind.clone(),
                 "persistence": plan.persistence.clone(),
+                "eligible_source_evidence_count": eligible_source_evidence_count,
             }),
         })
         .await
         .map_err(AppError::Database)?;
 
-    let result = serde_json::to_value(plan)
+    let mut result = serde_json::to_value(plan)
         .map_err(|error| AppError::Internal(format!("planning response failed: {error}")))?;
+    result
+        .as_object_mut()
+        .expect("planning result is an object")
+        .insert(
+            "evidence_context".to_string(),
+            json!({
+                "eligible_source_evidence_count": eligible_source_evidence_count,
+                "policy": "current_contract_trusted_only",
+            }),
+        );
     let response = SurfaceResponse::new(
         Surface::Planning,
         SurfaceAction::GenerateNextTask,
@@ -2617,6 +2687,8 @@ fn prepare_submit_attempt_payload(
         trace_metadata: Value::Null,
         input_source: payload.input_source,
         idempotency: None,
+        normalized_outcome: None,
+        input_confirmation: None,
     })
 }
 
@@ -2666,6 +2738,8 @@ fn prepare_dictation_attempt_payload(
         trace_metadata,
         input_source: Some(attempt.source.as_str().to_string()),
         idempotency: None,
+        normalized_outcome: None,
+        input_confirmation: None,
     })
 }
 
@@ -2714,16 +2788,6 @@ fn prepare_idempotent_learning_outcome(
     let goal = payload
         .goal
         .unwrap_or_else(|| format!("Practice {namespace}"));
-    let fingerprint_input = json!({
-        "namespace": namespace,
-        "goal": goal,
-        "task": task,
-        "input_source": payload.input_source,
-        "input_confirmation": payload.input_confirmation,
-        "normalized_outcome": outcome,
-    });
-    let payload_fingerprint = canonical_payload_fingerprint(&fingerprint_input)?;
-
     Ok(PreparedSubmitAttemptPayload {
         space_id: payload.space_id,
         feedback_loop_id: None,
@@ -2733,15 +2797,23 @@ fn prepare_idempotent_learning_outcome(
         evaluation: json!({"summary": "completed", "mistake_recorded": outcome.mistake.is_some()}),
         trace_metadata: json!({"normalized_learning_outcome": true}),
         input_source: payload.input_source,
-        idempotency: Some(PerformanceIdempotency {
-            source_event_id,
-            payload_fingerprint,
-        }),
+        idempotency: Some(PerformanceIdempotency { source_event_id }),
+        normalized_outcome: Some(outcome),
+        input_confirmation: payload.input_confirmation,
     })
 }
 
 fn valid_source_event_id(value: &str) -> bool {
     valid_source_identifier(value, 128)
+}
+
+fn compatibility_installation_id(space_id: Uuid, namespace_id: Uuid) -> Uuid {
+    let digest = Sha256::digest(format!("memorynexus:#228:{space_id}:{namespace_id}"));
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes)
 }
 
 fn validate_normalized_outcome(outcome: &NormalizedLearningOutcome) -> Result<(), AppError> {
@@ -2873,42 +2945,65 @@ async fn submit_attempt(
         let goal = prepared.goal.clone().ok_or_else(|| {
             AppError::Internal("idempotent outcome missing validated goal".to_string())
         })?;
-        let result = submit_idempotent_learning_outcome(
+        let outcome = prepared.normalized_outcome.clone().ok_or_else(|| {
+            AppError::Internal("idempotent outcome missing normalized evidence".to_string())
+        })?;
+        // #228 did not carry a provider installation or source occurrence time. A fixed,
+        // documented compatibility installation and epoch time make the mapping stable
+        // across retries and MemoryNexus processes without pretending delivery time is
+        // source time.
+        let compatibility_installation =
+            compatibility_installation_id(prepared.space_id, namespace.id);
+        let compatibility_time =
+            DateTime::from_timestamp(0, 0).expect("Unix epoch is a valid timestamp");
+        let source_input = SourceEvidenceInput {
+            contract_version: 1,
+            source_identity: SourceIdentityInput {
+                source_product: "memorynexus_compat".to_string(),
+                source_installation_id: compatibility_installation,
+                record_type: "learning_outcome".to_string(),
+                record_id: idempotency.source_event_id.clone(),
+                revision: 1,
+            },
+            occurred_at: compatibility_time,
+            observed_at: compatibility_time,
+            evidence_trust: EvidenceTrust::ContractTrusted,
+            provenance: SourceProvenanceInput {
+                adapter_id: format!("compat_{:?}", request.adapter).to_lowercase(),
+                adapter_version: "1".to_string(),
+                source_schema_version: "228".to_string(),
+            },
+            evidence: Some(SourceEvidenceBody::LearningAttempt(
+                LearningAttemptEvidenceInput {
+                    goal: Some(goal),
+                    task,
+                    summary: outcome.summary,
+                    mistake: outcome.mistake,
+                    input_source: prepared.input_source.clone(),
+                    input_confirmation: prepared.input_confirmation,
+                },
+            )),
+            tombstone: None,
+        };
+        validate_source_evidence(&source_input)?;
+        let result = persist_source_learning_attempt(
             &state.db,
-            idempotency,
-            CreateFeedbackLoop {
-                space_id: prepared.space_id,
-                namespace_id: namespace.id,
-                goal,
-                task,
-                attempt: Some(prepared.attempt_summary.clone()),
-                evaluation: None,
-                feedback: None,
-                adjustment: None,
-                next_task: None,
-                status: "active".to_string(),
-                created_by: user_id,
-            },
-            AttemptTraceInput {
-                space_id: prepared.space_id,
-                namespace_id: namespace.id,
-                request: &request,
-                input_source: prepared.input_source.clone(),
-                trace_metadata: prepared.trace_metadata.clone(),
-                attempt_summary: prepared.attempt_summary.clone(),
-                started_at,
-            },
+            user_id,
+            prepared.space_id,
+            namespace.id,
+            &request,
+            &source_input,
+            started_at,
         )
         .await?;
-        let (feedback_loop_id, trace_id, status) = match result {
-            IdempotentSubmission::Created {
-                feedback_loop_id,
-                trace_id,
-            } => (feedback_loop_id, trace_id, "attempt_recorded"),
-            IdempotentSubmission::Replayed {
-                feedback_loop_id,
-                trace_id,
-            } => (feedback_loop_id, trace_id, "attempt_replayed"),
+        let feedback_loop_id = result.feedback_loop_id.ok_or_else(|| {
+            AppError::Internal("compatibility evidence FeedbackLoop is incomplete".to_string())
+        })?;
+        let trace_id = result.trace_id;
+        let status = if result.replayed {
+            "attempt_replayed"
+        } else {
+            "attempt_recorded"
         };
         let event = EngineEvent::AttemptSubmitted(EngineEventEnvelope {
             space_id: prepared.space_id,
@@ -3064,8 +3159,11 @@ async fn submit_attempt(
 
 #[derive(Debug, FromRow)]
 struct SourceEvidenceRecord {
+    id: Uuid,
     space_id: Uuid,
     namespace_id: Uuid,
+    revision: i64,
+    is_tombstone: bool,
     payload_fingerprint: String,
     acknowledgement: Option<Value>,
     feedback_loop_id: Option<Uuid>,
@@ -3075,6 +3173,15 @@ struct SourceEvidenceRecord {
 struct SourceEvidenceSubmission {
     acknowledgement: Value,
     trace_id: Uuid,
+    feedback_loop_id: Option<Uuid>,
+    replayed: bool,
+}
+
+#[derive(Debug, FromRow)]
+struct LegacyPerformanceIdempotencyRecord {
+    payload_fingerprint: String,
+    feedback_loop_id: Option<Uuid>,
+    trace_id: Option<Uuid>,
 }
 
 async fn submit_source_learning_attempt(
@@ -3162,9 +3269,9 @@ fn validate_source_evidence(input: &SourceEvidenceInput) -> Result<(), AppError>
             "source_evidence.contract_version must be 1".to_string(),
         ));
     }
-    if input.source_identity.revision != 1 {
+    if input.source_identity.revision < 1 {
         return Err(AppError::BadRequest(
-            "the initial source evidence contract accepts revision 1 only".to_string(),
+            "source_evidence revision must be positive".to_string(),
         ));
     }
     if input.source_identity.source_installation_id.is_nil() {
@@ -3201,20 +3308,120 @@ fn validate_source_evidence(input: &SourceEvidenceInput) -> Result<(), AppError>
             64,
         ),
     ] {
-        if !valid_source_identifier(value, max_len) {
+        if !valid_source_identifier(value, max_len) || has_secret_like_value(value.trim()) {
             return Err(AppError::BadRequest(format!(
-                "source_evidence {field} is malformed"
+                "source_evidence {field} is malformed or secret-shaped"
             )));
         }
     }
-    validate_bounded_source_text("task", &input.evidence.task, 200)?;
-    if let Some(goal) = &input.evidence.goal {
-        validate_bounded_source_text("goal", goal, 200)?;
+    match (&input.evidence, &input.tombstone) {
+        (Some(_), Some(_)) | (None, None) => Err(AppError::BadRequest(
+            "source_evidence requires exactly one of evidence or tombstone".to_string(),
+        )),
+        (None, Some(tombstone)) => {
+            if input.evidence_trust != EvidenceTrust::ContractTrusted
+                || tombstone.withdrawn_at < input.occurred_at
+            {
+                return Err(AppError::BadRequest(
+                    "source tombstone must be contract_trusted and not predate occurrence"
+                        .to_string(),
+                ));
+            }
+            Ok(())
+        }
+        (Some(SourceEvidenceBody::LearningAttempt(evidence)), None) => {
+            require_evidence_trust(input, EvidenceTrust::ContractTrusted)?;
+            validate_bounded_source_text("task", &evidence.task, 200)?;
+            if let Some(goal) = &evidence.goal {
+                validate_bounded_source_text("goal", goal, 200)?;
+            }
+            validate_normalized_outcome(&NormalizedLearningOutcome {
+                summary: evidence.summary.clone(),
+                mistake: evidence.mistake.clone(),
+            })?;
+            validate_surface_evidence(
+                evidence.input_source.as_deref(),
+                evidence.input_confirmation.as_ref(),
+                &[],
+            )
+        }
+        (Some(SourceEvidenceBody::LearningSession(evidence)), None) => {
+            require_evidence_trust(input, EvidenceTrust::ContractTrusted)?;
+            validate_bounded_source_text("task", &evidence.task, 200)?;
+            if let Some(goal) = &evidence.goal {
+                validate_bounded_source_text("goal", goal, 200)?;
+            }
+            if evidence.started_at > evidence.ended_at
+                || evidence.successful_activity_count > evidence.activity_count
+                || evidence.activity_count > 10_000
+            {
+                return Err(AppError::BadRequest(
+                    "source learning session counts or time range are invalid".to_string(),
+                ));
+            }
+            Ok(())
+        }
+        (Some(SourceEvidenceBody::LearnerJourneySummary(evidence)), None) => {
+            require_evidence_trust(input, EvidenceTrust::ModelDerivedUnreviewed)?;
+            if evidence.period_start > evidence.period_end
+                || evidence.strengths.len() > 10
+                || evidence.next_steps.len() > 10
+                || evidence.source_refs.is_empty()
+                || evidence.source_refs.len() > 100
+            {
+                return Err(AppError::BadRequest(
+                    "source learner journey summary range, coverage, or list bounds are invalid"
+                        .to_string(),
+                ));
+            }
+            validate_bounded_source_text("summary", &evidence.summary, 1_000)?;
+            for value in evidence.strengths.iter().chain(&evidence.next_steps) {
+                validate_bounded_source_text("journey_summary_item", value, 200)?;
+            }
+            let mut unique_refs = HashSet::with_capacity(evidence.source_refs.len());
+            for source_ref in &evidence.source_refs {
+                validate_source_identity(source_ref)?;
+                if !unique_refs.insert(source_ref.clone()) {
+                    return Err(AppError::BadRequest(
+                        "source learner journey summary contains duplicate source_refs".to_string(),
+                    ));
+                }
+            }
+            Ok(())
+        }
     }
-    validate_normalized_outcome(&NormalizedLearningOutcome {
-        summary: input.evidence.summary.clone(),
-        mistake: input.evidence.mistake.clone(),
-    })
+}
+
+fn validate_source_identity(identity: &SourceIdentityInput) -> Result<(), AppError> {
+    if identity.revision < 1 || identity.source_installation_id.is_nil() {
+        return Err(AppError::BadRequest(
+            "source_ref identity is malformed".to_string(),
+        ));
+    }
+    for (field, value, max_len) in [
+        ("source_product", identity.source_product.as_str(), 64),
+        ("record_type", identity.record_type.as_str(), 64),
+        ("record_id", identity.record_id.as_str(), 128),
+    ] {
+        if !valid_source_identifier(value, max_len) || has_secret_like_value(value.trim()) {
+            return Err(AppError::BadRequest(format!(
+                "source_ref {field} is malformed or secret-shaped"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn require_evidence_trust(
+    input: &SourceEvidenceInput,
+    expected: EvidenceTrust,
+) -> Result<(), AppError> {
+    if input.evidence_trust != expected {
+        return Err(AppError::BadRequest(
+            "source evidence variant has an invalid evidence_trust state".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn valid_source_identifier(value: &str, max_len: usize) -> bool {
@@ -3255,25 +3462,151 @@ async fn persist_source_learning_attempt(
     let provenance = serde_json::to_value(&input.provenance).map_err(|error| {
         AppError::Internal(format!("source provenance serialization failed: {error}"))
     })?;
-    let normalized_evidence = serde_json::to_value(&input.evidence).map_err(|error| {
-        AppError::Internal(format!("source evidence serialization failed: {error}"))
-    })?;
-    let evidence_trust = "contract_trusted";
+    let normalized_evidence = input
+        .evidence
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| {
+            AppError::Internal(format!("source evidence serialization failed: {error}"))
+        })?;
+    let evidence_trust = match input.evidence_trust {
+        EvidenceTrust::ContractTrusted => "contract_trusted",
+        EvidenceTrust::ModelDerivedUnreviewed => "model_derived_unreviewed",
+    };
+    let is_tombstone = input.tombstone.is_some();
+    let evidence_kind = match &input.evidence {
+        Some(SourceEvidenceBody::LearningAttempt(_)) => "learning_attempt",
+        Some(SourceEvidenceBody::LearningSession(_)) => "learning_session",
+        Some(SourceEvidenceBody::LearnerJourneySummary(_)) => "learner_journey_summary",
+        None => "source_tombstone",
+    };
     let mut tx = pool.begin().await.map_err(AppError::Database)?;
-    let claimed: Option<bool> = sqlx::query_scalar(
+    let lock_key = format!(
+        "{}:{}:{}:{}",
+        input.source_identity.source_product,
+        input.source_identity.source_installation_id,
+        input.source_identity.record_type,
+        input.source_identity.record_id
+    );
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(lock_key)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+
+    let current = load_current_source_evidence_record(&mut tx, &input.source_identity).await?;
+    if is_tombstone && current.is_none() {
+        return Err(AppError::Conflict(
+            "source tombstone requires a current non-tombstone record".to_string(),
+        ));
+    }
+    if let Some(existing) = &current {
+        if existing.space_id != space_id || existing.namespace_id != namespace_id {
+            return Err(AppError::Conflict(
+                "Source Identity is already bound to a different authorization scope".to_string(),
+            ));
+        }
+        if input.source_identity.revision < existing.revision {
+            return Err(AppError::Conflict(
+                "Source Identity revision is stale".to_string(),
+            ));
+        }
+        if input.source_identity.revision == existing.revision {
+            if existing.payload_fingerprint != fingerprint {
+                return Err(AppError::Conflict(
+                    "Source Identity conflicts with different evidence".to_string(),
+                ));
+            }
+            let acknowledgement = existing.acknowledgement.clone().ok_or_else(|| {
+                AppError::Internal("source evidence acknowledgement is incomplete".to_string())
+            })?;
+            let trace_id = existing.trace_id.ok_or_else(|| {
+                AppError::Internal("source evidence Trace is incomplete".to_string())
+            })?;
+            tx.commit().await.map_err(AppError::Database)?;
+            return Ok(SourceEvidenceSubmission {
+                acknowledgement,
+                trace_id,
+                feedback_loop_id: existing.feedback_loop_id,
+                replayed: true,
+            });
+        }
+        if existing.is_tombstone && is_tombstone {
+            return Err(AppError::Conflict(
+                "Source Identity is already withdrawn".to_string(),
+            ));
+        }
+        if existing.is_tombstone && !is_tombstone {
+            return Err(AppError::Conflict(
+                "withdrawn Source Identity cannot be restored by later content".to_string(),
+            ));
+        }
+        let reason = if is_tombstone {
+            "withdrawn"
+        } else {
+            "superseded"
+        };
+        sqlx::query(
+            "UPDATE source_evidence_records SET is_current = FALSE, superseded_at = NOW(), invalidation_reason = $2 WHERE id = $1",
+        )
+        .bind(existing.id)
+        .bind(reason)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+        if let Some(feedback_loop_id) = existing.feedback_loop_id {
+            sqlx::query(
+                "UPDATE feedback_loops SET status = 'paused', updated_at = NOW() WHERE id = $1",
+            )
+            .bind(feedback_loop_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+        }
+    }
+
+    let legacy_record = if current.is_none()
+        && input.source_identity.source_product == "memorynexus_compat"
+        && input.source_identity.record_type == "learning_outcome"
+    {
+        let record = sqlx::query_as::<_, LegacyPerformanceIdempotencyRecord>(
+            "SELECT payload_fingerprint, feedback_loop_id, trace_id FROM performance_idempotency_records WHERE space_id = $1 AND namespace_id = $2 AND source_event_id = $3 FOR UPDATE",
+        )
+        .bind(space_id)
+        .bind(namespace_id)
+        .bind(&input.source_identity.record_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+        if let Some(record) = &record {
+            let legacy_fingerprint = compatibility_payload_fingerprint(&request.namespace, input)?;
+            if record.payload_fingerprint != legacy_fingerprint {
+                return Err(AppError::Conflict(
+                    "source_event_id conflicts with a different normalized outcome".to_string(),
+                ));
+            }
+            if record.feedback_loop_id.is_none() || record.trace_id.is_none() {
+                return Err(AppError::Internal(
+                    "legacy idempotency record is incomplete".to_string(),
+                ));
+            }
+        }
+        record
+    } else {
+        None
+    };
+
+    let source_evidence_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO source_evidence_records (
             space_id, namespace_id, contract_version, source_product,
             source_installation_id, source_record_type, source_record_id, revision,
             occurred_at, observed_at, evidence_trust, provenance,
-            normalized_evidence, payload_fingerprint
+            normalized_evidence, payload_fingerprint, is_tombstone, withdrawn_at
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-        ON CONFLICT (
-            source_product, source_installation_id, source_record_type,
-            source_record_id, revision
-        ) DO NOTHING
-        RETURNING true
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        RETURNING id
         "#,
     )
     .bind(space_id)
@@ -3288,67 +3621,113 @@ async fn persist_source_learning_attempt(
     .bind(input.observed_at)
     .bind(evidence_trust)
     .bind(&provenance)
-    .bind(&normalized_evidence)
+    .bind(normalized_evidence.as_ref())
     .bind(&fingerprint)
-    .fetch_optional(&mut *tx)
+    .bind(is_tombstone)
+    .bind(input.tombstone.as_ref().map(|value| value.withdrawn_at))
+    .fetch_one(&mut *tx)
     .await
     .map_err(AppError::Database)?;
-
-    if claimed.is_none() {
-        let existing = load_source_evidence_record(&mut tx, &input.source_identity).await?;
-        if existing.space_id != space_id || existing.namespace_id != namespace_id {
-            return Err(AppError::Conflict(
-                "Source Identity is already bound to a different authorization scope".to_string(),
-            ));
-        }
-        if existing.payload_fingerprint != fingerprint {
-            return Err(AppError::Conflict(
-                "Source Identity conflicts with different evidence".to_string(),
-            ));
-        }
-        let acknowledgement = existing.acknowledgement.ok_or_else(|| {
-            AppError::Internal("source evidence acknowledgement is incomplete".to_string())
-        })?;
-        let _feedback_loop_id = existing.feedback_loop_id.ok_or_else(|| {
-            AppError::Internal("source evidence FeedbackLoop is incomplete".to_string())
-        })?;
-        let trace_id = existing
-            .trace_id
-            .ok_or_else(|| AppError::Internal("source evidence Trace is incomplete".to_string()))?;
+    if let Some(SourceEvidenceBody::LearnerJourneySummary(summary)) = &input.evidence {
+        persist_source_evidence_dependencies(
+            &mut tx,
+            source_evidence_id,
+            space_id,
+            namespace_id,
+            &summary.source_refs,
+        )
+        .await?;
+    }
+    if let Some(legacy) = legacy_record {
+        let feedback_loop_id = legacy
+            .feedback_loop_id
+            .expect("validated legacy FeedbackLoop");
+        let trace_id = legacy.trace_id.expect("validated legacy Trace");
+        let acknowledgement = json!({
+            "status": "learning_attempt_accepted",
+            "source_identity": input.source_identity,
+            "occurred_at": input.occurred_at,
+            "observed_at": input.observed_at,
+            "evidence_trust": input.evidence_trust,
+            "provenance": input.provenance,
+        });
+        sqlx::query(
+            "UPDATE source_evidence_records SET acknowledgement = $2, feedback_loop_id = $3, trace_id = $4 WHERE id = $1",
+        )
+        .bind(source_evidence_id)
+        .bind(&acknowledgement)
+        .bind(feedback_loop_id)
+        .bind(trace_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
         tx.commit().await.map_err(AppError::Database)?;
         return Ok(SourceEvidenceSubmission {
             acknowledgement,
             trace_id,
+            feedback_loop_id: Some(feedback_loop_id),
+            replayed: true,
         });
     }
-
-    let outcome = NormalizedLearningOutcome {
-        summary: input.evidence.summary.clone(),
-        mistake: input.evidence.mistake.clone(),
-    };
-    let feedback_loop = insert_feedback_loop_in_tx(
-        &mut tx,
-        &CreateFeedbackLoop {
+    let feedback_input = match &input.evidence {
+        Some(SourceEvidenceBody::LearningAttempt(evidence)) => Some(CreateFeedbackLoop {
             space_id,
             namespace_id,
-            goal: input
-                .evidence
+            goal: evidence
                 .goal
                 .clone()
                 .unwrap_or_else(|| format!("Practice {}", request.namespace)),
-            task: input.evidence.task.clone(),
-            attempt: Some(normalized_outcome_summary(&outcome)),
+            task: evidence.task.clone(),
+            attempt: Some(normalized_outcome_summary(&NormalizedLearningOutcome {
+                summary: evidence.summary.clone(),
+                mistake: evidence.mistake.clone(),
+            })),
             evaluation: None,
             feedback: None,
             adjustment: None,
             next_task: None,
             status: "active".to_string(),
             created_by: user_id,
-        },
-    )
-    .await
-    .map_err(AppError::Database)?;
+        }),
+        Some(SourceEvidenceBody::LearningSession(evidence)) => Some(CreateFeedbackLoop {
+            space_id,
+            namespace_id,
+            goal: evidence
+                .goal
+                .clone()
+                .unwrap_or_else(|| format!("Practice {}", request.namespace)),
+            task: evidence.task.clone(),
+            attempt: Some(format!(
+                "{} of {} activities completed successfully",
+                evidence.successful_activity_count, evidence.activity_count
+            )),
+            evaluation: None,
+            feedback: None,
+            adjustment: None,
+            next_task: None,
+            status: "active".to_string(),
+            created_by: user_id,
+        }),
+        Some(SourceEvidenceBody::LearnerJourneySummary(_)) | None => None,
+    };
+    let feedback_loop_id = if let Some(feedback_input) = feedback_input {
+        Some(
+            insert_feedback_loop_in_tx(&mut tx, &feedback_input)
+                .await
+                .map_err(AppError::Database)?
+                .id,
+        )
+    } else {
+        None
+    };
     let completed_at = Utc::now();
+    let disposition = if is_tombstone {
+        "withdrawn"
+    } else if current.is_some() {
+        "superseded"
+    } else {
+        "accepted"
+    };
     let trace = insert_completed_trace_in_tx(
         &mut tx,
         CreateCompletedTrace {
@@ -3358,8 +3737,8 @@ async fn persist_source_learning_attempt(
             task_type: TraceTaskType::Practice,
             mode: trace_mode(request.context.mode.as_deref())?,
             runtime: deterministic_trace_runtime(request.context.runtime_preference),
-            input_summary: Some("Authenticated source Learning Attempt accepted".to_string()),
-            output_summary: Some("Source evidence stored for feedback processing".to_string()),
+            input_summary: Some("Authenticated source evidence processed".to_string()),
+            output_summary: Some(format!("Source evidence disposition: {disposition}")),
             started_at,
             completed_at,
             latency_ms: Some((completed_at - started_at).num_milliseconds().max(0)),
@@ -3372,7 +3751,7 @@ async fn persist_source_learning_attempt(
             generated_memory_ids: Vec::new(),
             generated_lens_run_ids: Vec::new(),
             generated_review_report_ids: Vec::new(),
-            generated_feedback_loop_ids: vec![feedback_loop.id],
+            generated_feedback_loop_ids: feedback_loop_id.into_iter().collect(),
             user_feedback: None,
             error: None,
             metadata: json!({
@@ -3382,13 +3761,15 @@ async fn persist_source_learning_attempt(
                 "observed_at": input.observed_at,
                 "evidence_trust": input.evidence_trust,
                 "provenance": input.provenance,
+                "evidence_kind": evidence_kind,
+                "disposition": disposition,
             }),
         },
     )
     .await
     .map_err(AppError::Database)?;
     let acknowledgement = json!({
-        "status": "learning_attempt_accepted",
+        "status": format!("{evidence_kind}_{disposition}"),
         "source_identity": input.source_identity,
         "occurred_at": input.occurred_at,
         "observed_at": input.observed_at,
@@ -3412,37 +3793,164 @@ async fn persist_source_learning_attempt(
     .bind(&input.source_identity.record_id)
     .bind(input.source_identity.revision)
     .bind(&acknowledgement)
-    .bind(feedback_loop.id)
+    .bind(feedback_loop_id)
     .bind(trace.id)
     .execute(&mut *tx)
     .await
     .map_err(AppError::Database)?;
+    if let Some(existing) = &current {
+        let reason = if is_tombstone {
+            "withdrawn"
+        } else {
+            "superseded"
+        };
+        sqlx::query(
+            "INSERT INTO source_evidence_invalidations (source_evidence_id, invalidated_source_evidence_id, target_kind, target_id, reason) VALUES ($1,$2,'source_evidence',$2,$3)",
+        )
+        .bind(source_evidence_id)
+        .bind(existing.id)
+        .bind(reason)
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+        if let Some(target_id) = existing.feedback_loop_id {
+            sqlx::query(
+                "INSERT INTO source_evidence_invalidations (source_evidence_id, invalidated_source_evidence_id, target_kind, target_id, reason) VALUES ($1,$2,'feedback_loop',$3,$4)",
+            )
+            .bind(source_evidence_id)
+            .bind(existing.id)
+            .bind(target_id)
+            .bind(reason)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+        }
+        let stale_summary_ids = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            UPDATE source_evidence_records AS derived
+            SET is_stale = TRUE, invalidation_reason = 'dependency_invalidated'
+            FROM source_evidence_dependencies AS dependency
+            WHERE dependency.source_evidence_id = $1
+              AND derived.id = dependency.derived_source_evidence_id
+              AND derived.is_current
+              AND NOT derived.is_stale
+            RETURNING derived.id
+            "#,
+        )
+        .bind(existing.id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+        for target_id in stale_summary_ids {
+            sqlx::query(
+                "INSERT INTO source_evidence_invalidations (source_evidence_id, invalidated_source_evidence_id, target_kind, target_id, reason) VALUES ($1,$2,'dependent_summary',$3,$4)",
+            )
+            .bind(source_evidence_id)
+            .bind(existing.id)
+            .bind(target_id)
+            .bind(reason)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+        }
+    }
     tx.commit().await.map_err(AppError::Database)?;
     Ok(SourceEvidenceSubmission {
         acknowledgement,
         trace_id: trace.id,
+        feedback_loop_id,
+        replayed: false,
     })
 }
 
-async fn load_source_evidence_record(
+async fn persist_source_evidence_dependencies(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    derived_source_evidence_id: Uuid,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    source_refs: &[SourceIdentityInput],
+) -> Result<(), AppError> {
+    for source_ref in source_refs {
+        let source_evidence_id = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT id
+            FROM current_source_evidence
+            WHERE space_id = $1 AND namespace_id = $2
+              AND source_product = $3 AND source_installation_id = $4
+              AND source_record_type = $5 AND source_record_id = $6 AND revision = $7
+              AND normalized_evidence->>'kind' IN ('learning_attempt', 'learning_session')
+            FOR SHARE
+            "#,
+        )
+        .bind(space_id)
+        .bind(namespace_id)
+        .bind(&source_ref.source_product)
+        .bind(source_ref.source_installation_id)
+        .bind(&source_ref.record_type)
+        .bind(&source_ref.record_id)
+        .bind(source_ref.revision)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "learner journey summary source_ref is not current evidence in this scope"
+                    .to_string(),
+            )
+        })?;
+        sqlx::query(
+            "INSERT INTO source_evidence_dependencies (derived_source_evidence_id, source_evidence_id) VALUES ($1,$2)",
+        )
+        .bind(derived_source_evidence_id)
+        .bind(source_evidence_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+    }
+    Ok(())
+}
+
+fn compatibility_payload_fingerprint(
+    namespace: &str,
+    input: &SourceEvidenceInput,
+) -> Result<String, AppError> {
+    let Some(SourceEvidenceBody::LearningAttempt(evidence)) = &input.evidence else {
+        return Err(AppError::Internal(
+            "compatibility evidence must be a Learning Attempt".to_string(),
+        ));
+    };
+    canonical_payload_fingerprint(&json!({
+        "namespace": namespace,
+        "goal": evidence.goal,
+        "task": evidence.task,
+        "input_source": evidence.input_source,
+        "input_confirmation": evidence.input_confirmation,
+        "normalized_outcome": {
+            "summary": evidence.summary,
+            "mistake": evidence.mistake,
+        },
+    }))
+}
+
+async fn load_current_source_evidence_record(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     identity: &SourceIdentityInput,
-) -> Result<SourceEvidenceRecord, AppError> {
+) -> Result<Option<SourceEvidenceRecord>, AppError> {
     sqlx::query_as::<_, SourceEvidenceRecord>(
         r#"
-        SELECT space_id, namespace_id, payload_fingerprint, acknowledgement,
-               feedback_loop_id, trace_id
+        SELECT id, space_id, namespace_id, revision, is_tombstone,
+               payload_fingerprint, acknowledgement, feedback_loop_id, trace_id
         FROM source_evidence_records
         WHERE source_product = $1 AND source_installation_id = $2
-          AND source_record_type = $3 AND source_record_id = $4 AND revision = $5
+          AND source_record_type = $3 AND source_record_id = $4 AND is_current
+        FOR UPDATE
         "#,
     )
     .bind(&identity.source_product)
     .bind(identity.source_installation_id)
     .bind(&identity.record_type)
     .bind(&identity.record_id)
-    .bind(identity.revision)
-    .fetch_one(&mut **tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(AppError::Database)
 }
@@ -3644,147 +4152,6 @@ fn personal_feedback_outcome_response(
             SurfaceVisibility::User,
         ))),
     ))
-}
-
-struct AttemptTraceInput<'a> {
-    space_id: Uuid,
-    namespace_id: Uuid,
-    request: &'a SurfaceRequest,
-    input_source: Option<String>,
-    trace_metadata: Value,
-    attempt_summary: String,
-    started_at: DateTime<Utc>,
-}
-
-#[derive(Debug)]
-enum IdempotentSubmission {
-    Created {
-        feedback_loop_id: Uuid,
-        trace_id: Uuid,
-    },
-    Replayed {
-        feedback_loop_id: Uuid,
-        trace_id: Uuid,
-    },
-}
-
-#[derive(FromRow)]
-struct IdempotencyRecord {
-    payload_fingerprint: String,
-    feedback_loop_id: Option<Uuid>,
-    trace_id: Option<Uuid>,
-}
-
-async fn submit_idempotent_learning_outcome(
-    pool: &PgPool,
-    idempotency: &PerformanceIdempotency,
-    feedback_loop: CreateFeedbackLoop,
-    trace_input: AttemptTraceInput<'_>,
-) -> Result<IdempotentSubmission, AppError> {
-    let mut tx = pool.begin().await.map_err(AppError::Database)?;
-    let claimed: Option<bool> = sqlx::query_scalar(
-        r#"
-        INSERT INTO performance_idempotency_records
-            (space_id, namespace_id, source_event_id, payload_fingerprint)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (space_id, namespace_id, source_event_id) DO NOTHING
-        RETURNING true
-        "#,
-    )
-    .bind(feedback_loop.space_id)
-    .bind(feedback_loop.namespace_id)
-    .bind(&idempotency.source_event_id)
-    .bind(&idempotency.payload_fingerprint)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(AppError::Database)?;
-
-    if claimed.is_none() {
-        let record = sqlx::query_as::<_, IdempotencyRecord>(
-            r#"
-            SELECT payload_fingerprint, feedback_loop_id, trace_id
-            FROM performance_idempotency_records
-            WHERE space_id = $1 AND namespace_id = $2 AND source_event_id = $3
-            "#,
-        )
-        .bind(feedback_loop.space_id)
-        .bind(feedback_loop.namespace_id)
-        .bind(&idempotency.source_event_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(AppError::Database)?;
-        if record.payload_fingerprint != idempotency.payload_fingerprint {
-            return Err(AppError::Conflict(
-                "source_event_id conflicts with a different normalized outcome".to_string(),
-            ));
-        }
-        let feedback_loop_id = record
-            .feedback_loop_id
-            .ok_or_else(|| AppError::Internal("idempotency record is incomplete".to_string()))?;
-        let trace_id = record
-            .trace_id
-            .ok_or_else(|| AppError::Internal("idempotency record is incomplete".to_string()))?;
-        tx.commit().await.map_err(AppError::Database)?;
-        return Ok(IdempotentSubmission::Replayed {
-            feedback_loop_id,
-            trace_id,
-        });
-    }
-
-    let feedback_loop = insert_feedback_loop_in_tx(&mut tx, &feedback_loop)
-        .await
-        .map_err(AppError::Database)?;
-    let completed_at = Utc::now();
-    let trace = insert_completed_trace_in_tx(
-        &mut tx,
-        CreateCompletedTrace {
-            space_id: trace_input.space_id,
-            namespace_id: Some(trace_input.namespace_id),
-            source_type: trace_source_type(trace_input.request.adapter),
-            task_type: TraceTaskType::Practice,
-            mode: trace_mode(trace_input.request.context.mode.as_deref())?,
-            runtime: trace_runtime(trace_input.request.context.runtime_preference),
-            input_summary: Some(format!("Performance submitAttempt in namespace {}", trace_input.request.namespace)),
-            output_summary: Some(format!("Attempt recorded for FeedbackLoop {}", feedback_loop.id)),
-            started_at: trace_input.started_at,
-            completed_at,
-            latency_ms: Some((completed_at - trace_input.started_at).num_milliseconds().max(0)),
-            model_provider: Some("deterministic".to_string()),
-            model_name: None,
-            token_usage: Some(json!({"input": 0, "output": 0, "total": 0})),
-            estimated_cost_usd: Some(0.0),
-            local_processing_ratio: Some(1.0),
-            related_memory_ids: Vec::new(), generated_memory_ids: Vec::new(),
-            generated_lens_run_ids: Vec::new(), generated_review_report_ids: Vec::new(),
-            generated_feedback_loop_ids: vec![feedback_loop.id],
-            user_feedback: Some(json!({"attempt": trace_input.attempt_summary})),
-            error: None,
-            metadata: json!({"surface_gateway": true, "surface": trace_input.request.surface,
-                "action": trace_input.request.action, "adapter": trace_input.request.adapter,
-                "namespace": trace_input.request.namespace, "input_source": trace_input.input_source,
-                "deep_consolidation": false, "dictation": trace_input.trace_metadata,
-                "event": "attempt_submitted"}),
-        },
-    )
-    .await
-    .map_err(AppError::Database)?;
-    sqlx::query(
-        r#"UPDATE performance_idempotency_records SET feedback_loop_id = $4, trace_id = $5
-            WHERE space_id = $1 AND namespace_id = $2 AND source_event_id = $3"#,
-    )
-    .bind(feedback_loop.space_id)
-    .bind(feedback_loop.namespace_id)
-    .bind(&idempotency.source_event_id)
-    .bind(feedback_loop.id)
-    .bind(trace.id)
-    .execute(&mut *tx)
-    .await
-    .map_err(AppError::Database)?;
-    tx.commit().await.map_err(AppError::Database)?;
-    Ok(IdempotentSubmission::Created {
-        feedback_loop_id: feedback_loop.id,
-        trace_id: trace.id,
-    })
 }
 
 async fn review_evidence(
@@ -4758,6 +5125,7 @@ struct ObservationCounts {
     paused_feedback_loop_count: i64,
     review_report_count: i64,
     sleep_cycle_count: i64,
+    current_source_evidence_count: i64,
 }
 
 impl ObservationCounts {
@@ -5032,6 +5400,13 @@ async fn load_observation_counts(
         namespace_id,
     )
     .await?;
+    let current_source_evidence_count = count_namespace_rows(
+        pool,
+        "SELECT COUNT(*) FROM current_source_evidence WHERE space_id = $1 AND namespace_id = $2",
+        space_id,
+        namespace_id,
+    )
+    .await?;
 
     Ok(ObservationCounts {
         memory_count,
@@ -5041,6 +5416,7 @@ async fn load_observation_counts(
         paused_feedback_loop_count,
         review_report_count,
         sleep_cycle_count,
+        current_source_evidence_count,
     })
 }
 
@@ -5071,6 +5447,12 @@ async fn count_feedback_loops(
         WHERE space_id = $1
           AND namespace_id = $2
           AND status = $3
+          AND NOT EXISTS (
+              SELECT 1
+              FROM source_evidence_invalidations
+              WHERE target_kind = 'feedback_loop'
+                AND target_id = feedback_loops.id
+          )
         "#,
     )
     .bind(space_id)
@@ -5253,7 +5635,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn idempotent_outcome_validates_identity_and_stable_fingerprint() {
+    fn idempotent_outcome_validates_compatibility_identity_inputs() {
         let payload = json!({
             "space_id": Uuid::nil(), "source_event_id": "study-buddy.session:2026-07-13.1",
             "task": "Daily spelling", "input_source": "typed",
@@ -5272,8 +5654,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            first.idempotency.as_ref().unwrap().payload_fingerprint,
-            second.idempotency.as_ref().unwrap().payload_fingerprint
+            first.idempotency.as_ref().unwrap().source_event_id,
+            second.idempotency.as_ref().unwrap().source_event_id
+        );
+        assert_eq!(
+            first.normalized_outcome.as_ref().unwrap().summary,
+            second.normalized_outcome.as_ref().unwrap().summary
+        );
+        let space_id = Uuid::new_v4();
+        let namespace_id = Uuid::new_v4();
+        assert_eq!(
+            compatibility_installation_id(space_id, namespace_id),
+            compatibility_installation_id(space_id, namespace_id)
+        );
+        assert_ne!(
+            compatibility_installation_id(space_id, namespace_id),
+            compatibility_installation_id(Uuid::new_v4(), namespace_id)
         );
         assert!(!valid_source_event_id("provider session/with spaces"));
     }
