@@ -7,6 +7,7 @@
 - [MemoryNexus Engine](architecture/memorynexus-engine.md)
 - [Surfaces and Adapters](architecture/surfaces-and-adapters.md)
 - [Surface Gateway](architecture/surface-gateway.md)
+- [Reference Adapter Runtime](reference-adapter-runtime.md)
 - [Sleep-driven Feedback Loop](architecture/sleep-driven-feedback-loop.md)
 - [Media Evidence Contract](media-evidence-contract.md)
 - [API](api.md)
