@@ -11,6 +11,7 @@ pub mod dictation_observation;
 pub mod dream_candidate;
 pub mod event;
 pub mod evidence;
+pub mod foundation_learning_observation;
 pub mod growth_model;
 pub mod memory_atom;
 pub mod personal_feedback;

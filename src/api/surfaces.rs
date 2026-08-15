@@ -32,6 +32,12 @@ use crate::domain::event::{
     EngineEvent, EngineEventEnvelope, EnginePayloadRef, EnginePayloadRefKind,
 };
 use crate::domain::evidence::{validate_evidence_request, InputConfirmation};
+use crate::domain::foundation_learning_observation::{
+    build_foundation_learning_observation, FoundationAttemptRole, FoundationEvidenceKind,
+    FoundationLearningEvidenceRecord, FoundationLearningObservation, FoundationMistakeType,
+    ObservationSourceIdentity, FOUNDATION_CORRECTION_GOAL, FOUNDATION_INITIAL_GOAL,
+    FOUNDATION_REINFORCEMENT_GOAL,
+};
 use crate::domain::growth_model::{EvidenceId, GrowthEvidenceRecord};
 use crate::domain::personal_feedback::{
     ConfirmedSleepEnergyCheckIn, SleepEnergyCheckInInput, PERSONAL_HEALTH_SLEEP_NAMESPACE,
@@ -337,8 +343,13 @@ struct PersonalFeedbackOutcomeRow {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct GetStateSummaryPayload {
     space_id: Uuid,
+    #[serde(default)]
+    window_start: Option<DateTime<Utc>>,
+    #[serde(default)]
+    window_end: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -528,6 +539,19 @@ async fn get_state_summary(
         serde_json::from_value(request.payload.clone()).map_err(|error| {
             AppError::BadRequest(format!("invalid getStateSummary payload: {error}"))
         })?;
+    let observation_end = payload.window_end.unwrap_or(started_at);
+    let observation_start = payload
+        .window_start
+        .unwrap_or(observation_end - chrono::Duration::days(7));
+    if observation_start >= observation_end
+        || observation_end > started_at + chrono::Duration::minutes(1)
+        || observation_end - observation_start > chrono::Duration::days(31)
+    {
+        return Err(AppError::BadRequest(
+            "observation window must be ordered, no more than 31 days, and not in the future"
+                .to_string(),
+        ));
+    }
 
     require_space_member(state, payload.space_id, user_id).await?;
     let namespace =
@@ -541,7 +565,8 @@ async fn get_state_summary(
         payload.space_id,
         namespace.id,
         &request.namespace,
-        started_at + chrono::Duration::minutes(1),
+        observation_start,
+        observation_end,
     )
     .await?;
     let knowledge_refresh =
@@ -4875,12 +4900,147 @@ struct NamespaceObservation {
     related_memory_ids: Vec<Uuid>,
 }
 
+#[derive(Debug, FromRow)]
+struct FoundationSourceEvidenceRow {
+    space_id: Uuid,
+    namespace_id: Uuid,
+    source_product: String,
+    source_installation_id: Uuid,
+    source_record_type: String,
+    source_record_id: String,
+    revision: i64,
+    occurred_at: DateTime<Utc>,
+    evidence_trust: String,
+    normalized_evidence: Value,
+}
+
+async fn load_foundation_learning_observation_evidence(
+    pool: &PgPool,
+    space_id: Uuid,
+    namespace_id: Uuid,
+    window_start: DateTime<Utc>,
+    window_end: DateTime<Utc>,
+) -> Result<Vec<FoundationLearningEvidenceRecord>, AppError> {
+    let rows = sqlx::query_as::<_, FoundationSourceEvidenceRow>(
+        r#"
+        SELECT space_id, namespace_id, source_product, source_installation_id,
+               source_record_type, source_record_id, revision, occurred_at,
+               evidence_trust, normalized_evidence
+        FROM current_source_evidence
+        WHERE space_id = $1
+          AND namespace_id = $2
+          AND occurred_at >= $3
+          AND occurred_at <= $4
+          AND evidence_trust = 'contract_trusted'
+          AND normalized_evidence->>'kind' IN ('learning_attempt', 'learning_session')
+        ORDER BY occurred_at ASC, source_product ASC, source_installation_id ASC,
+                 source_record_type ASC, source_record_id ASC, revision ASC
+        "#,
+    )
+    .bind(space_id)
+    .bind(namespace_id)
+    .bind(window_start)
+    .bind(window_end)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| FoundationLearningEvidenceRecord {
+            space_id: row.space_id,
+            namespace_id: row.namespace_id,
+            occurred_at: row.occurred_at,
+            evidence_trust: row.evidence_trust,
+            source_identity: ObservationSourceIdentity {
+                source_product: row.source_product,
+                source_installation_id: row.source_installation_id,
+                record_type: row.source_record_type,
+                record_id: row.source_record_id,
+                revision: row.revision,
+            },
+            kind: foundation_evidence_kind(&row.normalized_evidence),
+        })
+        .collect())
+}
+
+fn foundation_evidence_kind(evidence: &Value) -> FoundationEvidenceKind {
+    let Some(goal) = evidence.get("goal").and_then(Value::as_str) else {
+        return FoundationEvidenceKind::Unsupported;
+    };
+    let role = match goal {
+        FOUNDATION_INITIAL_GOAL => FoundationAttemptRole::Initial,
+        FOUNDATION_CORRECTION_GOAL => FoundationAttemptRole::Correction,
+        FOUNDATION_REINFORCEMENT_GOAL => FoundationAttemptRole::Reinforcement,
+        _ => return FoundationEvidenceKind::Unsupported,
+    };
+    match evidence.get("kind").and_then(Value::as_str) {
+        Some("learning_attempt") => {
+            let mistake_type = evidence
+                .pointer("/mistake/mistake_type")
+                .and_then(Value::as_str)
+                .and_then(FoundationMistakeType::from_normalized);
+            let is_correct = evidence.get("mistake").map_or(true, Value::is_null);
+            if !is_correct && mistake_type.is_none() {
+                return FoundationEvidenceKind::Unsupported;
+            }
+            FoundationEvidenceKind::LearningAttempt {
+                role,
+                is_correct,
+                mistake_type,
+            }
+        }
+        Some("learning_session") => {
+            let activity_count = evidence
+                .get("activity_count")
+                .and_then(Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok());
+            let successful_activity_count = evidence
+                .get("successful_activity_count")
+                .and_then(Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok());
+            match (activity_count, successful_activity_count) {
+                (Some(activity_count), Some(successful_activity_count))
+                    if successful_activity_count <= activity_count =>
+                {
+                    FoundationEvidenceKind::LearningSession {
+                        role,
+                        activity_count,
+                        successful_activity_count,
+                    }
+                }
+                _ => FoundationEvidenceKind::Unsupported,
+            }
+        }
+        _ => FoundationEvidenceKind::Unsupported,
+    }
+}
+
+fn foundation_learning_observation_trace_metadata(
+    summary: &FoundationLearningObservation,
+) -> Value {
+    json!({
+        "kind": "foundation_learning",
+        "status": summary.status,
+        "window_start": summary.window_start,
+        "window_end": summary.window_end,
+        "eligible_evidence_count": summary.facts.eligible_evidence_count,
+        "initial_attempt_count": summary.facts.initial_attempt_count,
+        "correction_attempt_count": summary.facts.correction_attempt_count,
+        "reinforcement_attempt_count": summary.facts.reinforcement_attempt_count,
+        "recurring_error_pattern_count": summary.deterministic_aggregates.recurring_errors.len(),
+        "delayed_recurrence_count": summary.deterministic_aggregates.delayed_recurrence.len(),
+        "evidence_gap_codes": summary.evidence_gaps.iter().map(|gap| gap.code.as_str()).collect::<Vec<_>>(),
+    })
+}
+
 async fn load_namespace_observation(
     pool: &PgPool,
     space_id: Uuid,
     namespace_id: Uuid,
     namespace: &str,
-    now: DateTime<Utc>,
+    window_start: DateTime<Utc>,
+    window_end: DateTime<Utc>,
 ) -> Result<NamespaceObservation, AppError> {
     if namespace == PERSONAL_HEALTH_SLEEP_NAMESPACE {
         let evidence =
@@ -4902,9 +5062,35 @@ async fn load_namespace_observation(
         });
     }
 
+    if namespace == "learning.foundation" {
+        let evidence = load_foundation_learning_observation_evidence(
+            pool,
+            space_id,
+            namespace_id,
+            window_start,
+            window_end,
+        )
+        .await?;
+        let summary = build_foundation_learning_observation(
+            space_id,
+            namespace_id,
+            window_start,
+            window_end,
+            evidence,
+        );
+        return Ok(NamespaceObservation {
+            response_key: "foundation_learning_observation",
+            trace_metadata: foundation_learning_observation_trace_metadata(&summary),
+            related_memory_ids: Vec::new(),
+            response: serde_json::to_value(summary)
+                .expect("foundation learning observation serializes"),
+        });
+    }
+
     let evidence =
-        load_recent_dictation_observation_evidence(pool, space_id, namespace_id, now).await?;
-    let summary = build_dictation_observation_summary(space_id, namespace_id, now, evidence);
+        load_recent_dictation_observation_evidence(pool, space_id, namespace_id, window_end)
+            .await?;
+    let summary = build_dictation_observation_summary(space_id, namespace_id, window_end, evidence);
     Ok(NamespaceObservation {
         response_key: "dictation_observation",
         trace_metadata: json!({
@@ -5633,6 +5819,59 @@ fn redacted_summary(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn foundation_evidence_mapping_uses_only_provider_neutral_controlled_goals() {
+        assert_eq!(
+            foundation_evidence_kind(&json!({
+                "kind": "learning_attempt",
+                "goal": FOUNDATION_CORRECTION_GOAL,
+                "task": "bounded task",
+                "summary": "correction recorded",
+                "mistake": null
+            })),
+            FoundationEvidenceKind::LearningAttempt {
+                role: FoundationAttemptRole::Correction,
+                is_correct: true,
+                mistake_type: None,
+            }
+        );
+        assert_eq!(
+            foundation_evidence_kind(&json!({
+                "kind": "learning_attempt",
+                "goal": FOUNDATION_REINFORCEMENT_GOAL,
+                "task": "bounded task",
+                "summary": "reinforcement recorded",
+                "mistake": {
+                    "expected_text": "12",
+                    "actual_text": "7",
+                    "mistake_type": "multiplication_fact"
+                }
+            })),
+            FoundationEvidenceKind::LearningAttempt {
+                role: FoundationAttemptRole::Reinforcement,
+                is_correct: false,
+                mistake_type: Some(FoundationMistakeType::MultiplicationFact),
+            }
+        );
+        assert_eq!(
+            foundation_evidence_kind(&json!({
+                "kind": "learning_attempt",
+                "goal": "Teacher-authorized reduced homework",
+                "mistake": null
+            })),
+            FoundationEvidenceKind::Unsupported
+        );
+    }
+
+    #[test]
+    fn foundation_observation_payload_rejects_unbounded_metadata() {
+        assert!(serde_json::from_value::<GetStateSummaryPayload>(json!({
+            "space_id": Uuid::new_v4(),
+            "provider_queue_status": "open"
+        }))
+        .is_err());
+    }
 
     #[test]
     fn idempotent_outcome_validates_compatibility_identity_inputs() {

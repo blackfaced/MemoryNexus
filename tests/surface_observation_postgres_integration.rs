@@ -14,6 +14,9 @@ use memorynexus::{
         trace::PostgresTraceRepository, user::PostgresUserRepository,
     },
     state::{AppState, Repositories},
+    study_buddy_adapter::{
+        FOUNDATION_CORRECTION_GOAL, FOUNDATION_INITIAL_GOAL, FOUNDATION_REINFORCEMENT_GOAL,
+    },
     vector::repository::{MemoryVector, RepositoryError, VectorRepository, VectorSearchResult},
 };
 use reqwest::{Client, StatusCode};
@@ -31,7 +34,7 @@ async fn observation_surface_returns_state_summary_and_writes_observation_trace(
         .expect("migrations should run");
     let fixture = seed_fixture(&pool).await;
     let base_url = spawn_api(pool.clone()).await;
-    let client = Client::new();
+    let client = Client::builder().no_proxy().build().unwrap();
     let token = token_for(fixture.owner_user_id, &fixture.owner_email);
 
     let response = client
@@ -551,6 +554,295 @@ async fn observation_surface_rejects_cross_space_and_inactive_namespaces() {
             "{label} must not write an Observation Trace"
         );
     }
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and DATABASE_URL"]
+async fn foundation_observation_uses_only_current_trusted_attempt_semantics() {
+    let pool = postgres_pool().await;
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    let fixture = seed_fixture(&pool).await;
+    seed_namespace(
+        &pool,
+        fixture.space_id,
+        fixture.owner_user_id,
+        "learning.foundation",
+        "active",
+    )
+    .await;
+    let base_url = spawn_api(pool.clone()).await;
+    let client = Client::builder().no_proxy().build().unwrap();
+    let owner_token = token_for(fixture.owner_user_id, &fixture.owner_email);
+    let source_token = JwtAuth::default()
+        .generate_source_credential(
+            fixture.owner_user_id,
+            &fixture.owner_email,
+            fixture.space_id,
+            vec!["learning.foundation".to_string()],
+        )
+        .unwrap();
+    let installation_id = Uuid::new_v4();
+    JwtAuth::default()
+        .verify(&source_token)
+        .expect("fresh source credential should verify");
+
+    let original = foundation_source_attempt(
+        &fixture,
+        installation_id,
+        "attempt:original:1",
+        1,
+        "2026-08-10T08:00:00Z",
+        FOUNDATION_INITIAL_GOAL,
+        Some("multiplication_fact"),
+    );
+    let correction = foundation_source_attempt(
+        &fixture,
+        installation_id,
+        "attempt:correction:1",
+        1,
+        "2026-08-11T08:00:00Z",
+        FOUNDATION_CORRECTION_GOAL,
+        None,
+    );
+    let reinforcement = foundation_source_attempt(
+        &fixture,
+        installation_id,
+        "attempt:reinforcement:1",
+        1,
+        "2026-08-13T08:00:00Z",
+        FOUNDATION_REINFORCEMENT_GOAL,
+        Some("multiplication_fact"),
+    );
+    let reduced_work = foundation_source_attempt(
+        &fixture,
+        installation_id,
+        "attempt:reduced-work:1",
+        1,
+        "2026-08-13T09:00:00Z",
+        "Teacher-authorized reduced homework",
+        None,
+    );
+    for request in [
+        original.clone(),
+        correction.clone(),
+        reinforcement,
+        reduced_work,
+        correction,
+    ] {
+        let response = client
+            .post(format!("{base_url}/api/v1/surfaces"))
+            .bearer_auth(&source_token)
+            .json(&request)
+            .send()
+            .await
+            .expect("source evidence request should send");
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    let first = get_foundation_observation(&client, &base_url, &owner_token, &fixture).await;
+    assert_eq!(
+        first.pointer("/data/result/foundation_learning_observation/facts/eligible_evidence_count"),
+        Some(&json!(3))
+    );
+    assert_eq!(
+        first
+            .pointer("/data/result/foundation_learning_observation/facts/correction_attempt_count"),
+        Some(&json!(1))
+    );
+    assert_eq!(
+        first.pointer(
+            "/data/result/foundation_learning_observation/facts/reinforcement_attempt_count"
+        ),
+        Some(&json!(1))
+    );
+    assert_eq!(
+        first.pointer("/data/result/foundation_learning_observation/deterministic_aggregates/recurring_errors/0/occurrence_count"),
+        Some(&json!(2))
+    );
+    assert_eq!(
+        first.pointer("/data/result/foundation_learning_observation/deterministic_aggregates/recurring_errors/0/supporting_sources/0/record_type"),
+        Some(&json!("learning_attempt"))
+    );
+    assert_eq!(
+        first.pointer("/data/result/foundation_learning_observation/excluded_evidence_count"),
+        Some(&json!(1))
+    );
+
+    let mut revised_original = original;
+    revised_original["payload"]["source_evidence"]["source_identity"]["revision"] = json!(2);
+    revised_original["payload"]["source_evidence"]["evidence"]["summary"] =
+        json!("Source-authoritative factual correction recorded");
+    assert_eq!(
+        client
+            .post(format!("{base_url}/api/v1/surfaces"))
+            .bearer_auth(&source_token)
+            .json(&revised_original)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    let mut tombstone = foundation_source_attempt(
+        &fixture,
+        installation_id,
+        "attempt:reinforcement:1",
+        2,
+        "2026-08-14T08:00:00Z",
+        FOUNDATION_REINFORCEMENT_GOAL,
+        None,
+    );
+    tombstone["payload"]["source_evidence"]
+        .as_object_mut()
+        .unwrap()
+        .remove("evidence");
+    tombstone["payload"]["source_evidence"]["tombstone"] = json!({
+        "withdrawn_at": "2026-08-14T08:00:00Z",
+        "reason": "deleted_at_source"
+    });
+    assert_eq!(
+        client
+            .post(format!("{base_url}/api/v1/surfaces"))
+            .bearer_auth(&source_token)
+            .json(&tombstone)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+
+    let after_withdrawal =
+        get_foundation_observation(&client, &base_url, &owner_token, &fixture).await;
+    assert_eq!(
+        after_withdrawal
+            .pointer("/data/result/foundation_learning_observation/facts/eligible_evidence_count"),
+        Some(&json!(2))
+    );
+    assert_eq!(
+        after_withdrawal.pointer(
+            "/data/result/foundation_learning_observation/facts/reinforcement_attempt_count"
+        ),
+        Some(&json!(0))
+    );
+    assert!(after_withdrawal
+        .pointer("/data/result/foundation_learning_observation/deterministic_aggregates/recurring_errors")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty));
+    assert!(after_withdrawal
+        .pointer("/data/result/foundation_learning_observation/responsibility_note")
+        .and_then(Value::as_str)
+        .is_some_and(|note| note.contains("source application")));
+
+    let trace_id = uuid_field(&after_withdrawal, "/data/generated_trace_id");
+    let metadata: Value = sqlx::query_scalar("SELECT metadata FROM traces WHERE id = $1")
+        .bind(trace_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let metadata_text = metadata.to_string();
+    for forbidden in [
+        "attempt:original:1",
+        "attempt:correction:1",
+        "attempt:reinforcement:1",
+        "multiplication_fact",
+        "supporting_sources",
+    ] {
+        assert!(!metadata_text.contains(forbidden));
+    }
+}
+
+fn foundation_source_attempt(
+    fixture: &Fixture,
+    installation_id: Uuid,
+    record_id: &str,
+    revision: i64,
+    occurred_at: &str,
+    goal: &str,
+    mistake_type: Option<&str>,
+) -> Value {
+    json!({
+        "namespace": "learning.foundation",
+        "surface": "performance",
+        "action": "submit_attempt",
+        "actor": fixture.owner_user_id,
+        "adapter": "mcp",
+        "payload": {
+            "space_id": fixture.space_id,
+            "source_evidence": {
+                "contract_version": 1,
+                "source_identity": {
+                    "source_product": "study_buddy",
+                    "source_installation_id": installation_id,
+                    "record_type": "learning_attempt",
+                    "record_id": record_id,
+                    "revision": revision
+                },
+                "occurred_at": occurred_at,
+                "observed_at": occurred_at,
+                "evidence_trust": "contract_trusted",
+                "provenance": {
+                    "adapter_id": "study_buddy_reference_adapter",
+                    "adapter_version": "0.1.0",
+                    "source_schema_version": "1"
+                },
+                "evidence": {
+                    "kind": "learning_attempt",
+                    "goal": goal,
+                    "task": "Bounded synthetic foundation task",
+                    "summary": "Bounded synthetic attempt",
+                    "mistake": mistake_type.map(|mistake_type| json!({
+                        "expected_text": "12",
+                        "actual_text": "7",
+                        "mistake_type": mistake_type
+                    })),
+                    "input_source": null,
+                    "input_confirmation": null
+                },
+                "tombstone": null
+            }
+        },
+        "context": {
+            "mode": "fast",
+            "runtime_preference": "deterministic"
+        }
+    })
+}
+
+async fn get_foundation_observation(
+    client: &Client,
+    base_url: &str,
+    token: &str,
+    fixture: &Fixture,
+) -> Value {
+    let response = client
+        .post(format!("{base_url}/api/v1/surfaces"))
+        .bearer_auth(token)
+        .json(&json!({
+            "namespace": "learning.foundation",
+            "surface": "observation",
+            "action": "get_state_summary",
+            "actor": fixture.owner_user_id,
+            "adapter": "dashboard",
+            "payload": {
+                "space_id": fixture.space_id,
+                "window_start": "2026-08-08T00:00:00Z",
+                "window_end": "2026-08-15T00:00:00Z"
+            },
+            "context": {
+                "mode": "focused",
+                "runtime_preference": "deterministic"
+            }
+        }))
+        .send()
+        .await
+        .expect("observation request should send");
+    assert_eq!(response.status(), StatusCode::OK);
+    response.json().await.unwrap()
 }
 
 struct Fixture {
