@@ -25,4 +25,3 @@ setup, architecture, or roadmap instructions.
 
 No current installation commands exist until #274 validates the MiniMax local
 command and shared-state assumptions. Do not use legacy docs as setup guidance.
-

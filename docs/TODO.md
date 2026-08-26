@@ -28,7 +28,7 @@ compatibility layer is planned.
 | --- | --- | --- |
 | 1 | [#274](https://github.com/blackfaced/MemoryNexus/issues/274) | Prove a normal WeChat MiniMax session can invoke an approved local command, and an independent native scheduled session can read its shared state and surface it in MiniMax App. |
 | 2 | [#275](https://github.com/blackfaced/MemoryNexus/issues/275) | Record ADR-027, align positioning, and prepare legacy-roadmap reconciliation. |
-| 3 | [#276–#281](https://github.com/blackfaced/MemoryNexus/issues/276) | Build the four-object SQLite CLI, MiniMax Skill, `due`, and recovery path. |
+| 3 | [#276–#281](https://github.com/blackfaced/MemoryNexus/issues/276) | Build the four-object SQLite CLI (including `retract`), MiniMax Skill, `due`, and recovery path. |
 | 4 | [#282](https://github.com/blackfaced/MemoryNexus/issues/282) | Clean-Mac-mini installation acceptance. |
 | 5 | [#283](https://github.com/blackfaced/MemoryNexus/issues/283) | Fixed fourteen-calendar-day owner dogfood gate. |
 | 6 | [#284–#286](https://github.com/blackfaced/MemoryNexus/issues/284) | Only after a passed gate: cut over defaults, then remove legacy interfaces and storage. |
@@ -72,16 +72,18 @@ post-gate, evidence-backed extension. None of these actions have been executed.
 
 ### M11 reference Adapter synchronization
 
-Every open M11 issue expands the frozen provider-neutral source evidence,
-Reference Adapter, Surface Gateway, PostgreSQL, launchd, or Study Buddy path.
-Freeze each now; after Coordinator approval, supersede it with #273 rather than
-deleting history. No M11 work resumes before a passed #283 and a new
-evidence-backed spec.
+Every remaining open M11 issue expands the frozen provider-neutral source
+evidence, Reference Adapter, Surface Gateway, PostgreSQL, launchd, or Study
+Buddy path. Freeze each now; after Coordinator approval, supersede it with #273
+rather than deleting history. No M11 work resumes before a passed #283 and a
+new evidence-backed spec. #239 and #240 are different: their implementation
+landed in `47fa3e0` and should be closed as completed, then retained as frozen
+historical capability rather than described as unfinished supersession work.
 
 | Issues | Individual live issue titles | Recommended action |
 | --- | --- | --- |
-| [#239](https://github.com/blackfaced/MemoryNexus/issues/239) | Accept versioned source evidence with revision and tombstone semantics | Freeze, then supersede. |
-| [#240](https://github.com/blackfaced/MemoryNexus/issues/240) | Build durable Reference Adapter runtime and operational ledger | Freeze, then supersede. |
+| [#239](https://github.com/blackfaced/MemoryNexus/issues/239) | Accept versioned source evidence with revision and tombstone semantics | Implemented by `47fa3e0`; close as completed, then freeze as historical legacy capability. |
+| [#240](https://github.com/blackfaced/MemoryNexus/issues/240) | Build durable Reference Adapter runtime and operational ledger | Implemented by `47fa3e0`; close as completed, then freeze as historical legacy capability. |
 | [#241](https://github.com/blackfaced/MemoryNexus/issues/241) | Implement the Study Buddy Reference Adapter | Freeze, then supersede. |
 | [#242](https://github.com/blackfaced/MemoryNexus/issues/242) | Generate bounded Learner Journey Summaries with owner review | Freeze, then supersede. |
 | [#243](https://github.com/blackfaced/MemoryNexus/issues/243) | Cut over and accept Study Buddy L1 ingestion on the Mac mini | Freeze, then supersede. |
@@ -119,7 +121,8 @@ The live M9, M10, M11, and Support milestones still advertise the prior
 Surface/Adapter/PostgreSQL roadmap. Do not close or delete milestones as part of
 this documentation task. A Coordinator should first apply the issue-level
 freeze/supersession decisions, then update or close milestones with a durable
-comment linking #273 and ADR-027.
+comment linking #273 and ADR-027. For #239/#240, record completed delivery
+before freezing the legacy milestone material.
 
 ## Historical material
 
