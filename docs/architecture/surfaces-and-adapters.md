@@ -1,5 +1,10 @@
 # Surfaces And Adapters
 
+> **Historical legacy architecture.** Surfaces and Adapters are frozen with the
+> pre-ADR-027 runtime. They are not a supported product path or active roadmap.
+> The current default is the SQLite/CLI/MiniMax four-object kernel in
+> [ADR-027](../../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md).
+
 MemoryNexus separates Engine, Surfaces, and Adapters.
 
 ```text

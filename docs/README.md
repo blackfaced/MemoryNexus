@@ -4,32 +4,25 @@
 
 - [Vision](vision.md)
 - [Architecture](architecture/README.md)
-- [MemoryNexus Engine](architecture/memorynexus-engine.md)
-- [Surfaces and Adapters](architecture/surfaces-and-adapters.md)
-- [Surface Gateway](architecture/surface-gateway.md)
-- [Reference Adapter Runtime](reference-adapter-runtime.md)
-- [Sleep-driven Feedback Loop](architecture/sleep-driven-feedback-loop.md)
-- [Media Evidence Contract](media-evidence-contract.md)
-- [API](api.md)
-- [CLI](cli.md)
-- [MCP Server](mcp.md)
-- [Personal Agent Integration](agent-integration.md)
-- [Agent Self-Install](agent-self-install.md)
-- [Subagent Issue Workflow](subagent-issue-workflow.md)
-- [Development](development.md)
-- [Deployment](deployment.md)
 - [TODO](TODO.md)
-- [Executable Issues](issues.md)
-- [Dictation Coach MVP](dictation-coach-mvp.md)
+- [ADR-027: SQLite CLI MiniMax Personal Experiment Feedback Kernel](../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)
+- [Architecture Decisions](../decisions/README.md)
 
-## Cognitive Foundation
+## Frozen legacy documentation
 
-- [Cognitive Manifesto](cognitive-manifesto.md)
-- [Cognitive Concepts](cognitive-concepts.md)
-- [Cognitive Architecture](cognitive-architecture.md)
-- [Cognitive Lens Roadmap](cognitive-lens-roadmap.md)
+The remaining documents describe the frozen pre-ADR-027 runtime. They are
+preserved for historical context during expand–contract, but are not supported
+setup, architecture, or roadmap instructions.
+
+- [Legacy Engine](architecture/memorynexus-engine.md)
+- [Legacy Surfaces and Adapters](architecture/surfaces-and-adapters.md)
+- [Legacy Surface Gateway](architecture/surface-gateway.md)
+- [Legacy Reference Adapter Runtime](reference-adapter-runtime.md)
+- [Legacy Sleep-driven Feedback Loop](architecture/sleep-driven-feedback-loop.md)
+- [Legacy API / CLI / MCP and deployment material](api.md)
 
 ## Notes
 
-The Rust crate now lives at the repository root. Run Cargo commands from the
-root directory unless a document says otherwise.
+No current installation commands exist until #274 validates the MiniMax local
+command and shared-state assumptions. Do not use legacy docs as setup guidance.
+
