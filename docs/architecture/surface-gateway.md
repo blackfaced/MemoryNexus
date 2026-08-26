@@ -1,5 +1,10 @@
 # Surface Gateway
 
+> **Historical legacy architecture.** Surface Gateway is frozen with the
+> pre-ADR-027 runtime. It is not a supported external seam or active roadmap.
+> The current default is the SQLite/CLI/MiniMax four-object kernel in
+> [ADR-027](../../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md).
+
 Surface Gateway is the boundary between external adapters and the MemoryNexus
 Engine.
 

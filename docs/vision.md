@@ -1,118 +1,60 @@
 # MemoryNexus Vision
 
-MemoryNexus is a local-first long-term feedback engine for personal cognition
-and skill acquisition.
+MemoryNexus is a local-first personal experiment feedback kernel: a MiniMax
+Skill invokes a local CLI, and one SQLite ledger preserves confirmed history
+across sessions.
 
-It should not be positioned as a generic recall product, personal knowledge
-vault, agent recall store, connector platform, or RAG profile API. Those are
-crowded and infrastructure-heavy spaces. MemoryNexus should focus on what
-happens after memory is captured:
+Its question is deliberately narrow:
 
 ```text
-Trace -> FeedbackLoop -> GrowthModel -> PracticePlan
+What did I choose to try, did I actually try it, what happened, and is the
+adjustment worth keeping?
 ```
 
-The guiding question is:
+This replaces the prior default vision of a namespace-based long-term feedback
+Engine. [ADR-027](../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)
+is authoritative for the new product direction; prior ADRs and architecture
+documents remain historical context during the expand–contract transition.
+
+## Product boundary
+
+The authoritative core contains only:
 
 ```text
-How can a system use long-term traces to generate better feedback and next
-actions over time?
+Observation -> Recommendation -> Experiment -> Outcome
 ```
 
-## Ecosystem Boundary
+An Observation is a confirmed bounded report. A Recommendation is a sourced
+bounded suggestion. An Experiment is one selected reversible action. An Outcome
+records execution and the confirmed result. Reviews reconstruct only confirmed
+evidence and explicitly show gaps.
 
-MemoryNexus should be understood as the memory evolution and feedback layer.
-See [ADR-022](../decisions/ADR-022-memorynexus-brand-semantics.md) for the
-current brand semantics: MemoryNexus is the Engine/repository identity;
-Dictation Coach is the first upstream product scenario.
+MiniMax handles natural-language understanding. The owner can conveniently use
+WeChat for input; MiniMax App is the first planned independent-session reminder
+surface. SQLite, rather than Agent chat memory, is the continuity mechanism.
 
-| Layer | Role | MemoryNexus Boundary |
-| --- | --- | --- |
-| OpenJarvis | Local Personal AI Runtime | Useful reference for local-first runtime and trace learning, but MemoryNexus does not become a model runtime or agent framework. |
-| Supermemory / Mem0 | Memory Runtime / Memory Cloud | Useful reference for memory APIs and agent recall, but MemoryNexus does not compete on connectors, generic RAG, or agent profiles. |
-| MemoryNexus | Memory Evolution / Feedback / Growth Engine | Owns long-term feedback loops, growth models, sleep consolidation, planning, and skill acquisition. |
+## Non-goals
 
-## Product Thesis
+- No health diagnosis, treatment, medical-document interpretation, or clinical
+  claim. Ant Afu is an external advice source, not a system to replicate.
+- No PostgreSQL, Qdrant, embeddings, vector search, Axum service, MCP server,
+  Surface Gateway, daemon, scheduler, or channel framework in the first path.
+- No historical-data migration, dual write, or compatibility layer.
+- No automatic retention of raw external conversations or sensitive documents.
+- No preemptive memory-backend abstraction. A future backend can only be a
+  rebuildable non-authoritative recall projection from SQLite.
 
-Most AI memory products answer:
+## Evidence before expansion
 
-```text
-What should the AI remember?
-```
+[#274](https://github.com/blackfaced/MemoryNexus/issues/274) must first prove
+that MiniMax can execute an owner-approved local command from a normal WeChat
+session, an independent native scheduled session can read the same shared state,
+and the result appears in the MiniMax App. Failure changes the design; it is not
+papered over with chat history.
 
-MemoryNexus answers:
-
-```text
-Given what happened over time, what feedback and next step should the system
-generate now?
-```
-
-That means the core value is not recall volume. The value is long-term
-improvement:
-
-- detect recurring mistakes and patterns;
-- explain what those patterns mean;
-- update a namespace-specific GrowthModel;
-- generate the next useful practice, reflection, or action;
-- evaluate whether the next step helped.
-
-## Core Principles
-
-- Local-first by default. Cloud generation is optional, explicit, and traceable.
-- Memory belongs to a user-owned `CognitiveSpace`, not to an agent or app.
-- `Namespace` partitions a Space into long-running domains, not permission
-  boundaries.
-- Adapters are interaction channels. Surfaces are intent capabilities. Engine is
-  the long-term evolution core.
-- Surface Gateway is the only supported external entry into Engine capabilities.
-- Deep cognition is not synchronous by default. Wake paths are fast; Sleep paths
-  consolidate later.
-- Lenses are interpretation strategies, not agent personas.
-- First versions should validate feedback loops before adding OCR, complex UI,
-  multi-child management, or broad subject coverage.
-
-## First Upstream Product
-
-The first upstream product direction is Dictation Coach: a daily dictation
-assistant for Chinese native-language dictation and English spelling / sentence
-dictation.
-
-It validates the full MemoryNexus loop:
-
-1. Capture today's words, phrases, or sentences.
-2. Submit a dictation or spelling attempt.
-3. Reflect on mistake causes and recurring patterns.
-4. Plan tomorrow's 10-minute practice.
-5. Observe the last 7 days of stability, mastery, and error distribution.
-6. Run a SleepCycle to update GrowthModel and PracticePlan.
-
-Dictation Coach is an upstream product, not the Engine itself. The Engine should
-remain domain-general enough to later support piano, chess, drawing, programming,
-project work, or personal reflection through the same Surface model.
-
-## Current Gap
-
-The current repository already has strong foundations:
-
-- Rust-first backend;
-- `CognitiveSpace` ownership;
-- Namespace and FeedbackLoop foundation;
-- Trace contract and schema direction;
-- SleepCycle contract;
-- Thought Review demo;
-- STEM learning practice slice.
-
-The main gap is architectural expression:
-
-- Some historical docs and compatibility paths still read like an AI thought
-  organizer, cognitive lens memory system, or broad STEM learning tool.
-- Architecture docs do not yet separate Engine, Surfaces, Adapters, and Surface
-  Gateway.
-- Roadmap still centers Phase 5 around lifecycle primitives instead of the new
-  seven-milestone feedback-engine plan.
-- Existing learning docs are STEM/fraction-centered, while the next upstream
-  product should be Dictation Coach.
-- Event-driven backend boundaries need to be explicit before implementation.
-
-The next milestone is therefore documentation and issue hygiene, not business
-code.
+After implementation and clean installation, a fixed fourteen-day owner gate
+decides whether the legacy runtime can be deleted. It requires ten valid
+Observations, one Experiment, five execution updates, one evidence-backed
+review, cross-session state recovery, at most one manual system intervention,
+and an owner day-fifteen continuation decision. See ADR-027 and
+[roadmap](TODO.md) for the exact ordering.

@@ -1,493 +1,129 @@
 # MemoryNexus Roadmap
 
-> Last updated: 2026-07-10
-> Source of truth for executable task definitions: GitHub Issues, with
-> [docs/issues.md](issues.md) as the planning mirror for the milestone shape.
+> Updated: 2026-08-26
+> Executable tracker source of truth: [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues).
+> This document records the current architecture direction and a **read-only**
+> reconciliation recommendation; it does not alter issue state, labels, or
+> milestones.
 
-## Current Direction
+## Current direction
 
-MemoryNexus is a local-first long-term feedback engine for personal cognition
-and skill acquisition.
-
-See [ADR-022](../decisions/ADR-022-memorynexus-brand-semantics.md) for the
-current `MemoryNexus` brand semantics and the Engine/product naming split.
-
-It should not be framed as a generic recall product, personal knowledge vault,
-agent recall store, connector platform, RAG profile service, or local AI
-runtime. Its core question is:
+[ADR-027](../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md) and
+[parent spec #273](https://github.com/blackfaced/MemoryNexus/issues/273) reset
+the default product to a local personal experiment feedback kernel:
 
 ```text
-How can a system use long-term traces to generate better feedback and next
-actions over time?
+MiniMax Skill -> local CLI -> SQLite authoritative ledger
+Observation -> Recommendation -> Experiment -> Outcome
 ```
 
-The target loop is:
-
-```text
-Trace -> FeedbackLoop -> GrowthModel -> PracticePlan -> next Trace
-```
-
-## Current Understanding
-
-The repository already has strong foundations:
-
-- Rust + Axum is the main backend.
-- Memory belongs to `CognitiveSpace`, not to agents or apps.
-- Namespace and FeedbackLoop foundations exist.
-- Trace schema/repository and SleepCycle domain/persistence foundations exist.
-- Thought Review demonstrates reflective memory and Lens-based interpretation.
-- The `learning.stem` slice validates practice sessions, feedback capture,
-  weekly review, MCP flow, and a simple Rust-served UI.
-- Binary-first install, Local One-click packaging, Production Profile, and
-  Supabase Postgres compatibility have documentation and implementation tracks.
-- Surface Gateway has landed for Capture, Performance, Reflection, Planning,
-  Observation, and manual consolidation. The generic MCP/chat Surface tools
-  (#162) and minimal Dictation Agent demo (#160) are merged.
-- ADR-021 and the media evidence contract define provider-neutral
-  `EvidenceRefInput`; request-time validation and adapter confirmation mapping
-  have landed in #175/#162. Evidence descriptor persistence, resolver runtime,
-  and media handling remain out of scope.
-
-## Gap Against The New Direction
-
-The project still needs to close these gaps:
-
-- Compatibility paths still expose object-level APIs before all adapters move
-  through Surface Gateway.
-- MCP now exposes generic Surface Gateway tools for Capture, Performance,
-  Reflection, Planning, and Observation. Compatibility object-level APIs still
-  exist and should be treated as legacy adapter paths where possible.
-- Surface success event publication has landed for `ObservationCaptured` and
-  `AttemptSubmitted`; durable event storage and async processors remain future
-  work.
-- GrowthModel aggregation (#152), simple PracticePlan generation (#153),
-  Dictation next-practice (#158), seven-day Observation (#159), the text-first
-  Agent smoke (#160), event publication (#150), and the PR-required PostgreSQL
-  Surface integration gate (#177) have landed.
-- `learning.stem` is a useful prior slice. Dictation Coach is now the first
-  upstream product path with accepted Engine + Agent smoke and a minimal
-  Rust-served Simple Practice App Adapter (#163). A separate standalone app
-  repository remains future work only if product needs outgrow the static
-  adapter.
-- Typed or pasted Dictation Capture/Attempt and media-derived confirmation
-  validation have landed. OCR, ASR, media acquisition, descriptor persistence,
-  and descriptor resolution remain Adapter/future-slice work.
-- GitHub Release artifact publication and Local One-click release validation
-  have landed. Trial Profile remains blocked on a real Trial API endpoint and
-  scoped token; the next actionable distribution issue is the private self-use
-  Mac mini Local Lab and release-binary smoke (#130).
-- Evaluation should measure growth and feedback usefulness, not just retrieval
-  accuracy.
-
-## Architecture Spine
-
-```text
-Adapters
-  Chat Agent / MCP / CLI / Web / Mobile / Dashboard / Voice
-      |
-      v
-Surface Gateway
-  Auth / Namespace routing / Surface routing / ACL / validation
-  Response shaping / Trace writing / sync-async dispatch / events
-      |
-      v
-Surfaces
-  Capture | Performance | Reflection | Planning | Observation
-      |
-      v
-Engine
-  Namespace | Trace | MemoryAtom | CognitiveScene | FeedbackLoop
-  GrowthModel | SleepCycle | PracticePlan / DreamCandidate | Lens
-```
-
-Principle:
-
-```text
-Adapter = how interaction happens
-Surface = what intent is requested
-Engine  = how memory, feedback, growth, and planning evolve over time
-```
-
-## Milestone 1: Architecture Refresh
-
-Goal: update documentation only; no business code changes.
-
-Status: completed on `main`.
-
-Deliverables:
-
-- Update README positioning.
-- Add or update [Vision](vision.md).
-- Add [MemoryNexus Engine](architecture/memorynexus-engine.md).
-- Add [Surfaces and Adapters](architecture/surfaces-and-adapters.md).
-- Add [Surface Gateway](architecture/surface-gateway.md).
-- Add [Sleep-driven Feedback Loop](architecture/sleep-driven-feedback-loop.md).
-- Add ADR-018: MemoryNexus as Long-term Feedback Engine.
-- Add ADR-019: Surfaces vs Adapters vs Engine.
-- Keep ADR-017 as the Sleep-based Consolidation ADR.
-- Add ADR-020: Dictation Coach as First Upstream Product.
-- Add [Executable Issues](issues.md).
-
-## Milestone 2: Core Domain Model
-
-Goal: define core domain types and schema without LLM integration or complex UI.
-
-Status: complete and GitHub milestone closed. Namespace, Trace, MemoryAtom,
-CognitiveScene, GrowthModel, SleepCycle, PracticePlan / DreamCandidate, and
-minimal Lens / Reflection structures are all represented by domain contracts or
-MVP implementation slices.
-
-Recommended sequence:
-
-1. Stabilize `Namespace` and existing `FeedbackLoop` contracts under the Engine
-   vocabulary.
-2. Define and persist `Trace`.
-3. Define `MemoryAtom` and `CognitiveScene`.
-4. Define `GrowthModel`.
-5. Define `SleepCycle`.
-6. Define `PracticePlan` / `DreamCandidate`.
-7. Define minimal Lens / Reflection Surface structures in #142.
-8. Add serialization, repository, and same-Space validation tests.
-
-Non-goals:
-
-- No OCR or ASR inside the MemoryNexus Engine. Adapter-side preprocessing and
-  confirmed normalized text are allowed but are not part of this milestone.
-- No cloud LLM dependency.
-- No complex UI.
-- No broad education platform.
-
-## Milestone 3: Surface Gateway MVP
-
-Goal: build the unified Engine entry point.
-
-Status: functionally complete for the MVP Surface set. `SurfaceRequest` /
-`SurfaceResponse`, Capture, Performance, Reflection (#146), Planning (#147),
-Observation (#148), manual consolidation, and the PostgreSQL-backed Surface
-integration pull-request gate (#177) are implemented.
-
-Completed sequence:
-
-1. Define `SurfaceRequest` and `SurfaceResponse`.
-2. Implement Capture Surface minimum path.
-3. Implement Performance Surface minimum path.
-4. Implement Reflection Surface (#146).
-5. Implement Planning Surface (#147).
-6. Implement Observation Surface (#148).
-7. Ensure Surface calls write Trace/provenance.
-8. Add validation, response shaping, and same-Space PostgreSQL integration
-   coverage for the MVP Surface paths.
-
-Next:
-
-1. Keep external-provider and Qdrant checks outside the deterministic required
-   merge gate unless a future issue explicitly scopes them.
-2. Use #177's stable PR gate as the baseline before expanding more shared
-   Surface dispatcher behavior.
-
-Non-goals:
-
-- Do not replace all existing REST/MCP routes in one migration.
-- Do not expose Engine internals as Surface responses.
-
-## Milestone 4: Event + Sleep Engine MVP
-
-Goal: make foreground paths fast and background paths deep.
-
-Status: MVP complete and GitHub milestone closed. Engine Event types, Surface
-success event publication (#150), manual SleepCycle trigger, GrowthModel
-aggregation (#152), and PracticePlan generation (#153) have landed. Durable
-event storage, async processors, scheduler behavior, and effectiveness
-evaluation remain future work outside the M4 MVP.
-
-Recommended sequence:
-
-1. Keep Surface event contracts stable after #150.
-2. Add durable event storage only when a follow-up issue needs replay or async
-   processors.
-3. Add scheduler behavior after manual SleepCycle behavior remains stable.
-4. Record effectiveness evidence for generated plans.
-
-Non-goals:
-
-- No scheduler before manual SleepCycle works.
-- No distributed queue before in-process / stored events prove the shape.
-- No cloud generation in the first path.
-
-## Milestone 5: Dictation Coach Demo
-
-Goal: validate the full loop with a daily dictation product scenario.
-
-Status: MVP complete and GitHub milestone closed. The text-first Dictation
-Coach path has landed through contract, typed/pasted Capture and Attempt,
-deterministic mistake classification, tomorrow practice, seven-day Observation,
-media-evidence validation, and the minimal Agent smoke (#154-#160, #175).
-The simple Rust-served Practice App Adapter landed separately in M6 as #163.
-
-Initial namespaces:
-
-- `child.chinese.dictation`
-- `child.english.spelling`
-- `child.english.sentence-dictation`
-
-Execution dependency graph:
-
-| Depends On | Issue Unlocked |
-| --- | --- |
-| #146 review, PostgreSQL verification, and merge | #147 Planning Surface |
-| #147/#148 shared Surface work | #177 required PostgreSQL Surface integration CI |
-| #147 | #148 Observation Surface |
-| #148 | #155 typed/pasted word-list Capture |
-| #155 typed/pasted path | #156 typed/pasted attempt submission |
-| #156 typed/pasted path | #157 deterministic mistake classification |
-| #148 | #162 generic text Surface tools |
-| #148 | #175 media confirmation and evidence validation |
-| #175 | Media extensions in #155, #156, and #162 |
-| #157 | #152 Trace/FeedbackLoop aggregation into GrowthModel |
-| #152 | #153 PracticePlan generation from GrowthModel |
-| #153 | #158 tomorrow's focused ten-minute practice |
-| #155 through #158 + text-capable #162 | Initial #160 Agent smoke |
-| #159 deterministic multi-day summary | Extended seven-day Agent acceptance |
-| Initial #160 acceptance | #163 Simple Practice App Adapter |
-| Initial #160 acceptance | #128, #129, and #130 distribution wave |
-
-This graph has now executed through the first app adapter: #146, #147, #148,
-#152, #153, #155-#160, #162, #163, #175, and #177 are closed on GitHub. The
-remaining adjacent edge is the release/distribution wave after #128's Local
-One-click offline bundle; #129 Trial Profile is blocked, while #130 is the next
-actionable private self-use Mac mini Local Lab and release-binary smoke.
-
-The accepted #160 smoke uses one learner and genuinely typed or pasted text. It
-does not require OCR, ASR, a tagged release, or a dedicated Dictation Coach App.
-When media is involved, the Agent/App performs OCR or ASR and must obtain
-explicit user acceptance or correction before submission. Media capture and
-confirmation stay in the Adapter, while the Engine remains text-first.
-
-#175 owns the generic role-neutral `input_confirmation` request field and V1
-validation. #155 and #156 validate it at the Surface boundary for media-derived
-input. #162 maps the same field in the MCP/chat adapter without gaining Engine
-repository access. #160 owns only product-facing prompt/interaction mapping; no
-parent/child role enters the Engine.
-
-#163 delivered the minimal Simple Practice App Adapter as a Rust-served static
-Surface Gateway client. A separate Dictation Coach app repository should wait
-until product needs exceed the current static adapter; it still must not own
-memory or access Engine internals.
-
-Chinese mistake taxonomy:
-
-- wrong character;
-- visually similar character;
-- homophone;
-- missing stroke;
-- extra stroke;
-- stroke-order issue;
-- component placement issue.
-
-English mistake taxonomy:
-
-- missing letter;
-- extra letter;
-- letter order error;
-- double-letter error;
-- sound-spelling mapping error;
-- capitalization error;
-- missing word in sentence dictation.
-
-Non-goals:
-
-- No `EvidenceRef` persistence, repository, or schema in the validation
-  foundation.
-- No resolver execution, upload/download, or media-byte handling.
-- No OCR, ASR, or handwriting recognition inside MemoryNexus.
-- No provider SDK.
-- No multi-child management.
-- No full curriculum.
-- No broad multi-subject learning platform.
-
-## Milestone 6: Adapters
-
-Goal: validate one Engine through multiple interaction channels.
-
-Status: complete and GitHub milestone closed. Adapter policy (#161), generic
-MCP/chat Surface tools (#162), the Rust-served Simple Practice App Adapter
-(#163), and Developer Dashboard Adapter contract (#164) are all closed. #160
-documents/proves the first text-first Dictation Agent loop over the generic
-Surface tools.
-
-Completed adapter sequence:
-
-1. Define allowed surfaces per adapter (#161).
-2. Maintain #162 generic MCP/chat Surface tools for Capture, Performance,
-   Reflection, Planning, and Observation.
-3. Treat #160 as the accepted product-facing Dictation Agent orchestration over
-   generic Surface tools.
-4. Implement #163, the minimal Simple Practice App Adapter for Capture,
-   Performance, Planning, and limited Observation.
-5. Define #164 Dashboard Adapter policy for read-only inspected Engine debug
-   objects, with Gateway audit/provenance Trace still allowed.
-6. Ensure adapters do not directly access Engine internals.
-
-Non-goals:
-
-- No new frontend stack unless an ADR approves it.
-- No adapter-owned memory.
-- No adapter-specific database ownership model.
-
-## Milestone 7: Evaluation
-
-Goal: build MemoryNexus' GrowthBench / DictationBench.
-
-Status: complete and GitHub milestone closed. DictationBench fixtures,
-recurring error detection, next-practice evaluation, multi-day improvement
-signals, and the optional LoCoMo / LongMemEval-style retrieval/context baseline
-plan have landed. The retrieval baseline remains secondary evidence, not the
-primary product-quality metric.
-
-Completed sequence:
-
-1. Define DictationBench fixtures.
-2. Evaluate recurring error detection.
-3. Evaluate next-practice generation.
-4. Evaluate multi-day error reduction.
-5. Record latency, cost, local ratio, and useful feedback rate.
-6. Report GrowthBench results.
-7. Optionally add #195 as a separate P2 LoCoMo / LongMemEval-style
-   retrieval/context baseline, reported outside GrowthBench / DictationBench.
-
-Non-goals:
-
-- Do not optimize only for retrieval accuracy.
-- Do not claim causality beyond available evidence.
-- Do not require external AI credentials for baseline evaluation.
-
-## Milestone 8: Namespace Knowledge Refresh
-
-Goal: let external Skills, Agents, or Adapters propose and submit approved
-KnowledgeContext while MemoryNexus keeps the Engine boundary, provenance,
-privacy opt-in, and downstream candidate semantics.
-
-Status: completed and GitHub milestone closed. The contracts (#200), Capture /
-Observation path (#199), and manual SleepCycle Dreaming integration (#198) have
-all landed.
-
-Completed sequence:
-
-1. #200 defined Namespace Knowledge Refresh contracts.
-2. #199 added the Capture and Observation path for KnowledgeContext.
-3. #198 added KnowledgeContext to manual SleepCycle Dreaming.
-
-Non-goals:
-
-- Do not add a Knowledge Surface in V1.
-- Do not implement crawling, web search, RSS, provider fetchers, or schedulers
-  inside the Engine.
-- Do not store full external source documents by default.
-- Do not let external knowledge directly overwrite GrowthModel or PracticePlan.
-
-## Current Execution Entry Points
-
-- #220 records M9's documentation and contract boundary. It closes when this PR
-  merges; the next M9 implementation entry point is #221. M9 tests a private
-  owner feedback loop in `personal.health.sleep`; it is neither a permanent
-  healthcare product commitment nor a replacement for Dictation Coach.
-- #221 -> #223 -> #224 -> #225 -> #226 is the Engine implementation path;
-  #222 + #226 unlock the later manual #227 owner/Coordinator gate.
-- #228 -> #229 is the adjacent P1 learning-adapter integration path. It remains
-  independent of M9 and does not block the next M9 implementation issue.
-- #129 Trial Profile plug-and-play remains blocked on one real Trial API URL and
-  scoped token.
-- #130 (P0) independently validates the private self-use Mac mini Local Lab.
-  Its release-binary, restart-persistence, and paired-restore validation is
-  recorded in the [Mac mini Local Lab runbook](mac-mini-local-lab.md); remaining
-  work is PR review/CI and optional later service hardening. It is a prerequisite
-  for M9's real controlled-Adapter proof (#222), not for #220 or #221; a
-  localhost pass still does not close #129.
-
-## Milestone 9: Personal Feedback Dogfood
-
-Goal: prove, in private self-use, that the generic Engine can turn confirmed
-local evidence into a useful owner-selected next adjustment. The first narrow
-namespace is `personal.health.sleep`; M9 is not a healthcare product, clinical
-claim, public deployment, or replacement for Dictation Coach as the first
-upstream learning product/evaluation fixture.
-
-Status: active. #220 is the docs-first architecture and contract foundation.
-Implementation acceptance through #226 is necessary but not sufficient: #227
-is a later manual fourteen-calendar-day owner/Coordinator gate.
-
-Fixed evidence and authority boundaries:
-
-- One evening check-in per local calendar day; only confirmed, low-sensitivity,
-  typed sleep timing/duration, owner-reported energy, and bounded lifestyle
-  context are allowed.
-- `CognitiveSpace` remains the ownership boundary; Namespace is not a new ACL.
-  OCR and media remain Adapter-side; `agent_ocr` needs explicit acceptance or
-  explicit correction, and raw screenshots/OCR never enter Engine persistence.
-- Before three valid confirmed days, Observation returns an evidence gap. Day
-  seven is preliminary only. Deterministic policy may select at most one
-  reviewed low-risk reversible advisory experiment after the baseline threshold.
-- Day fourteen applies the non-movable final gate: pass requires at least ten
-  valid confirmed records, at least five tried suggestions, and at least one
-  owner-selected adjustment worth continuing. Fewer than ten records, or fewer
-  than five tried suggestions, is insufficient usage / Adapter failure;
-  sufficient usage without a retained useful adjustment is Engine feedback
-  failure.
-- Suggestions never operate reminders, calendars, messages, devices, or other
-  external systems. Observations, correlations, hypotheses, and owner decisions
-  stay distinct; M9 makes no medical, causal, diagnostic, or efficacy claim.
-
-Dependency order:
-
-```text
-#220 -> #221
-#221 -> #223 -> #224 -> #225 -> #226
-#130 + #221 -> #222
-#222 + #226 -> #227
-```
-
-#227 cannot close immediately after #226: it runs the real proven private
-Adapter path for fourteen calendar days and posts only sanitized aggregate
-evidence plus the precommitted classification. #130 remains an independent
-private deployment track; #129 remains independently blocked on a Trial URL
-and scoped token.
-
-### Adjacent P1 learning-adapter integration track
-
-This track is independent of M9 and must not become an M9 dependency:
-
-```text
-#228 -> #229
-```
-
-#228 adds a provider-neutral, idempotent confirmed upstream learning outcome to
-generic Performance. #229 adds a bounded parent-authorized seven-day learning
-Observation. Both preserve the Adapter/Surface/Engine boundary and do not add
-provider branches, raw media, a parent dashboard, or product roles to Engine.
-
-## Supporting Distribution Track
-
-These start after the accepted #160 Agent smoke and are not on the completed
-#177 CI hardening path:
-
-- #128 Publish first Local One-click offline release bundle. Completed on
-  GitHub on 2026-06-30.
-- #129 Make Trial Profile plug-and-play for agent demos. Blocked on a real Trial
-  API URL and scoped token.
-- #130 (P0, next actionable) stand up a private self-use Mac mini Local Lab,
-  validate the release-binary path on localhost first, and document backup,
-  restore, upgrade, and rollback before optional later hardening.
-
-They distribute the already validated Agent loop; they do not delay the first
-typed/pasted Developer Profile smoke.
-
-## Issue Hygiene
-
-When creating or updating GitHub Issues from [docs/issues.md](issues.md):
-
-1. Use the milestone names from this roadmap.
-2. Keep acceptance criteria concrete.
-3. Include non-goals.
-4. Name likely files.
-5. Preserve Rust-first and CognitiveSpace ownership boundaries.
-6. Do not mix multiple milestones into one worker task.
+The legacy Rust + Axum / PostgreSQL / Qdrant / Surface / Adapter roadmap is
+frozen while replacement is validated. It is historical context, not a second
+active product roadmap. No historical data migration, dual write, or
+compatibility layer is planned.
+
+## Dependency-ordered replacement
+
+| Order | Issue | Required outcome |
+| --- | --- | --- |
+| 1 | [#274](https://github.com/blackfaced/MemoryNexus/issues/274) | Prove a normal WeChat MiniMax session can invoke an approved local command, and an independent native scheduled session can read its shared state and surface it in MiniMax App. |
+| 2 | [#275](https://github.com/blackfaced/MemoryNexus/issues/275) | Record ADR-027, align positioning, and prepare legacy-roadmap reconciliation. |
+| 3 | [#276–#281](https://github.com/blackfaced/MemoryNexus/issues/276) | Build the four-object SQLite CLI, MiniMax Skill, `due`, and recovery path. |
+| 4 | [#282](https://github.com/blackfaced/MemoryNexus/issues/282) | Clean-Mac-mini installation acceptance. |
+| 5 | [#283](https://github.com/blackfaced/MemoryNexus/issues/283) | Fixed fourteen-calendar-day owner dogfood gate. |
+| 6 | [#284–#286](https://github.com/blackfaced/MemoryNexus/issues/284) | Only after a passed gate: cut over defaults, then remove legacy interfaces and storage. |
+
+#274 is currently open with no comments and the `ready-for-human` label.
+Its result is an implementation gate, not a documentation assumption. If it
+shows MiniMax cannot execute local commands or independent scheduled sessions
+cannot read shared state, revise ADR-027 and report the constraint before any
+kernel implementation.
+
+## Fourteen-day deletion gate
+
+The old runtime remains until #283 passes. The fixed gate requires at least ten
+valid confirmed Observations, one Experiment, five execution updates
+(performed, skipped, or not-evaluable), one evidence-backed result review,
+consistent fresh-session recovery, no more than one manual system intervention,
+and a day-fifteen owner continuation decision. A failure stops expansion and
+requires analysis of value or friction; it does not justify more infrastructure.
+
+## Live tracker reconciliation — recommendations only
+
+These were read from live GitHub on 2026-08-26. “Freeze” means remove
+`ready-for-agent`/active-roadmap treatment while preserving the issue and its
+history. “Supersede” means close only with a reference to #273/#275 after
+Coordinator approval. “Rewrite” means retain the issue only if it becomes a
+post-gate, evidence-backed extension. None of these actions have been executed.
+
+### M9 Personal Feedback Dogfood
+
+| Issue | Current conflict | Recommended action |
+| --- | --- | --- |
+| [#222](https://github.com/blackfaced/MemoryNexus/issues/222) | Requires a legacy MCP/Surface/API private Adapter path and `CognitiveSpace`. | Freeze now; supersede after #275 review. #274 is the replacement feasibility test. |
+| [#226](https://github.com/blackfaced/MemoryNexus/issues/226) | Builds legacy seven-/fourteen-day Engine review through Surface Gateway. | Freeze now; supersede with #283’s four-object review gate. |
+| [#227](https://github.com/blackfaced/MemoryNexus/issues/227) | Runs the old M9 Surface/Adapter dogfood gate. | Freeze now; supersede with #283; preserve its fixed-gate lessons as history. |
+
+### M10 upstream learning feedback
+
+| Issue | Current conflict | Recommended action |
+| --- | --- | --- |
+| [#229](https://github.com/blackfaced/MemoryNexus/issues/229) | Requires parent-authorized learning Observation through the legacy Engine and Surface. | Freeze now; supersede after #275 unless a passed #283 identifies a real need to rewrite it as a separate post-gate product decision. |
+
+### M11 reference Adapter synchronization
+
+Every open M11 issue expands the frozen provider-neutral source evidence,
+Reference Adapter, Surface Gateway, PostgreSQL, launchd, or Study Buddy path.
+Freeze each now; after Coordinator approval, supersede it with #273 rather than
+deleting history. No M11 work resumes before a passed #283 and a new
+evidence-backed spec.
+
+| Issues | Individual live issue titles | Recommended action |
+| --- | --- | --- |
+| [#239](https://github.com/blackfaced/MemoryNexus/issues/239) | Accept versioned source evidence with revision and tombstone semantics | Freeze, then supersede. |
+| [#240](https://github.com/blackfaced/MemoryNexus/issues/240) | Build durable Reference Adapter runtime and operational ledger | Freeze, then supersede. |
+| [#241](https://github.com/blackfaced/MemoryNexus/issues/241) | Implement the Study Buddy Reference Adapter | Freeze, then supersede. |
+| [#242](https://github.com/blackfaced/MemoryNexus/issues/242) | Generate bounded Learner Journey Summaries with owner review | Freeze, then supersede. |
+| [#243](https://github.com/blackfaced/MemoryNexus/issues/243) | Cut over and accept Study Buddy L1 ingestion on the Mac mini | Freeze, then supersede. |
+| [#251](https://github.com/blackfaced/MemoryNexus/issues/251) | Deliver one Study Buddy Learning Attempt end to end | Freeze, then supersede. |
+| [#252](https://github.com/blackfaced/MemoryNexus/issues/252) | Add lease, retry backoff, and dead-letter controls | Freeze, then supersede. |
+| [#253](https://github.com/blackfaced/MemoryNexus/issues/253) | Synchronize Study Buddy Sessions, revisions, and withdrawals | Freeze, then supersede. |
+| [#254](https://github.com/blackfaced/MemoryNexus/issues/254) | Retain generated artifacts and expose redacted health state | Freeze, then supersede. |
+| [#255](https://github.com/blackfaced/MemoryNexus/issues/255) | Run content-free inventory and reconciliation jobs | Freeze, then supersede. |
+| [#256](https://github.com/blackfaced/MemoryNexus/issues/256) | Acquire bounded Study Buddy Summary Windows | Freeze, then supersede. |
+| [#257](https://github.com/blackfaced/MemoryNexus/issues/257) | Reconcile Study Buddy and report legacy migration safely | Freeze, then supersede. |
+| [#258](https://github.com/blackfaced/MemoryNexus/issues/258) | Generate and deliver one deterministic unreviewed Journey Summary | Freeze, then supersede. |
+| [#259](https://github.com/blackfaced/MemoryNexus/issues/259) | Add explicitly authorized cloud summary generation | Freeze, then supersede. |
+| [#260](https://github.com/blackfaced/MemoryNexus/issues/260) | Query and confirm a Journey Summary | Freeze, then supersede. |
+| [#261](https://github.com/blackfaced/MemoryNexus/issues/261) | Correct or delete a Journey Summary with owner provenance | Freeze, then supersede. |
+| [#262](https://github.com/blackfaced/MemoryNexus/issues/262) | Compose a weekly review from current trusted evidence | Freeze, then supersede. |
+| [#263](https://github.com/blackfaced/MemoryNexus/issues/263) | Prepare Mac mini release, launchd, and cutover preflight | Freeze, then supersede. |
+| [#264](https://github.com/blackfaced/MemoryNexus/issues/264) | Verify redacted alerts and operational recovery | Freeze, then supersede. |
+| [#265](https://github.com/blackfaced/MemoryNexus/issues/265) | Run the synthetic L1 failure and recovery matrix | Freeze, then supersede. |
+| [#266](https://github.com/blackfaced/MemoryNexus/issues/266) | Cut over bounded Study Buddy L1 backfill | Freeze, then supersede. |
+| [#267](https://github.com/blackfaced/MemoryNexus/issues/267) | Run one owner-authorized real-record acceptance | Freeze, then supersede. |
+
+| Issue | Current conflict | Recommended action |
+| --- | --- | --- |
+| [#269](https://github.com/blackfaced/MemoryNexus/issues/269) | Parent for Study Buddy correction/reinforcement semantics through the Reference Adapter and Surface Gateway. | Freeze, then supersede; preserve as historical source-integration design. |
+| [#270](https://github.com/blackfaced/MemoryNexus/issues/270) | Maps correction and reinforcement attempts in the Study Buddy Adapter. | Freeze, then supersede. |
+| [#271](https://github.com/blackfaced/MemoryNexus/issues/271) | Reports long-term correction patterns through legacy weekly Observation. | Freeze, then supersede. |
+
+### Other live legacy deployment work
+
+| Issue | Current conflict | Recommended action |
+| --- | --- | --- |
+| [#129](https://github.com/blackfaced/MemoryNexus/issues/129) | Hosted Trial API plus MCP/REST token path conflicts with local SQLite/CLI-only first version. | Freeze; rewrite only after a passed #283 proves a concrete need for a second channel. |
+
+The live M9, M10, M11, and Support milestones still advertise the prior
+Surface/Adapter/PostgreSQL roadmap. Do not close or delete milestones as part of
+this documentation task. A Coordinator should first apply the issue-level
+freeze/supersession decisions, then update or close milestones with a durable
+comment linking #273 and ADR-027.
+
+## Historical material
+
+The prior roadmap, ADRs, architecture documents, and runtime remain available
+for review and behavioral reference during contraction. They are not deleted by
+this change. Git history remains the durable record after removal of the legacy
+runtime.

@@ -32,8 +32,19 @@ decisions/
 ├── ADR-023-namespace-knowledge-refresh.md ✅ Namespace Knowledge Refresh
 ├── ADR-024-private-mac-mini-local-lab.md ✅ Private Mac mini Local Lab
 ├── ADR-025-personal-feedback-dogfood.md ✅ Personal Feedback Dogfood
-└── ADR-026-loose-coupled-source-adapter-sync.md ✅ Loose-Coupled Source Adapter Synchronization
+├── ADR-026-loose-coupled-source-adapter-sync.md ✅ Loose-Coupled Source Adapter Synchronization
+└── ADR-027-sqlite-cli-minimax-feedback-kernel.md ✅ SQLite CLI MiniMax Personal Experiment Feedback Kernel (current default)
 ```
+
+## 当前默认方向
+
+[ADR-027](ADR-027-sqlite-cli-minimax-feedback-kernel.md) 是当前默认产品方向：本地 SQLite
+权威 ledger、用例级 CLI 和 MiniMax Skill，以 Observation、Recommendation、Experiment、
+Outcome 四对象支持 personal experiment feedback。它以 #274 的 MiniMax 可行性验证为实施
+前置条件。
+
+ADR-001 至 ADR-026 保留为历史决策与退役 runtime 的依据；除非 ADR-027 明确保留，不应把它们
+解释为新的默认实现路线。
 
 ## 📖 ADR 是什么？
 

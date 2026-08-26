@@ -1,5 +1,10 @@
 # Sleep-driven Feedback Loop
 
+> **Historical legacy architecture.** Wake/Sleep/Dreaming is frozen with the
+> pre-ADR-027 runtime. It is not a supported product path or active roadmap.
+> The current default is the SQLite/CLI/MiniMax four-object kernel in
+> [ADR-027](../../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md).
+
 MemoryNexus should not perform every cognitive operation during the foreground
 interaction. It uses a Wake / Sleep architecture.
 

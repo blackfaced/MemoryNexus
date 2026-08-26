@@ -1,5 +1,10 @@
 # MemoryNexus Engine
 
+> **Historical legacy architecture.** This document describes the pre-ADR-027
+> Engine runtime and is not a supported product path or active roadmap. The
+> current default is the SQLite/CLI/MiniMax four-object kernel in
+> [ADR-027](../../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md).
+
 MemoryNexus Engine is the internal long-term feedback core. It is not an app,
 role, chatbot, UI, or generic memory API.
 
