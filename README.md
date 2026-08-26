@@ -32,10 +32,13 @@ confirmed Observation
 - `Outcome`: whether it was performed, skipped, or not evaluable, plus the
   confirmed result.
 
-SQLite in WAL mode is the only first-version authoritative store. The compiled
-CLI is the primary behavior seam and returns stable JSON for `observe`,
+SQLite in WAL mode is the accepted first-version authoritative store. After
+#274 and the follow-on #276–#281 work, the target compiled CLI will be the
+primary behavior seam and return stable JSON for `observe`, `retract`,
 `add-recommendation`, `start-experiment`, `record-outcome`, `review`, and
-`due`. It does not expose generic CRUD or internal database objects.
+`due`. It will not expose generic CRUD or internal database objects. The
+currently runnable implementation is the frozen legacy runtime and does not
+yet satisfy this target contract.
 
 ## MiniMax and health boundary
 

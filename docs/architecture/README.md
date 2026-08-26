@@ -24,17 +24,20 @@ the local ledger state. The system must not rely on Agent chat history.
 
 ## Main seam
 
-The CLI is the primary interface for product behavior and verification. It
-accepts explicit use cases and stable structured input/output, not generic
-Surface dispatch or private table operations:
+The target CLI will be the primary interface for product behavior and
+verification after #274 and #276–#281. It will accept explicit use cases and
+stable structured input/output, not generic Surface dispatch or private table
+operations:
 
 ```text
-observe | add-recommendation | start-experiment | record-outcome | review | due
+observe | retract | add-recommendation | start-experiment | record-outcome | review | due
 ```
 
-SQLite in WAL mode is the only authoritative first-version store. It must
+SQLite in WAL mode is the accepted authoritative first-version store. It must
 support deterministic migrations, consistent backup, JSON export, and restore.
-The first version has one fixed owner and at most one active Experiment.
+The first version has one fixed owner and at most one active Experiment. The
+current runnable code remains the frozen legacy runtime; no target CLI command
+is claimed to be available before the implementation tickets complete.
 
 ## Responsibilities
 

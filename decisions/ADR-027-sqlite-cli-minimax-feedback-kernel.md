@@ -50,10 +50,14 @@ Review 只从已确认的四对象重建 Observation、建议来源、选定行�
 SQLite（WAL mode）单文件是第一版唯一权威数据库。它支持确定性迁移、JSON export、
 一致备份与 restore；不新增 database abstraction、generic repository、双写或第二数据库。
 
-编译后的本地 CLI 是唯一主要行为 seam。它提供稳定 JSON 输入/输出的用例级命令：
-`observe`、`add-recommendation`、`start-experiment`、`record-outcome`、`review` 和 `due`。
-它不公开通用 CRUD、表结构、任意 JSON dispatch、Surface 名称或旧 Engine 对象。测试应跨
-独立 CLI 进程验证外部可见行为，而不是绑定私有 SQL 布局。
+编译后的本地 CLI 是**已接受的目标**主要行为 seam。完成 #274 和后续 #276–#281 后，它必须
+提供稳定 JSON 输入/输出的用例级命令：`observe`、`retract`、`add-recommendation`、
+`start-experiment`、`record-outcome`、`review` 和 `due`。其中 `retract` 是
+Observation lifecycle 的独立用例，保留最小审计来源而不静默改写历史。
+
+当前可运行的仍是冻结 legacy runtime；它尚未实现上述 SQLite CLI 契约。本 ADR 不把目标
+命令误述为现有能力。目标 CLI 不公开通用 CRUD、表结构、任意 JSON dispatch、Surface 名称或
+旧 Engine 对象。测试应跨独立 CLI 进程验证外部可见行为，而不是绑定私有 SQL 布局。
 
 ### MiniMax、微信与提醒
 
@@ -91,8 +95,8 @@ recall seam；不得预先加入 generic provider registry 或 backend abstracti
 
 1. #274 先验证 MiniMax 跨 session 本地命令与共享状态。
 2. #275 记录本决策、更新公开定位，并冻结冲突的 legacy roadmap。
-3. #276–#281 依次交付 SQLite Observation lifecycle、Experiment、Outcome/review、MiniMax
-   Skill、`due` 和 export/backup/restore。
+3. #276–#281 依次交付 SQLite Observation lifecycle（含 `retract`）、Experiment、Outcome/
+   review、MiniMax Skill、`due` 和 export/backup/restore。
 4. #282 在干净 Mac mini 上安装完整路径；#283 以固定十四个日历日验证它。
 5. 只有 #283 以通过结论关闭后，#284 才将 SQLite/CLI/MiniMax 设为唯一默认 build、release、CI
    与文档路径；#285 与 #286 才删除旧接口和旧 storage runtime。

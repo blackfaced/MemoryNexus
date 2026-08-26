@@ -1,5 +1,10 @@
 # Reference Adapter Runtime
 
+> **Historical legacy runtime.** This document records the #239/#240 Reference
+> Adapter capability delivered in `47fa3e0`. It remains a frozen historical
+> reference during the ADR-027 expand–contract transition, not a supported
+> product path or active roadmap.
+
 This command is the executable reference for the L1 Source-to-MemoryNexus flow
 defined by ADR-026. It is a bounded one-shot process, not another server or
 scheduler.
