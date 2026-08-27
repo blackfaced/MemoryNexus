@@ -1,293 +1,123 @@
 # AGENTS.md
 
-本文件给 Codex 和其他代码 Agent 使用。进入仓库后请先阅读本文件，再开始修改。
+本文件给在 MemoryNexus 工作的 Agent 使用。先读本文件、相关 GitHub issue、
+[README](README.md)、[当前路线图](docs/TODO.md) 和
+[ADR-027](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)。
 
-## 项目主线
+## 当前默认方向
 
-- MemoryNexus 是 local-first、namespace-based long-term feedback engine，
-  用于 personal cognition 和 skill acquisition；后端主线是 **Rust-first**。
-- 项目核心问题不是“AI 如何记住更多”，而是“如何基于长期 Trace 持续生成更好的反馈和
-  下一步行动”。
-- Rust + Axum crate 位于仓库根目录，是唯一继续演进的主后端。
-- 记忆归属于 `CognitiveSpace`，不归属于 Agent。
-- 历史 Python/FastAPI 和空前端骨架已移除；不要重新引入双后端主线。
-- Phase 4 第一版 UI 是 Rust 服务直接提供的静态 Thought Review MVP，入口在
-  `web/thought_review.html`，路由在 `src/api/web.rs`。
-- 不要在没有 ADR 的情况下引入 React/Vite/Next、Node dev server、BFF 或第二套
-  frontend/backend 主线。
-- 新方向见 ADR-018：MemoryNexus 不和 Supermemory / Mem0 / OpenJarvis 直接竞争。
-  OpenJarvis 偏 local personal AI runtime；Supermemory / Mem0 偏 memory runtime /
-  memory cloud；MemoryNexus 偏 Memory Evolution / Feedback / Growth Engine。
-- Surface / Adapter / Engine 分层见 ADR-019：Adapter 是怎么交互，Surface 是想做什么，
-  Engine 是长期如何记忆、反馈与演化。外部 App / Agent 应通过 Surface Gateway 访问
-  Capture / Performance / Reflection / Planning / Observation 能力，不要直接操作 Engine
-  内部对象。
-- 长期方向见 ADR-014：MemoryNexus 正在扩展为 namespace-based long-term
-  feedback substrate，并引入 MemoryAtom / CognitiveScene / Lens-based
-  CognitiveProjection 的 memory lifecycle；但 `CognitiveSpace` 仍然是 ownership /
-  permission boundary。
-- Local-first Trace Learning Runtime 见 ADR-016：MemoryNexus 会引入 Trace 记录交互、
-  runtime metrics、生成对象和用户反馈，用于 local-first / trace-driven feedback
-  learning；但不要把项目改成完整 local agent runtime、model catalog 或 inference
-  engine。
-- Sleep-based Memory Consolidation 见 ADR-017：MemoryNexus 采用 Wake / Sleep /
-  Dreaming 架构。前台 Wake 路径保持低延迟并生成 Trace；后台 Sleep 路径离线整合
-  Trace / Memory / FeedbackLoop；Dreaming 生成候选练习、复盘问题、场景模拟或下一步
-  计划。不要把这条路线实现成模型参数训练、RL self-modification、local inference
-  runtime，或每次输入都同步运行完整 cognitive pipeline。
-- Supabase 接入边界见 ADR-015：Supabase 首先是托管 PostgreSQL 兼容目标，不是新的
-  backend 主线。Auth / Storage / Realtime 只能作为后续 adapter 单独推进。
-- Dictation Coach 首个上游产品见 ADR-020：第一产品方向从泛化 STEM/fraction slice
-  转为每日默写助手，用中文默写和英语 spelling / sentence dictation 验证
-  Trace -> FeedbackLoop -> GrowthModel -> PracticePlan 闭环。不要把家长/孩子角色写进
-  Engine；角色属于 Adapter。
-- 外部媒体证据边界见 ADR-021：OCR、ASR、媒体采集和用户确认属于 Agent / App
-  Adapter；MemoryNexus 保持 text-first，只接收用户确认后的 normalized text，并允许
-  Surface 请求携带可选、provider-neutral 的 `EvidenceRefInput` 追溯原始媒体。第一版仅
-  建立描述符验证契约，不表示已有 `EvidenceRef` 持久化、resolver 或媒体处理能力。
-- Namespace Knowledge Refresh 边界见 ADR-023：外部 Skill / Agent / Adapter 可以发现和抽取
-  source candidate；MemoryNexus 只校验 Space/Namespace scope、approval、provenance、
-  quality、freshness、privacy opt-in 和 downstream links。V1 不加 Knowledge Surface、
-  crawler、scheduler 或 full corpus storage；外部知识不是用户 Memory，不能直接更新
-  GrowthModel 或 PracticePlan。
-- Personal Feedback Dogfood 边界见 ADR-025：当前 private self-use priority 是在
-  `personal.health.sleep` 用十四天、低敏感度、确认后的睡眠/精力记录验证 generic Engine
-  是否能给 owner 产生有用的下一步调整；这不是医疗产品承诺，也不替代 Dictation Coach
-  作为第一上游学习产品和评估 fixture。`CognitiveSpace` 仍是权限边界，Namespace 不是。
-- 外部学习数据同步边界见 ADR-026：DeepTutor / Study Buddy 独立运行；MemoryNexus
-  维护独立 Rust Reference Adapter Runner，经 provider-native localhost API 获取数据，
-  再以强类型 Normalized Outcome 幂等提交 Surface Gateway。不要把 Adapter 做成 Axum
-  后台线程、直读上游数据库、复制 raw chat、以 Provider 命名 Namespace，或让来源 payload
-  选择任意 CognitiveSpace。
-- EverMemOS / EverOS 可作为 memory lifecycle 的外部参考，但不要把 MemoryNexus 改成
-  agent memory retrieval 系统。当前边界是：EverMemOS 偏 memory for agent reasoning；
-  MemoryNexus 偏 user-owned cognitive perspective and feedback loops。
+ADR-027 与 [#273](https://github.com/blackfaced/MemoryNexus/issues/273) 是当前产品
+方向：MemoryNexus 是运行在 Mac mini 上的 local-first personal experiment feedback
+kernel。
 
-## 架构决策
+目标路径为：
 
-- 重要决策必须写入 `decisions/`，使用 ADR 形式：`ADR-00X-short-title.md`。
-- 新增 ADR 后必须更新 `decisions/README.md`。
-- 不要把长期架构决策只写在 `docs/` 或对话总结里。
-- 当前 Rust-first 主线见 `decisions/ADR-009-rust-first-backend.md`。
-- Thought Review UI MVP 见 `decisions/ADR-013-thought-review-ui-mvp.md`。
-- Namespace / FeedbackLoop 长期模型见 `decisions/ADR-014-namespace-feedback-loop.md`。
-- Local-first Trace Learning Runtime 见
-  `decisions/ADR-016-local-first-trace-learning-runtime.md`。
-- Sleep-based Memory Consolidation 见
-  `decisions/ADR-017-sleep-based-memory-consolidation.md`。
-- Long-term Feedback Engine 定位见
-  `decisions/ADR-018-long-term-feedback-engine.md`。
-- Surfaces / Adapters / Engine 分层见
-  `decisions/ADR-019-surfaces-adapters-engine.md`。
-- Dictation Coach 首个上游产品见
-  `decisions/ADR-020-dictation-coach-first-upstream-product.md`。
-- 外部媒体证据引用边界见
-  `decisions/ADR-021-external-media-evidence-references.md`。
-- Namespace Knowledge Refresh 边界见
-  `decisions/ADR-023-namespace-knowledge-refresh.md`。
-- Personal Feedback Dogfood 边界见
-  `decisions/ADR-025-personal-feedback-dogfood.md`。
-- DeepTutor / Study Buddy 松耦合同步边界见
-  `decisions/ADR-026-loose-coupled-source-adapter-sync.md`。
-
-## 开发规则
-
-- 新增 API、数据库访问、对象存储、向量检索、AI 编排默认落在 Rust 服务。
-- ADR-026 Reference Adapter 必须作为独立 Rust 进程运行，通过受限 localhost API
-  获取 Source Record，并通过 Surface Gateway 提交强类型 Normalized Outcome。
-  provider-specific cursor / polling / reconciliation 只保存在 Adapter ledger；Engine
-  不保存上游分页游标。Study Buddy 使用事务型 source-event feed，DeepTutor 第一版使用
-  正式 sessions API 扫描；两者都禁止 direct DB access。
-- `learning.self-directed` 属于 owner CognitiveSpace，`learning.foundation` 属于 child
-  Managed CognitiveSpace。Adapter credential 必须分别 pin 到一个 Space、Namespace
-  allowlist 和 Surface action；Namespace 不能代替 Space 权限或承载 Provider 名。
-- Learner Journey Summary 只保存有来源引用的 bounded paraphrase，不保存 raw chat，
-  不做心理诊断、人格判断或隐藏动机推断。`model_derived_unreviewed` 摘要只能用于观察和
-  review question；owner 确认或修正前不得直接更新权威 GrowthModel 或触发重要计划调整。
-- 如果接入 Supabase，默认先验证 `DATABASE_URL` 指向 Supabase Postgres 的兼容性。
-  不要绕过 Rust API 直接用 Supabase REST / PostgREST 操作核心表。
-- 不要用 Supabase RLS 取代 MemoryNexus 的 `CognitiveSpace` membership / Rust 权限检查。
-  Supabase Auth 如需接入，必须映射到本地 users 表并保留 Space 权限边界。
-- 修改 Rust 行为时优先补单元测试或端到端验收；至少运行 `cargo test`。
-- 修改静态 UI 时优先保持现有 `web/thought_review.html` 轻量实现，除非 issue/ADR
-  明确要求升级前端栈。
-- UI 文案优先使用用户语言：thought / perspective / review / recurring theme /
-  inner tension。不要把 `Memory`、`Lens Run`、`CognitiveState` 等后端术语过早暴露为
-  普通用户主入口。
-- `learning.stem` UI 文案优先使用家长和学习者能懂的语言：practice / answer /
-  mistake pattern / feedback / next exercise / weekly learning review。不要把
-  `MemoryAtom`、`CognitiveScene`、`CognitiveProjection` 暴露为主标签。
-- Dictation Coach 文案优先使用 daily dictation / word list / spelling attempt /
-  mistake type / tomorrow practice / 7-day trend。不要把 OCR、多孩子管理、完整教育平台
-  或全科目学习系统塞进第一版。
-- OCR、ASR 和媒体采集属于 Agent / App Adapter。MemoryNexus 第一版只处理用户确认后的
-  文字；每一份从媒体生成的 normalized payload 都必须由用户明确接受或修正后才能提交。
-  Surface 可携带并校验可选 `EvidenceRefInput` 原始媒体追溯描述符，但不得声称当前已有
-  `EvidenceRef` runtime 或持久化；描述符在单独的持久化 issue 落地前保持 ephemeral，
-  不得进入现有 Memory、FeedbackLoop 或 Trace 的持久化参数、记录或 summary。
-  Foundation F1 定义通用、role-neutral 的 `input_confirmation: { status: "confirmed",
-  method: "explicit_acceptance" | "explicit_correction" }` 字段及媒体来源校验；Adapter 只负责
-  获取并映射用户确认。媒体不可用不得阻断已确认文字的 Trace、反馈或计划。
-- `EvidenceRefInput` 的 locator 或 metadata 任一位置包含 secret 时，必须把整条引用作为
-  invalid reference 拒绝；redaction 只用于 diagnostics / log message。被拒绝的原始 payload
-  和 secret 不得进入日志、Trace、metadata persistence 或任何其他持久化。
-- `personal.health.sleep` 只接受 ADR-025 / `docs/personal-feedback-dogfood-contract.md`
-  定义的 confirmed、typed、low-sensitivity 字段。不得加入诊断、药物、治疗、医疗报告、
-  provider advice、原始截图、raw OCR、自由文本健康史或 metadata bag；媒体/OCR 仍在
-  Adapter 外部，`agent_ocr` 必须带 role-neutral explicit acceptance 或 explicit correction。
-  不足三条有效确认记录时返回 evidence gap；一旦开始 M9，十四天的 ten-valid / five-tried /
-  one-retained-adjustment gate 不得事后移动。
-- `Namespace` 只是 `CognitiveSpace` 内的领域分区，不是新的权限边界；不要把权限从
-  Space membership 挪到 Namespace。
-- `FeedbackLoop` 是长期方向，落地时应从具体 namespace 的最小验收场景反推字段，
-  不要一次性做 learning / piano / chess / drawing / programming 全部产品。
-- `MemoryAtom`、`CognitiveScene`、`CognitiveProjection` 是 Phase 5 lifecycle
-  概念。先用 fixtures / prototype 验证 atomization、consolidation 和 Lens
-  projection，不要在没有 issue/ADR 验收的情况下直接铺复杂 schema。
-- Observe / projection 相关实现必须区分 `fast`、`focused`、`deep` 三种模式。
-  不要让每次用户输入都同步运行 atomization、multi-lens projection、belief update
-  和 contradiction detection。
-- 本地没有 Rust 工具链时，可以用 Docker 验证：
-
-```bash
-docker run --rm \
-  -v "$PWD:/workspace" \
-  -w /workspace \
-  rust:latest cargo test
+```text
+MiniMax Skill / WeChat input / MiniMax App reminder
+                    |
+                    v
+          compiled local CLI (stable JSON)
+                    |
+                    v
+     SQLite WAL single-file authoritative ledger
+                    |
+                    v
+ Observation -> Recommendation -> Experiment -> Outcome
 ```
 
-- 不要把生成的 `*.profraw`、`target/`、临时测试产物提交进仓库。
-- 不要回退用户已有改动；遇到无关脏文件时保持原样。
+- 权威内核只保留 `Observation`、`Recommendation`、`Experiment` 和
+  `Outcome`。所有权威写入都需要 owner 的明确确认。
+- 目标 CLI 是唯一主要行为 seam：`observe`、`retract`、
+  `add-recommendation`、`start-experiment`、`record-outcome`、`review` 和
+  `due`。不要以通用 CRUD、任意 JSON dispatch 或数据库表作为产品接口。
+- SQLite（WAL mode）单文件是第一版唯一权威 ledger；必须支持确定性迁移、JSON export、
+  一致备份和 restore。
+- MiniMax 负责自然语言理解、澄清、未确认草稿和 native scheduled-task wake-up。SQLite
+  ledger，而不是 Agent chat history，提供跨 session 连续性。
+- 微信是方便输入路径；MiniMax App 是首版提醒入口。MemoryNexus 不实现 scheduler、
+  daemon、retry worker、微信机器人或 channel framework。
+- 不诊断、解读医疗文件、开具治疗建议或声称临床有效性。蚂蚁阿福等工具只是显式来源的
+  Recommendation 候选；原始对话、报告、诊断和处方默认不持久化。
+- 第三方 memory backend 只能是从 SQLite ledger 可重建的、非权威 recall projection；
+  在两个真实实现和一致性测试证明需要前，不增加抽象、provider registry 或第二 backend。
 
-## 分支与 PR 规则
+## 已接受目标与当前可运行代码
 
-- 不要直接在 `main` 上开发。每个 issue / 子任务使用独立分支或 worktree。
-- `main` 通过 GitHub branch protection 保护：必须走 PR，且 `Format`、`Clippy`、
-  `Build`、`Test` 必须通过。
-- 当前只有一个主要开发者，不要求 approving review；但 PR 仍必须通过 CI。
-- 默认合并方式使用 squash 或 rebase，避免 merge commit；PR 合并后删除分支。
-- 开 PR 前至少运行：
+ADR-027 记录的是**目标契约**，不是现有功能声明。当前可运行的仍是冻结的 legacy Rust
+runtime；它尚未实现 SQLite CLI/MiniMax 产品路径。不要把目标命令写成已可运行能力。
 
-```bash
-cargo fmt --check
-cargo test
-cargo clippy --all-targets --all-features -- -D clippy::all
-```
+[#274](https://github.com/blackfaced/MemoryNexus/issues/274) 是实施前置 gate：必须实际证明
+普通微信 MiniMax session 能执行 owner-approved 本地命令并写入共享状态，且独立 native
+scheduled session 能读到它并在 MiniMax App 可见。#274 未通过时：
 
-如果只改 Markdown 文档，可以说明未跑 Rust 测试的原因；但涉及 Rust 代码或 UI 行为时
-必须跑对应验证。
+- 不实现 #276 及其后的 SQLite/CLI/MiniMax 产品代码；
+- 不以聊天历史、hidden provider memory 或未验证的假设替代 ledger；
+- 更新方案并向 Coordinator 报告观察到的能力与限制。
 
-## Issue / 子 Agent 工作流
+## Expand–contract 纪律
 
-- Agent 分工默认分三类：
-  - **Planning / Architecture agent**：只负责路线图、ADR、issue 拆分、验收标准和架构边界；
-    不直接实现产品代码，除非 issue 明确是 docs / design。
-  - **Coordinator agent**：负责确认依赖顺序、创建 worktree / branch、编写子 agent
-    handoff prompt、review PR、合并、关闭 issue、清理 worktree / 分支；默认不直接承接
-    issue 实现。
-  - **Worker agent**：只在独立 issue worktree 中干活，拥有该 issue 的实现责任和文件
-    ownership；完成后提交、push、开 PR，并报告 changed files、验证命令和已知缺口。
-- Planning / Architecture agent 和 Coordinator agent 是两个不同角色：
-  - Planner 负责问题定义、长期方向、概念边界、issue 拆分和验收标准。
-  - Coordinator 负责执行调度、worktree / branch、worker prompt、PR review、CI 检查、
-    合入顺序和清理。
-  - Coordinator 可以质疑 Planner 产出的 issue 是否可执行或是否违反 ADR/AGENTS 边界，
-    但不要在没有用户要求时主动扩写长期架构。
-  - Planner 不合 PR、不清理 worktree、不承担实现验收；Coordinator 不默认承接
-    feature implementation。
-- `main` / 主仓工作区只用于协调、review、文档规划和轻量状态检查；不要在主仓直接做
-  feature implementation。每个实现 issue 必须使用独立 worktree 和同名分支，例如
-  `issue-66-supabase-postgres-compat`。
-- 每个 worktree 都要有自己的 issue identity / "soul"：明确 issue 编号、目标、相关
-  ADR、文件 ownership、非目标、验证命令和最终交付格式。子 agent 不能假设其它未合入
-  worktree 的改动存在。
-- Worker agent 必须知道自己不是独占整个仓库：不要回退他人改动；遇到跨 issue 依赖、
-  文件 ownership 冲突、需要修改主线架构或验收不清时，停止并报告给 Coordinator。
-- Coordinator review 时只信证据：看 diff、测试、CI、issue 验收和 ADR/AGENTS 边界；
-  不把 worker 的完成声明当作验收结果。
-- 子 Agent 开工前必须阅读本文件、相关 issue、`README.md`、`docs/TODO.md` 和相关
-  ADR。
-- 子 Agent 通用 handoff 模板见 `docs/subagent-issue-workflow.md`。
-- 如果 issue 描述不足，不要猜大方向；先补充 issue 评论或拆小任务。
-- 每个 issue 应有明确验收标准、相关文件、非目标和验证命令。
-- Phase 4 UI issue 默认基于 Rust-served Thought Review UI 继续演进，不另建前端工程。
-- Phase 5 Namespace / FeedbackLoop issue 默认先做设计和最小模型/API 方案，不直接铺开
-  多个垂直产品。
-- STEM Learning Feedback 是 prior learning slice，产品 namespace 为 `learning.stem`。
-  这条线已经验证 FeedbackLoop / practice session / weekly review 的一部分能力。
-  新的第一上游产品方向是 Dictation Coach，优先 namespace 如
-  `child.chinese.dictation`、`child.english.spelling`。涉及新产品入口的 issue 默认服务
-  Capture / Performance / Reflection / Planning / Observation 闭环，不要回到泛化学习平台。
-- Surface Gateway issue 必须把 Surface 和 Adapter 区分清楚：Capture / Performance /
-  Reflection / Planning / Observation 是能力面；Chat Agent / MCP / CLI / Web / Mobile /
-  Dashboard 是交互方式。Adapter 不直接访问 Engine 内部对象。
-- ADR-026 Adapter issue 必须明确 Source Identity、revision/tombstone、durable cursor、
-  Summary Window ledger、lost-response idempotency、launchd one-shot catch-up 和本地
-  Mac mini failure acceptance。第一版只能单向 L1 ingestion，不得自动回写 DeepTutor /
-  Study Buddy 或做通用 connector framework。
-- Phase 5 Memory Lifecycle issue 默认围绕 `Memory -> MemoryAtom -> CognitiveScene
-  -> CognitiveProjection` 做小实验，不要把它实现成通用 agent retrieval engine。
-- M9 Personal Feedback Dogfood issue 必须按 `docs/personal-feedback-dogfood-contract.md`
-  的固定顺序和 allowlist 推进：#220 -> #221 -> #223 -> #224 -> #225 -> #226，#130 + #221
-  才可做 #222，#222 + #226 才可进入 #227。#227 是真实 fourteen-calendar-day owner/
-  Coordinator acceptance gate，不是实现完成后立即关闭的 worker issue。#228 -> #229 是
-  独立的 P1 learning-adapter track，不得让 M9 依赖它。
-- 涉及 ObserveMode 的 issue 必须明确前台低延迟行为、后台异步处理和用户主动 deep
-  review 的触发条件。
-- Trace / runtime metrics issue 默认先做 contract、最小 schema 或 lightweight capture。
-  不要实现 OpenJarvis 式完整本地 agent runtime、模型微调、model catalog 或 inference
-  backend。
-- Sleep Engine / Dreaming issue 默认先读 ADR-017 和 `docs/sleep-cycle-contract.md`，
-  并按 Trace -> SleepCycle -> ConsolidationResult -> DreamCandidate ->
-  effectiveness evaluation 的顺序推进。实现 schema / API / CLI / MCP 前必须先对齐
-  该 contract，不要让各 worker 自行发明字段。第一版 Dreaming 必须优先支持
-  deterministic / local-first 路径；不要默认接云模型，不要添加 scheduler，不要把
-  Sleep 或 Dreaming 作为普通用户主入口术语。
+执行顺序固定为：
 
-## P0 优先级
+1. #274 验证 MiniMax 跨 session 本地命令与共享状态。
+2. #275 记录决策、对齐公开定位和冻结旧 roadmap。
+3. #276–#281 交付四对象 SQLite CLI、MiniMax Skill、`due` 与恢复路径。
+4. #282 在干净 Mac mini 验证安装；#283 运行固定十四天 owner dogfood gate。
+5. 仅当 #283 通过后，#284 才切换默认 build/release/CI/docs；#285 与 #286 才可删除
+   legacy 接口和 storage runtime。
 
-1. Surface Gateway MVP：Capture / Performance / Reflection / Planning /
-   Observation 统一入口，自动写 Trace。
-2. Trace -> FeedbackLoop -> GrowthModel -> PracticePlan 闭环。
-3. Dictation Coach 最小闭环：录入词表、提交默写、错因归因、生成明日练习、7 天趋势。
-4. Personal Feedback Dogfood：在 private self-use `personal.health.sleep` 用固定、
-   非临床十四天 gate 验证 generic Engine 的 owner next-action usefulness。
-5. 文档口径统一：README、architecture、TODO 都应以 long-term feedback engine、
-   Rust 主线和 Cognitive Space 为准。
+十四天 gate 开始前固定标准：至少十条有效 confirmed Observation、一个 Experiment、五条
+执行更新、一次 evidence-backed review、fresh session 一致读回、最多一次人工故障介入，
+以及第十五天 owner 的继续使用决定。失败时先分析价值或摩擦，不扩张架构。
 
-## Agent skills
+不得做历史数据迁移、dual write、永久 compatibility layer 或预先抽象的 repository/backend
+接口。Git history 保存被退役实现。
 
-### Issue tracker
+## Frozen legacy runtime
 
-Issues live in GitHub Issues for `blackfaced/MemoryNexus`; external PRs are not a triage request surface. See `docs/agents/issue-tracker.md`.
+以下内容在 expand–contract 期间只作为 legacy runtime 的维护、验证或最终删除对象：
 
-### Triage labels
+- Rust + Axum、PostgreSQL、Qdrant、embeddings/vector search、REST、MCP、Surface Gateway；
+- `CognitiveSpace`、Namespace、Trace、FeedbackLoop、GrowthModel、Sleep/Dreaming、
+  Lens、Thought Review、Dictation/STEM 与 source Adapter 产品路线；
+- M9、M10、M11、Reference Adapter、Study Buddy 和 DeepTutor 的旧 roadmap。
 
-Use the configured five-label triage vocabulary. See `docs/agents/triage-labels.md`.
+不要为这些路线添加功能、扩张 schema、创建新 issue、标为 ready，或将它们作为 #276+
+实现前提。只允许：
 
-### Domain docs
+- 修复阻止安全运行、审阅或收缩的缺陷；
+- 保留对确认、来源、幂等、订正、撤回、执行结果和 evidence gap 的可移植行为证据；
+- 在 #283 通过后按 #284–#286 删除旧路径。
 
-This is a single-context repo; read repo-level domain context when present and architecture decisions from `decisions/`. See `docs/agents/domain.md`.
+已由 `47fa3e0` 交付的 #239/#240 Reference Adapter capability 是冻结历史实现；
+[reference-adapter-runtime.md](docs/reference-adapter-runtime.md) 只作历史参考，不能成为
+新产品路线或继续扩张的授权。
 
-## 当前产品入口
+## 工程与交付规则
 
-- Thought Review 是 reflective demo 和项目演讲入口：写下一条混乱想法，用多个
-  perspective 展示 MemoryNexus 如何解释同一份 memory space。
-- 第一上游产品方向是 Dictation Coach / 每日默写助手，建议 namespace 为
-  `child.chinese.dictation`、`child.english.spelling` 或
-  `child.english.sentence-dictation`；用录入词表、提交结果、错因归因、明日练习和
-  7 天趋势验证长期反馈价值。
-- `learning.stem` 是 prior learning slice，不是下一阶段唯一产品入口。
-- Thought Review 属于 reflective namespace，可视为 `personal.thoughts` 的 demo。
-  `learning.stem` 属于 Skill Namespace，必须通过单独 issue/验收场景推进。
-- Personal Feedback Dogfood 是 private owner-only 的 `personal.health.sleep` 验证入口：
-  一晚一次 confirmed check-in、三天 baseline、七天 preliminary review、十四天固定 gate。
-  它不构成医疗、公开部署或永久 health-product 入口。
+- 不在 `main` 上实现；每个实现 issue 使用独立 worktree/branch。
+- 不回退他人变更；遇到跨 issue 依赖、文件 ownership 冲突或 ADR/issue 冲突时停止并报告。
+- 默认不 commit、push、创建或合并 PR、关闭 issue，除非用户明确要求。
+- Issue 是可执行任务的真源。不要用 markdown 镜像取代 Issue；`docs/TODO.md` 只记录
+  当前路线与只读 reconciliation 建议。
+- Worker 开始前必须读本文件、相关 issue、README、TODO、ADR-027，以及与其 ticket
+  明确相关的历史 ADR/legacy contract。
+- Worker 最终报告：changed files、验证命令和结果、未验证项、与 ADR-027/issue 的偏差。
+- 修改 Rust 行为时至少运行相关测试；docs-only 变更可不跑 Rust 测试，但必须说明原因。
+  修改代码的 PR 仍需满足 Format、Clippy、Build、Test 和适用的 integration gate。
+- 不提交 `target/`、`*.profraw` 或临时测试产物。
+
+## 当前优先级
+
+1. #274 的人工 MiniMax tracer evidence。
+2. #275 的 ADR、公开文档与 tracker reconciliation（在 #274 未通过时可保持 Draft）。
+3. 经 #274 验证后，#276–#281 的最小 SQLite CLI path。
+4. #282 clean-install 与 #283 fixed fourteen-day owner gate。
+5. 通过 gate 后的 cutover 和 contraction（#284–#286）。
 
 ## 文档位置
 
-- `README.md`：面向使用者的项目入口和快速开始。
-- `docs/`：API、开发、部署、路线图等说明。
-- `decisions/`：架构决策记录，所有长期决策放这里。
-- `src/`：Rust 源码。
-- `migrations/`：SQLx 数据库迁移。
+- `README.md`：当前用户与仓库入口。
+- `decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md`：当前架构决策。
+- `docs/TODO.md`：当前依赖顺序和 live tracker 的只读处置建议。
+- `docs/architecture/` 与其他旧 runtime 文档：冻结历史参考；不作为当前实现指令。
+- `decisions/ADR-001` 至 `ADR-026`：历史决策与可移植行为依据；不定义默认产品路线。
