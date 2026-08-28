@@ -4,7 +4,7 @@ The supported target architecture is a local personal experiment feedback kernel
 on a Mac mini:
 
 ```text
-MiniMax Skill / WeChat input / MiniMax App reminder
+MiniMax Skill / WeChat input / owner-initiated conversation query
                     |
                     v
           compiled local CLI (stable JSON)
@@ -17,10 +17,12 @@ MiniMax Skill / WeChat input / MiniMax App reminder
 ```
 
 [ADR-027](../../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md) is the
-source of truth. The MiniMax connection is conditional on the live
-[#274 feasibility gate](https://github.com/blackfaced/MemoryNexus/issues/274):
-normal chat and an independent native scheduled session must demonstrably share
-the local ledger state. The system must not rely on Agent chat history.
+source of truth. [#274](https://github.com/blackfaced/MemoryNexus/issues/274)
+has demonstrated that normal chat and an independent native scheduled session
+share local state. Cron output has no channel context, so the owner retrieves a
+`due` result by querying the existing MiniMax conversation; the system does
+not claim proactive MiniMax App or WeChat delivery and does not rely on chat
+history for state.
 
 ## Main seam
 
@@ -43,7 +45,7 @@ is claimed to be available before the implementation tickets complete.
 
 | Layer | Owns | Does not own |
 | --- | --- | --- |
-| MiniMax | natural-language intent, clarifying questions, unconfirmed drafts, native task wake-up and App delivery | authoritative history or medical analysis |
+| MiniMax | natural-language intent, clarifying questions, unconfirmed drafts, native task wake-up and owner-initiated result query | authoritative history, medical analysis, or reliable proactive delivery |
 | CLI + SQLite | confirmation, source, time, selected action, execution, result, review and due state | chat-session state, scheduler, channel delivery, generic recall |
 | external advisor | analysis and a candidate suggestion | authoritative write, final action selection, factual result |
 

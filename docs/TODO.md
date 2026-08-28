@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Updated: 2026-08-26
+> Updated: 2026-08-28
 > Executable tracker source of truth: [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues).
 > This document records the current architecture direction and a **read-only**
 > reconciliation recommendation; it does not alter issue state, labels, or
@@ -26,18 +26,18 @@ compatibility layer is planned.
 
 | Order | Issue | Required outcome |
 | --- | --- | --- |
-| 1 | [#274](https://github.com/blackfaced/MemoryNexus/issues/274) | Prove a normal WeChat MiniMax session can invoke an approved local command, and an independent native scheduled session can read its shared state and surface it in MiniMax App. |
+| 1 | [#274](https://github.com/blackfaced/MemoryNexus/issues/274) | **Completed:** normal WeChat MiniMax and an independent native scheduled session share local state. Cron output is owner-queryable through the existing conversation, not a proactive App/WeChat reminder. |
 | 2 | [#275](https://github.com/blackfaced/MemoryNexus/issues/275) | Record ADR-027, align positioning, and prepare legacy-roadmap reconciliation. |
 | 3 | [#276–#281](https://github.com/blackfaced/MemoryNexus/issues/276) | Build the four-object SQLite CLI (including `retract`), MiniMax Skill, `due`, and recovery path. |
 | 4 | [#282](https://github.com/blackfaced/MemoryNexus/issues/282) | Clean-Mac-mini installation acceptance. |
 | 5 | [#283](https://github.com/blackfaced/MemoryNexus/issues/283) | Fixed fourteen-calendar-day owner dogfood gate. |
 | 6 | [#284–#286](https://github.com/blackfaced/MemoryNexus/issues/284) | Only after a passed gate: cut over defaults, then remove legacy interfaces and storage. |
 
-#274 is currently open with no comments and the `ready-for-human` label.
-Its result is an implementation gate, not a documentation assumption. If it
-shows MiniMax cannot execute local commands or independent scheduled sessions
-cannot read shared state, revise ADR-027 and report the constraint before any
-kernel implementation.
+#274 closed as passed on 2026-08-28. It proved cross-session local-state
+continuity and recorded a delivery constraint: cron output lacks channel context,
+so the owner must query the existing MiniMax conversation. Proactive MiniMax App
+or WeChat delivery is not a first-version capability and must not become an
+implementation assumption.
 
 ## Fourteen-day deletion gate
 
@@ -60,7 +60,7 @@ post-gate, evidence-backed extension. None of these actions have been executed.
 
 | Issue | Current conflict | Recommended action |
 | --- | --- | --- |
-| [#222](https://github.com/blackfaced/MemoryNexus/issues/222) | Requires a legacy MCP/Surface/API private Adapter path and `CognitiveSpace`. | Freeze now; supersede after #275 review. #274 is the replacement feasibility test. |
+| [#222](https://github.com/blackfaced/MemoryNexus/issues/222) | Requires a legacy MCP/Surface/API private Adapter path and `CognitiveSpace`. | Freeze now; supersede after #275 review. #274 completed the replacement tracer and recorded pull-only delivery. |
 | [#226](https://github.com/blackfaced/MemoryNexus/issues/226) | Builds legacy seven-/fourteen-day Engine review through Surface Gateway. | Freeze now; supersede with #283’s four-object review gate. |
 | [#227](https://github.com/blackfaced/MemoryNexus/issues/227) | Runs the old M9 Surface/Adapter dogfood gate. | Freeze now; supersede with #283; preserve its fixed-gate lessons as history. |
 

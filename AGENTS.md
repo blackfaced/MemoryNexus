@@ -13,7 +13,7 @@ kernel。
 目标路径为：
 
 ```text
-MiniMax Skill / WeChat input / MiniMax App reminder
+MiniMax Skill / WeChat input / owner-initiated conversation query
                     |
                     v
           compiled local CLI (stable JSON)
@@ -34,8 +34,9 @@ MiniMax Skill / WeChat input / MiniMax App reminder
   一致备份和 restore。
 - MiniMax 负责自然语言理解、澄清、未确认草稿和 native scheduled-task wake-up。SQLite
   ledger，而不是 Agent chat history，提供跨 session 连续性。
-- 微信是方便输入路径；MiniMax App 是首版提醒入口。MemoryNexus 不实现 scheduler、
-  daemon、retry worker、微信机器人或 channel framework。
+- 微信是方便输入路径；native scheduled task 的结果由 owner 主动查询既有 MiniMax
+  conversation。首版没有可靠的 MiniMax App 或微信主动提醒。MemoryNexus 不实现
+  scheduler、daemon、retry worker、微信机器人或 channel framework。
 - 不诊断、解读医疗文件、开具治疗建议或声称临床有效性。蚂蚁阿福等工具只是显式来源的
   Recommendation 候选；原始对话、报告、诊断和处方默认不持久化。
 - 第三方 memory backend 只能是从 SQLite ledger 可重建的、非权威 recall projection；
@@ -46,19 +47,17 @@ MiniMax Skill / WeChat input / MiniMax App reminder
 ADR-027 记录的是**目标契约**，不是现有功能声明。当前可运行的仍是冻结的 legacy Rust
 runtime；它尚未实现 SQLite CLI/MiniMax 产品路径。不要把目标命令写成已可运行能力。
 
-[#274](https://github.com/blackfaced/MemoryNexus/issues/274) 是实施前置 gate：必须实际证明
-普通微信 MiniMax session 能执行 owner-approved 本地命令并写入共享状态，且独立 native
-scheduled session 能读到它并在 MiniMax App 可见。#274 未通过时：
-
-- 不实现 #276 及其后的 SQLite/CLI/MiniMax 产品代码；
-- 不以聊天历史、hidden provider memory 或未验证的假设替代 ledger；
-- 更新方案并向 Coordinator 报告观察到的能力与限制。
+[#274](https://github.com/blackfaced/MemoryNexus/issues/274) 已通过：普通微信 MiniMax
+session 能执行 owner-approved 本地命令并写入共享状态，独立 native scheduled session
+能读到它。cron output 没有 channel context，故结果只能由 owner 主动查询既有
+conversation，不能作为可靠主动提醒。不得以聊天历史或 hidden provider memory 替代
+ledger，也不得把主动 delivery 加入 #276+ 的实现假设。
 
 ## Expand–contract 纪律
 
 执行顺序固定为：
 
-1. #274 验证 MiniMax 跨 session 本地命令与共享状态。
+1. #274 已验证 MiniMax 跨 session 本地命令与共享状态，并确认 owner-initiated pull 语义。
 2. #275 记录决策、对齐公开定位和冻结旧 roadmap。
 3. #276–#281 交付四对象 SQLite CLI、MiniMax Skill、`due` 与恢复路径。
 4. #282 在干净 Mac mini 验证安装；#283 运行固定十四天 owner dogfood gate。
@@ -108,11 +107,11 @@ scheduled session 能读到它并在 MiniMax App 可见。#274 未通过时：
 
 ## 当前优先级
 
-1. #274 的人工 MiniMax tracer evidence。
-2. #275 的 ADR、公开文档与 tracker reconciliation（在 #274 未通过时可保持 Draft）。
-3. 经 #274 验证后，#276–#281 的最小 SQLite CLI path。
-4. #282 clean-install 与 #283 fixed fourteen-day owner gate。
-5. 通过 gate 后的 cutover 和 contraction（#284–#286）。
+1. #275 的 ADR、公开文档与 tracker reconciliation，包含 #274 的 owner-initiated pull
+   constraint。
+2. #276–#281 的最小 SQLite CLI path。
+3. #282 clean-install 与 #283 fixed fourteen-day owner gate。
+4. 通过 gate 后的 cutover 和 contraction（#284–#286）。
 
 ## 文档位置
 

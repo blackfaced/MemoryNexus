@@ -2,8 +2,8 @@
 
 ## 状态
 
-✅ 已接受，实施以 [#274](https://github.com/blackfaced/MemoryNexus/issues/274)
-通过为前置条件。
+✅ 已接受。[#274](https://github.com/blackfaced/MemoryNexus/issues/274) 已通过，
+验证了跨 session 的本地命令与共享状态；其 delivery constraint 见下文。
 
 ## 背景
 
@@ -62,16 +62,19 @@ Observation lifecycle 的独立用例，保留最小审计来源而不静默改�
 ### MiniMax、微信与提醒
 
 MiniMax Skill 将自然语言映射为上述显式 CLI 用例，并在每次权威写入前展示受限摘要、取得
-明确确认。微信是首选的方便输入路径；MiniMax App 是首版提醒和独立 session 可见性的入口。
+明确确认。微信是首选的方便输入路径。独立 session 的连续性来自 SQLite，不依赖 MiniMax
+App 或聊天历史。
 
-MiniMax 原生定时任务拥有 wake-up 和 delivery：独立 session 调用 `due`，从同一 SQLite
-ledger 读取状态，并先在 MiniMax App 显示一条简短、上下文相关的问题。MemoryNexus 不添加
-scheduler、daemon、retry worker、微信机器人或 channel framework；微信主动推送不是首版
-门槛。
+MiniMax 原生定时任务可以 wake-up 并调用 `due`，从同一 SQLite ledger 读取状态。它的
+输出是 owner **主动查询**既有 MiniMax conversation 时可取得的结果；它不是可靠的主动
+MiniMax App 或微信提醒通道。MemoryNexus 不添加 scheduler、daemon、retry worker、微信
+机器人或 channel framework。
 
-这一前提尚未被本仓验证。#274 必须证明普通微信会话可执行 owner-approved 本地命令并写入
-共享测试状态，且独立原生定时 session 能读到该状态、结果能在 App 中看到。若任一事实不成立，
-实施必须暂停并按观察到的能力改写本 ADR 与后续 ticket；不得以聊天历史代替共享权威状态。
+#274 已证明普通微信会话可执行 owner-approved 本地命令并写入共享测试状态，且独立原生
+scheduled session 能读到同一值。实测限制是 cron output 没有 channel context：结果不会
+可靠地主动送达微信或 MiniMax App，owner 必须主动查询既有 conversation。该限制不阻塞
+owner-initiated dogfood；不得以聊天历史代替共享权威状态，也不得把主动 delivery 写成
+首版能力。
 
 ### 健康与外部建议边界
 
@@ -93,7 +96,7 @@ recall seam；不得预先加入 generic provider registry 或 backend abstracti
 
 迁移在一个明确的 expand–contract 期间进行，不双写：
 
-1. #274 先验证 MiniMax 跨 session 本地命令与共享状态。
+1. #274 已验证 MiniMax 跨 session 本地命令与共享状态，并记录主动 delivery 不可用。
 2. #275 记录本决策、更新公开定位，并冻结冲突的 legacy roadmap。
 3. #276–#281 依次交付 SQLite Observation lifecycle（含 `retract`）、Experiment、Outcome/
    review、MiniMax Skill、`due` 和 export/backup/restore。
@@ -118,7 +121,8 @@ MiniMax session 读到同一状态；系统故障最多一次人工干预；第�
 
 - 旧产品、公开文档与 tracker 需要显式冻结或重写，不能让两条 ready roadmap 并存。
 - 旧 runtime 中有价值的行为需要通过 CLI 合同移植，而不是通过兼容层保留。
-- #274 是外部产品行为的人工验证，未通过时必须重新规划而非继续实现。
+- #274 已验证共享状态，但也证明主动 delivery 不可用；首版必须维持 owner-initiated pull
+  交互，直到另一个独立的 channel-capability gate 成功。
 
 ## 被取代的活动方向
 

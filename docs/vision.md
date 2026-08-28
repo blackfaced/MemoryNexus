@@ -30,8 +30,10 @@ records execution and the confirmed result. Reviews reconstruct only confirmed
 evidence and explicitly show gaps.
 
 MiniMax handles natural-language understanding. The owner can conveniently use
-WeChat for input; MiniMax App is the first planned independent-session reminder
-surface. SQLite, rather than Agent chat memory, is the continuity mechanism.
+WeChat for input and actively query an existing MiniMax conversation for a
+native scheduled task result. SQLite, rather than Agent chat memory, is the
+continuity mechanism. Proactive MiniMax App or WeChat reminder delivery is not
+available in the verified first path.
 
 ## Non-goals
 
@@ -46,11 +48,12 @@ surface. SQLite, rather than Agent chat memory, is the continuity mechanism.
 
 ## Evidence before expansion
 
-[#274](https://github.com/blackfaced/MemoryNexus/issues/274) must first prove
-that MiniMax can execute an owner-approved local command from a normal WeChat
-session, an independent native scheduled session can read the same shared state,
-and the result appears in the MiniMax App. Failure changes the design; it is not
-papered over with chat history.
+[#274](https://github.com/blackfaced/MemoryNexus/issues/274) has proved that
+MiniMax can execute an owner-approved local command from a normal WeChat session
+and that an independent native scheduled session can read the same shared state.
+The observed cron output lacks channel context, so the owner must actively
+query the existing conversation; MiniMax App and WeChat proactive delivery are
+not first-version capabilities.
 
 After implementation and clean installation, a fixed fourteen-day owner gate
 decides whether the legacy runtime can be deleted. It requires ten valid
