@@ -17,7 +17,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum StorageError {
     #[error("连接失败: {0}")]
-    Connection(#[from] aws_sdk_s3::Error),
+    Connection(#[source] Box<aws_sdk_s3::Error>),
 
     #[error("上传失败: {0}")]
     Upload(String),
@@ -36,6 +36,12 @@ pub enum StorageError {
 
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl From<aws_sdk_s3::Error> for StorageError {
+    fn from(error: aws_sdk_s3::Error) -> Self {
+        Self::Connection(Box::new(error))
+    }
 }
 
 impl Serialize for StorageError {
