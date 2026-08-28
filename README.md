@@ -10,9 +10,10 @@ or an Agent runtime.
 
 The current default direction is [ADR-027](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)
 and its parent [spec #273](https://github.com/blackfaced/MemoryNexus/issues/273).
-The implementation gate is [#274](https://github.com/blackfaced/MemoryNexus/issues/274): before
-the product path is implemented, a real MiniMax cross-session local-command
-tracer must prove shared local state works as assumed.
+[#274](https://github.com/blackfaced/MemoryNexus/issues/274) has passed: a real
+MiniMax cross-session tracer proved shared local state. It also established that
+cron output is owner-queryable only, not a reliable proactive WeChat or MiniMax
+App notification.
 
 ## The feedback kernel
 
@@ -44,10 +45,11 @@ yet satisfy this target contract.
 
 The owner can use an existing MiniMax Agent through WeChat for convenient input.
 MiniMax Skill turns natural-language intent into explicit local CLI use cases
-and asks for confirmation before every authoritative write. MiniMax native
-scheduled tasks will invoke `due` in an independent session and initially show
-the result in the MiniMax App; the SQLite ledger, not chat history, provides
-continuity. Proactive WeChat delivery is not a first-version requirement.
+and asks for confirmation before every authoritative write. A native scheduled
+task can invoke `due` in an independent session; the owner retrieves its
+result by querying the existing MiniMax conversation. The SQLite ledger, not
+chat history, provides continuity. Proactive WeChat or MiniMax App delivery is
+not a first-version capability.
 
 MemoryNexus does not diagnose, interpret medical documents, prescribe treatment,
 or make clinical claims. Ant Afu and other tools are external Recommendation

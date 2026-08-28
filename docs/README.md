@@ -23,5 +23,7 @@ setup, architecture, or roadmap instructions.
 
 ## Notes
 
-No current installation commands exist until #274 validates the MiniMax local
-command and shared-state assumptions. Do not use legacy docs as setup guidance.
+#274 has validated MiniMax local-command and shared-state assumptions, with an
+owner-initiated pull constraint for scheduled output. No current installation
+commands exist until the follow-on implementation tickets are complete. Do not
+use legacy docs as setup guidance.
