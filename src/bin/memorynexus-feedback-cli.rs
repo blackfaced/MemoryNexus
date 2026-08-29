@@ -18,6 +18,7 @@ use uuid::Uuid;
 const MAX_STATEMENT_LENGTH: usize = 500;
 const MAX_RETRACTION_REASON_LENGTH: usize = 240;
 const MAX_IDEMPOTENCY_KEY_LENGTH: usize = 128;
+const MAX_ACTION_LENGTH: usize = 300;
 
 #[tokio::main]
 async fn main() {
@@ -37,9 +38,11 @@ async fn run(args: Vec<String>) -> Result<Value, CliError> {
         "observe" => observe(&ledger_path, read_json_input()?).await,
         "observation-history" => observation_history(&ledger_path).await,
         "retract" => retract(&ledger_path, read_json_input()?).await,
-        _ => Err(CliError::usage(
-            "unknown command; use observe, observation-history, or retract",
-        )),
+        "add-recommendation" => add_recommendation(&ledger_path, read_json_input()?).await,
+        "start-experiment" => start_experiment(&ledger_path, read_json_input()?).await,
+        "end-experiment" => end_experiment(&ledger_path, read_json_input()?).await,
+        "review" => review(&ledger_path).await,
+        _ => Err(CliError::usage("unknown command")),
     }
 }
 
@@ -224,6 +227,141 @@ async fn retract(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
     Ok(json!({"status": "accepted", "retraction": retraction.into_response()}))
 }
 
+async fn add_recommendation(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
+    let input: RecommendationInput = serde_json::from_value(value).map_err(|_| {
+        CliError::invalid_input("recommendation input does not match the supported contract")
+    })?;
+    input.validate()?;
+    let request = serde_json::to_string(&input)
+        .map_err(|_| CliError::invalid_input("recommendation input could not be normalized"))?;
+    let pool = open_ledger(ledger_path, true).await?;
+    if let Some(row) =
+        sqlx::query("SELECT id, request_json FROM recommendations WHERE idempotency_key = ?")
+            .bind(&input.idempotency_key)
+            .fetch_optional(&pool)
+            .await
+            .map_err(CliError::storage)?
+    {
+        if row
+            .try_get::<String, _>("request_json")
+            .map_err(CliError::storage)?
+            == request
+        {
+            return Ok(
+                json!({"status":"idempotent_replay","recommendation_id":row.try_get::<String,_>("id").map_err(CliError::storage)?}),
+            );
+        }
+        return Err(CliError::conflict(
+            "idempotency_key was already used for another recommendation",
+        ));
+    }
+    for observation_id in &input.observation_ids {
+        if sqlx::query("SELECT 1 FROM observations WHERE id = ?")
+            .bind(observation_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(CliError::storage)?
+            .is_none()
+        {
+            return Err(CliError::not_found(
+                "observation_ids must identify confirmed Observations",
+            ));
+        }
+    }
+    let id = Uuid::new_v4().to_string();
+    let created_at = Utc::now().to_rfc3339();
+    sqlx::query("INSERT INTO recommendations (id, summary, source, created_at, idempotency_key, request_json) VALUES (?, ?, ?, ?, ?, ?)").bind(&id).bind(input.summary.trim()).bind(input.source.as_str()).bind(&created_at).bind(&input.idempotency_key).bind(&request).execute(&pool).await.map_err(CliError::storage)?;
+    for observation_id in &input.observation_ids {
+        sqlx::query("INSERT INTO recommendation_observations (recommendation_id, observation_id) VALUES (?, ?)").bind(&id).bind(observation_id).execute(&pool).await.map_err(CliError::storage)?;
+    }
+    Ok(
+        json!({"status":"accepted","recommendation":{"id":id,"summary":input.summary.trim(),"source":input.source,"created_at":created_at,"observation_ids":input.observation_ids}}),
+    )
+}
+
+async fn start_experiment(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
+    let input: StartExperimentInput = serde_json::from_value(value).map_err(|_| {
+        CliError::invalid_input("start-experiment input does not match the supported contract")
+    })?;
+    input.validate()?;
+    let request = serde_json::to_string(&input)
+        .map_err(|_| CliError::invalid_input("experiment input could not be normalized"))?;
+    let pool = open_ledger(ledger_path, true).await?;
+    if let Some(row) =
+        sqlx::query("SELECT id, request_json FROM experiments WHERE idempotency_key = ?")
+            .bind(&input.idempotency_key)
+            .fetch_optional(&pool)
+            .await
+            .map_err(CliError::storage)?
+    {
+        if row
+            .try_get::<String, _>("request_json")
+            .map_err(CliError::storage)?
+            == request
+        {
+            return Ok(
+                json!({"status":"idempotent_replay","experiment_id":row.try_get::<String,_>("id").map_err(CliError::storage)?}),
+            );
+        }
+        return Err(CliError::conflict(
+            "idempotency_key was already used for another experiment",
+        ));
+    }
+    if sqlx::query("SELECT 1 FROM recommendations WHERE id = ?")
+        .bind(&input.recommendation_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(CliError::storage)?
+        .is_none()
+    {
+        return Err(CliError::not_found(
+            "recommendation_id does not identify a Recommendation",
+        ));
+    }
+    if sqlx::query("SELECT 1 FROM experiments WHERE state = 'active'")
+        .fetch_optional(&pool)
+        .await
+        .map_err(CliError::storage)?
+        .is_some()
+    {
+        return Err(CliError::conflict("only one active Experiment is allowed"));
+    }
+    let id = Uuid::new_v4().to_string();
+    let started_at = Utc::now().to_rfc3339();
+    sqlx::query("INSERT INTO experiments (id, recommendation_id, action, starts_at, ends_at, expected_signal, state, created_at, idempotency_key, request_json) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)").bind(&id).bind(&input.recommendation_id).bind(input.action.trim()).bind(&input.starts_at).bind(&input.ends_at).bind(input.expected_signal.trim()).bind(&started_at).bind(&input.idempotency_key).bind(&request).execute(&pool).await.map_err(CliError::storage)?;
+    Ok(
+        json!({"status":"accepted","experiment":{"id":id,"recommendation_id":input.recommendation_id,"action":input.action.trim(),"starts_at":input.starts_at,"ends_at":input.ends_at,"expected_signal":input.expected_signal.trim(),"state":"active"}}),
+    )
+}
+
+async fn end_experiment(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
+    let input: EndExperimentInput = serde_json::from_value(value).map_err(|_| {
+        CliError::invalid_input("end-experiment input does not match the supported contract")
+    })?;
+    input.validate()?;
+    let pool = open_ledger(ledger_path, true).await?;
+    let result = sqlx::query(
+        "UPDATE experiments SET state = ?, ended_at = ? WHERE id = ? AND state = 'active'",
+    )
+    .bind(input.state.as_str())
+    .bind(Utc::now().to_rfc3339())
+    .bind(&input.experiment_id)
+    .execute(&pool)
+    .await
+    .map_err(CliError::storage)?;
+    if result.rows_affected() == 0 {
+        return Err(CliError::conflict("only an active Experiment can be ended"));
+    }
+    Ok(json!({"status":"accepted","experiment_id":input.experiment_id,"state":input.state}))
+}
+
+async fn review(ledger_path: &Path) -> Result<Value, CliError> {
+    let pool = open_ledger(ledger_path, false).await?;
+    let rows = sqlx::query("SELECT e.id, e.action, e.state, e.starts_at, e.ends_at, e.expected_signal, r.id AS recommendation_id, r.summary, r.source FROM experiments e JOIN recommendations r ON r.id = e.recommendation_id ORDER BY e.created_at ASC").fetch_all(&pool).await.map_err(CliError::storage)?;
+    let experiments = rows.into_iter().map(|r| json!({"id":r.get::<String,_>("id"),"action":r.get::<String,_>("action"),"state":r.get::<String,_>("state"),"starts_at":r.get::<String,_>("starts_at"),"ends_at":r.get::<String,_>("ends_at"),"expected_signal":r.get::<String,_>("expected_signal"),"recommendation":{"id":r.get::<String,_>("recommendation_id"),"summary":r.get::<String,_>("summary"),"source":r.get::<String,_>("source")}})).collect::<Vec<_>>();
+    Ok(json!({"status":"ok","experiments":experiments}))
+}
+
 async fn open_ledger(ledger_path: &Path, create_if_missing: bool) -> Result<SqlitePool, CliError> {
     if create_if_missing {
         if let Some(parent) = ledger_path
@@ -280,6 +418,10 @@ async fn initialize_schema(pool: &SqlitePool) -> Result<(), CliError> {
             idempotency_key TEXT NOT NULL UNIQUE,\
             request_json TEXT NOT NULL\
         )",
+        "CREATE TABLE IF NOT EXISTS recommendations (id TEXT PRIMARY KEY NOT NULL, summary TEXT NOT NULL, source TEXT NOT NULL CHECK (source IN ('owner','ant_afu','agent_candidate')), created_at TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE, request_json TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS recommendation_observations (recommendation_id TEXT NOT NULL REFERENCES recommendations(id), observation_id TEXT NOT NULL REFERENCES observations(id), PRIMARY KEY (recommendation_id, observation_id))",
+        "CREATE TABLE IF NOT EXISTS experiments (id TEXT PRIMARY KEY NOT NULL, recommendation_id TEXT NOT NULL REFERENCES recommendations(id), action TEXT NOT NULL, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, expected_signal TEXT NOT NULL, state TEXT NOT NULL CHECK (state IN ('active','completed','cancelled')), created_at TEXT NOT NULL, ended_at TEXT, idempotency_key TEXT NOT NULL UNIQUE, request_json TEXT NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS experiments_one_active ON experiments(state) WHERE state = 'active'",
     ] {
         sqlx::query(statement)
             .execute(pool)
@@ -560,6 +702,113 @@ impl ObservationKind {
 #[serde(rename_all = "snake_case")]
 enum ObservationSource {
     OwnerReport,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RecommendationSource {
+    Owner,
+    AntAfu,
+    AgentCandidate,
+}
+impl RecommendationSource {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Owner => "owner",
+            Self::AntAfu => "ant_afu",
+            Self::AgentCandidate => "agent_candidate",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RecommendationInput {
+    confirmation: Confirmation,
+    summary: String,
+    source: RecommendationSource,
+    #[serde(default)]
+    observation_ids: Vec<String>,
+    idempotency_key: String,
+}
+impl RecommendationInput {
+    fn validate(&self) -> Result<(), CliError> {
+        require_confirmed(self.confirmation)?;
+        validate_bounded("summary", &self.summary, MAX_STATEMENT_LENGTH)?;
+        validate_idempotency_key(&self.idempotency_key)?;
+        if self.observation_ids.iter().any(|id| !valid_id(id)) {
+            return Err(CliError::invalid_input(
+                "observation_ids must be non-empty identifiers",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StartExperimentInput {
+    confirmation: Confirmation,
+    recommendation_id: String,
+    action: String,
+    starts_at: String,
+    ends_at: String,
+    expected_signal: String,
+    idempotency_key: String,
+}
+impl StartExperimentInput {
+    fn validate(&self) -> Result<(), CliError> {
+        require_confirmed(self.confirmation)?;
+        if !valid_id(&self.recommendation_id) {
+            return Err(CliError::invalid_input(
+                "recommendation_id must be a non-empty identifier",
+            ));
+        }
+        validate_bounded("action", &self.action, MAX_ACTION_LENGTH)?;
+        validate_bounded("expected_signal", &self.expected_signal, MAX_ACTION_LENGTH)?;
+        let start = DateTime::parse_from_rfc3339(&self.starts_at)
+            .map_err(|_| CliError::invalid_input("starts_at must be RFC3339"))?;
+        let end = DateTime::parse_from_rfc3339(&self.ends_at)
+            .map_err(|_| CliError::invalid_input("ends_at must be RFC3339"))?;
+        if end <= start {
+            return Err(CliError::invalid_input("ends_at must be after starts_at"));
+        }
+        validate_idempotency_key(&self.idempotency_key)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EndExperimentInput {
+    confirmation: Confirmation,
+    experiment_id: String,
+    state: EndExperimentState,
+    idempotency_key: String,
+}
+impl EndExperimentInput {
+    fn validate(&self) -> Result<(), CliError> {
+        require_confirmed(self.confirmation)?;
+        if !valid_id(&self.experiment_id) {
+            return Err(CliError::invalid_input(
+                "experiment_id must be a non-empty identifier",
+            ));
+        }
+        validate_idempotency_key(&self.idempotency_key)
+    }
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum EndExperimentState {
+    Completed,
+    Cancelled,
+}
+impl EndExperimentState {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Cancelled => "cancelled",
+        }
+    }
 }
 
 impl ObservationSource {
