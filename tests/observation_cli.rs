@@ -181,3 +181,48 @@ fn retry_and_low_frequency_concurrency_do_not_duplicate_the_observation() {
     let history = cli(&ledger, "observation-history", None);
     assert_eq!(history["observations"].as_array().unwrap().len(), 2);
 }
+
+#[test]
+fn recommendation_and_experiment_keep_one_active_action_and_historical_review() {
+    let directory = TempDir::new().unwrap();
+    let ledger = directory.path().join("ledger.sqlite");
+    let recommendation = cli(
+        &ledger,
+        "add-recommendation",
+        Some(json!({
+            "confirmation":"confirmed", "summary":"连续七天把睡前屏幕时间缩短三十分钟", "source":"ant_afu", "idempotency_key":"recommendation-1"
+        })),
+    );
+    assert_eq!(recommendation["status"], "accepted");
+    let recommendation_id = recommendation["recommendation"]["id"].as_str().unwrap();
+    let experiment = json!({
+        "confirmation":"confirmed", "recommendation_id":recommendation_id, "action":"晚上十点后不看手机", "starts_at":"2026-08-29T22:00:00+08:00", "ends_at":"2026-09-05T22:00:00+08:00", "expected_signal":"入睡时间更稳定", "idempotency_key":"experiment-1"
+    });
+    let started = cli(&ledger, "start-experiment", Some(experiment));
+    assert_eq!(started["status"], "accepted");
+    let second = cli(
+        &ledger,
+        "start-experiment",
+        Some(json!({
+            "confirmation":"confirmed", "recommendation_id":recommendation_id, "action":"改为早起", "starts_at":"2026-08-30T08:00:00+08:00", "ends_at":"2026-09-06T08:00:00+08:00", "expected_signal":"精力更稳定", "idempotency_key":"experiment-2"
+        })),
+    );
+    assert_eq!(second["code"], "conflict");
+    let experiment_id = started["experiment"]["id"].as_str().unwrap();
+    assert_eq!(
+        cli(
+            &ledger,
+            "end-experiment",
+            Some(
+                json!({"confirmation":"confirmed","experiment_id":experiment_id,"state":"completed","idempotency_key":"end-1"})
+            )
+        )["status"],
+        "accepted"
+    );
+    let review = cli(&ledger, "review", None);
+    assert_eq!(review["experiments"][0]["state"], "completed");
+    assert_eq!(
+        review["experiments"][0]["recommendation"]["source"],
+        "ant_afu"
+    );
+}
