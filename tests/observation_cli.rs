@@ -226,3 +226,43 @@ fn recommendation_and_experiment_keep_one_active_action_and_historical_review() 
         "ant_afu"
     );
 }
+
+#[test]
+fn confirmed_outcomes_are_append_only_and_review_keeps_evidence_gaps_explicit() {
+    let directory = TempDir::new().unwrap();
+    let ledger = directory.path().join("ledger.sqlite");
+    let recommendation = cli(
+        &ledger,
+        "add-recommendation",
+        Some(
+            json!({"confirmation":"confirmed","summary":"睡前少看屏幕","source":"owner","idempotency_key":"rec-outcome"}),
+        ),
+    );
+    let experiment = cli(
+        &ledger,
+        "start-experiment",
+        Some(
+            json!({"confirmation":"confirmed","recommendation_id":recommendation["recommendation"]["id"],"action":"十点后不看手机","starts_at":"2026-08-29T22:00:00+08:00","ends_at":"2026-09-05T22:00:00+08:00","expected_signal":"入睡稳定","idempotency_key":"exp-outcome"}),
+        ),
+    );
+    let first = cli(
+        &ledger,
+        "record-outcome",
+        Some(
+            json!({"confirmation":"confirmed","experiment_id":experiment["experiment"]["id"],"occurred_at":"2026-08-30T08:00:00+08:00","execution_state":"skipped","evaluation":"unclear","note":"昨晚没有做到","idempotency_key":"outcome-1"}),
+        ),
+    );
+    assert_eq!(first["status"], "accepted");
+    let correction = cli(
+        &ledger,
+        "record-outcome",
+        Some(
+            json!({"confirmation":"confirmed","experiment_id":experiment["experiment"]["id"],"occurred_at":"2026-08-30T08:00:00+08:00","execution_state":"performed","evaluation":"improved","note":"实际做到了，入睡更快","supersedes_outcome_id":first["outcome"]["id"],"idempotency_key":"outcome-2"}),
+        ),
+    );
+    assert_eq!(correction["status"], "accepted");
+    let review = cli(&ledger, "review", None);
+    assert_eq!(review["outcomes"].as_array().unwrap().len(), 2);
+    assert_eq!(review["outcomes"][1]["execution_state"], "performed");
+    assert!(review["evidence_gaps"].as_array().unwrap().is_empty());
+}

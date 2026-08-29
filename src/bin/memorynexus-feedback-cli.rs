@@ -41,6 +41,7 @@ async fn run(args: Vec<String>) -> Result<Value, CliError> {
         "add-recommendation" => add_recommendation(&ledger_path, read_json_input()?).await,
         "start-experiment" => start_experiment(&ledger_path, read_json_input()?).await,
         "end-experiment" => end_experiment(&ledger_path, read_json_input()?).await,
+        "record-outcome" => record_outcome(&ledger_path, read_json_input()?).await,
         "review" => review(&ledger_path).await,
         _ => Err(CliError::usage("unknown command")),
     }
@@ -355,11 +356,85 @@ async fn end_experiment(ledger_path: &Path, value: Value) -> Result<Value, CliEr
     Ok(json!({"status":"accepted","experiment_id":input.experiment_id,"state":input.state}))
 }
 
+async fn record_outcome(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
+    let input: OutcomeInput = serde_json::from_value(value).map_err(|_| {
+        CliError::invalid_input("record-outcome input does not match the supported contract")
+    })?;
+    input.validate()?;
+    let request = serde_json::to_string(&input)
+        .map_err(|_| CliError::invalid_input("outcome input could not be normalized"))?;
+    let pool = open_ledger(ledger_path, true).await?;
+    if let Some(row) =
+        sqlx::query("SELECT id, request_json FROM outcomes WHERE idempotency_key = ?")
+            .bind(&input.idempotency_key)
+            .fetch_optional(&pool)
+            .await
+            .map_err(CliError::storage)?
+    {
+        if row
+            .try_get::<String, _>("request_json")
+            .map_err(CliError::storage)?
+            == request
+        {
+            return Ok(
+                json!({"status":"idempotent_replay","outcome_id":row.try_get::<String,_>("id").map_err(CliError::storage)?}),
+            );
+        }
+        return Err(CliError::conflict(
+            "idempotency_key was already used for another outcome",
+        ));
+    }
+    if sqlx::query("SELECT 1 FROM experiments WHERE id = ?")
+        .bind(&input.experiment_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(CliError::storage)?
+        .is_none()
+    {
+        return Err(CliError::not_found(
+            "experiment_id does not identify an Experiment",
+        ));
+    }
+    if let Some(previous) = &input.supersedes_outcome_id {
+        let prior = sqlx::query("SELECT experiment_id FROM outcomes WHERE id = ?")
+            .bind(previous)
+            .fetch_optional(&pool)
+            .await
+            .map_err(CliError::storage)?
+            .ok_or_else(|| {
+                CliError::not_found("supersedes_outcome_id does not identify an Outcome")
+            })?;
+        if prior.get::<String, _>("experiment_id") != input.experiment_id {
+            return Err(CliError::conflict(
+                "an Outcome correction must keep the same Experiment",
+            ));
+        }
+    }
+    let id = Uuid::new_v4().to_string();
+    let confirmed_at = Utc::now().to_rfc3339();
+    sqlx::query("INSERT INTO outcomes (id, experiment_id, occurred_at, execution_state, evaluation, note, supersedes_outcome_id, confirmed_at, idempotency_key, request_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(&id).bind(&input.experiment_id).bind(&input.occurred_at).bind(input.execution_state.as_str()).bind(input.evaluation.as_str()).bind(input.note.trim()).bind(&input.supersedes_outcome_id).bind(&confirmed_at).bind(&input.idempotency_key).bind(&request).execute(&pool).await.map_err(CliError::storage)?;
+    Ok(
+        json!({"status":"accepted","outcome":{"id":id,"experiment_id":input.experiment_id,"occurred_at":input.occurred_at,"execution_state":input.execution_state,"evaluation":input.evaluation,"note":input.note.trim(),"supersedes_outcome_id":input.supersedes_outcome_id,"confirmed_at":confirmed_at}}),
+    )
+}
+
 async fn review(ledger_path: &Path) -> Result<Value, CliError> {
     let pool = open_ledger(ledger_path, false).await?;
     let rows = sqlx::query("SELECT e.id, e.action, e.state, e.starts_at, e.ends_at, e.expected_signal, r.id AS recommendation_id, r.summary, r.source FROM experiments e JOIN recommendations r ON r.id = e.recommendation_id ORDER BY e.created_at ASC").fetch_all(&pool).await.map_err(CliError::storage)?;
     let experiments = rows.into_iter().map(|r| json!({"id":r.get::<String,_>("id"),"action":r.get::<String,_>("action"),"state":r.get::<String,_>("state"),"starts_at":r.get::<String,_>("starts_at"),"ends_at":r.get::<String,_>("ends_at"),"expected_signal":r.get::<String,_>("expected_signal"),"recommendation":{"id":r.get::<String,_>("recommendation_id"),"summary":r.get::<String,_>("summary"),"source":r.get::<String,_>("source")}})).collect::<Vec<_>>();
-    Ok(json!({"status":"ok","experiments":experiments}))
+    let outcomes = sqlx::query("SELECT id, experiment_id, occurred_at, execution_state, evaluation, note, supersedes_outcome_id FROM outcomes ORDER BY confirmed_at ASC")
+        .fetch_all(&pool).await.map_err(CliError::storage)?
+        .into_iter().map(|row| json!({"id":row.get::<String,_>("id"),"experiment_id":row.get::<String,_>("experiment_id"),"occurred_at":row.get::<String,_>("occurred_at"),"execution_state":row.get::<String,_>("execution_state"),"evaluation":row.get::<String,_>("evaluation"),"note":row.get::<String,_>("note"),"supersedes_outcome_id":row.get::<Option<String>,_>("supersedes_outcome_id")})).collect::<Vec<_>>();
+    let evidence_gaps = if experiments.is_empty() {
+        vec!["no_experiment"]
+    } else if outcomes.is_empty() {
+        vec!["no_confirmed_outcome"]
+    } else {
+        Vec::new()
+    };
+    Ok(
+        json!({"status":"ok","experiments":experiments,"outcomes":outcomes,"evidence_gaps":evidence_gaps}),
+    )
 }
 
 async fn open_ledger(ledger_path: &Path, create_if_missing: bool) -> Result<SqlitePool, CliError> {
@@ -422,6 +497,8 @@ async fn initialize_schema(pool: &SqlitePool) -> Result<(), CliError> {
         "CREATE TABLE IF NOT EXISTS recommendation_observations (recommendation_id TEXT NOT NULL REFERENCES recommendations(id), observation_id TEXT NOT NULL REFERENCES observations(id), PRIMARY KEY (recommendation_id, observation_id))",
         "CREATE TABLE IF NOT EXISTS experiments (id TEXT PRIMARY KEY NOT NULL, recommendation_id TEXT NOT NULL REFERENCES recommendations(id), action TEXT NOT NULL, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, expected_signal TEXT NOT NULL, state TEXT NOT NULL CHECK (state IN ('active','completed','cancelled')), created_at TEXT NOT NULL, ended_at TEXT, idempotency_key TEXT NOT NULL UNIQUE, request_json TEXT NOT NULL)",
         "CREATE UNIQUE INDEX IF NOT EXISTS experiments_one_active ON experiments(state) WHERE state = 'active'",
+        "CREATE TABLE IF NOT EXISTS outcomes (id TEXT PRIMARY KEY NOT NULL, experiment_id TEXT NOT NULL REFERENCES experiments(id), occurred_at TEXT NOT NULL, execution_state TEXT NOT NULL CHECK (execution_state IN ('performed','skipped','not_evaluable')), evaluation TEXT NOT NULL CHECK (evaluation IN ('improved','unchanged','worse','unclear')), note TEXT NOT NULL, supersedes_outcome_id TEXT REFERENCES outcomes(id), confirmed_at TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE, request_json TEXT NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS outcomes_one_successor ON outcomes(supersedes_outcome_id) WHERE supersedes_outcome_id IS NOT NULL",
     ] {
         sqlx::query(statement)
             .execute(pool)
@@ -801,6 +878,77 @@ impl EndExperimentInput {
 enum EndExperimentState {
     Completed,
     Cancelled,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct OutcomeInput {
+    confirmation: Confirmation,
+    experiment_id: String,
+    occurred_at: String,
+    execution_state: ExecutionState,
+    evaluation: Evaluation,
+    note: String,
+    #[serde(default)]
+    supersedes_outcome_id: Option<String>,
+    idempotency_key: String,
+}
+impl OutcomeInput {
+    fn validate(&self) -> Result<(), CliError> {
+        require_confirmed(self.confirmation)?;
+        if !valid_id(&self.experiment_id) {
+            return Err(CliError::invalid_input(
+                "experiment_id must be a non-empty identifier",
+            ));
+        }
+        if self
+            .supersedes_outcome_id
+            .as_deref()
+            .is_some_and(|id| !valid_id(id))
+        {
+            return Err(CliError::invalid_input(
+                "supersedes_outcome_id must be a non-empty identifier",
+            ));
+        }
+        DateTime::parse_from_rfc3339(&self.occurred_at)
+            .map_err(|_| CliError::invalid_input("occurred_at must be RFC3339"))?;
+        validate_bounded("note", &self.note, MAX_STATEMENT_LENGTH)?;
+        validate_idempotency_key(&self.idempotency_key)
+    }
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ExecutionState {
+    Performed,
+    Skipped,
+    NotEvaluable,
+}
+impl ExecutionState {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Performed => "performed",
+            Self::Skipped => "skipped",
+            Self::NotEvaluable => "not_evaluable",
+        }
+    }
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Evaluation {
+    Improved,
+    Unchanged,
+    Worse,
+    Unclear,
+}
+impl Evaluation {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Improved => "improved",
+            Self::Unchanged => "unchanged",
+            Self::Worse => "worse",
+            Self::Unclear => "unclear",
+        }
+    }
 }
 impl EndExperimentState {
     fn as_str(&self) -> &'static str {
