@@ -1,6 +1,6 @@
 //! Local, owner-confirmed Observation lifecycle CLI for the feedback kernel.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{
@@ -43,6 +43,7 @@ async fn run(args: Vec<String>) -> Result<Value, CliError> {
         "end-experiment" => end_experiment(&ledger_path, read_json_input()?).await,
         "record-outcome" => record_outcome(&ledger_path, read_json_input()?).await,
         "review" => review(&ledger_path).await,
+        "due" => due(&ledger_path, read_optional_json_input()?).await,
         _ => Err(CliError::usage("unknown command")),
     }
 }
@@ -75,6 +76,19 @@ fn read_json_input() -> Result<Value, CliError> {
 
     serde_json::from_str(&input)
         .map_err(|_| CliError::invalid_input("input must be one valid JSON object"))
+}
+
+fn read_optional_json_input() -> Result<Value, CliError> {
+    let mut input = String::new();
+    io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|_| CliError::invalid_input("could not read JSON input"))?;
+    if input.trim().is_empty() {
+        Ok(json!({}))
+    } else {
+        serde_json::from_str(&input)
+            .map_err(|_| CliError::invalid_input("input must be one valid JSON object"))
+    }
 }
 
 async fn observe(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
@@ -435,6 +449,58 @@ async fn review(ledger_path: &Path) -> Result<Value, CliError> {
     Ok(
         json!({"status":"ok","experiments":experiments,"outcomes":outcomes,"evidence_gaps":evidence_gaps}),
     )
+}
+
+async fn due(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
+    let input: DueInput = serde_json::from_value(value)
+        .map_err(|_| CliError::invalid_input("due input does not match the supported contract"))?;
+    let now = input.now()?;
+    let pool = open_ledger(ledger_path, false).await?;
+    let today = now.date_naive().to_string();
+    let timezone = now.format("%:z").to_string();
+    let observed_today =
+        sqlx::query("SELECT 1 FROM observations WHERE date(occurred_at, ?) = ? LIMIT 1")
+            .bind(&timezone)
+            .bind(&today)
+            .fetch_optional(&pool)
+            .await
+            .map_err(CliError::storage)?
+            .is_some();
+    let active = sqlx::query("SELECT id, action FROM experiments WHERE state = 'active' LIMIT 1")
+        .fetch_optional(&pool)
+        .await
+        .map_err(CliError::storage)?;
+    if let Some(experiment) = active {
+        let id: String = experiment.get("id");
+        let updated_today = sqlx::query(
+            "SELECT 1 FROM outcomes WHERE experiment_id = ? AND date(occurred_at, ?) = ? LIMIT 1",
+        )
+        .bind(&id)
+        .bind(&timezone)
+        .bind(&today)
+        .fetch_optional(&pool)
+        .await
+        .map_err(CliError::storage)?
+        .is_some();
+        if !updated_today {
+            return Ok(
+                json!({"status":"active_experiment_follow_up","question":format!("今天是否做了：{}？", experiment.get::<String,_>("action")),"experiment_id":id,"read_only":true}),
+            );
+        }
+    }
+    if !observed_today {
+        return Ok(
+            json!({"status":"daily_observation_check_in","question":"今天有什么想记录的感受或事实？","read_only":true}),
+        );
+    }
+    let unreviewed = sqlx::query("SELECT 1 FROM experiments e WHERE e.state IN ('completed','cancelled') AND NOT EXISTS (SELECT 1 FROM outcomes o WHERE o.experiment_id = e.id) LIMIT 1")
+        .fetch_optional(&pool).await.map_err(CliError::storage)?.is_some();
+    if unreviewed {
+        return Ok(
+            json!({"status":"review_due","question":"要不要复盘一下已经结束的调整？","read_only":true}),
+        );
+    }
+    Ok(json!({"status":"no_check_in_due","question":null,"read_only":true}))
 }
 
 async fn open_ledger(ledger_path: &Path, create_if_missing: bool) -> Result<SqlitePool, CliError> {
@@ -892,6 +958,23 @@ struct OutcomeInput {
     #[serde(default)]
     supersedes_outcome_id: Option<String>,
     idempotency_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DueInput {
+    #[serde(default)]
+    now: Option<String>,
+}
+
+impl DueInput {
+    fn now(&self) -> Result<DateTime<FixedOffset>, CliError> {
+        match &self.now {
+            Some(value) => DateTime::parse_from_rfc3339(value)
+                .map_err(|_| CliError::invalid_input("now must be an RFC3339 timestamp")),
+            None => Ok(Utc::now().fixed_offset()),
+        }
+    }
 }
 impl OutcomeInput {
     fn validate(&self) -> Result<(), CliError> {
