@@ -266,3 +266,93 @@ fn confirmed_outcomes_are_append_only_and_review_keeps_evidence_gaps_explicit() 
     assert_eq!(review["outcomes"][1]["execution_state"], "performed");
     assert!(review["evidence_gaps"].as_array().unwrap().is_empty());
 }
+
+#[test]
+fn due_is_clock_controlled_read_only_and_follows_active_experiment() {
+    let directory = TempDir::new().unwrap();
+    let ledger = directory.path().join("ledger.sqlite");
+    let now = json!({"now":"2026-08-30T08:00:00+08:00"});
+    let first = cli(
+        &ledger,
+        "observe",
+        Some(initial("今天状态平稳", "due-observation")),
+    );
+    assert_eq!(first["status"], "accepted");
+    let daily = cli(&ledger, "due", Some(now.clone()));
+    assert_eq!(daily["status"], "daily_observation_check_in");
+    let history_before = cli(&ledger, "observation-history", None);
+    let history_after = cli(&ledger, "due", Some(now.clone()));
+    assert_eq!(history_after["read_only"], true);
+    assert_eq!(cli(&ledger, "observation-history", None), history_before);
+    let recommendation = cli(
+        &ledger,
+        "add-recommendation",
+        Some(
+            json!({"confirmation":"confirmed","summary":"睡前少看屏幕","source":"owner","idempotency_key":"due-rec"}),
+        ),
+    );
+    let experiment = cli(
+        &ledger,
+        "start-experiment",
+        Some(
+            json!({"confirmation":"confirmed","recommendation_id":recommendation["recommendation"]["id"],"action":"十点后不看手机","starts_at":"2026-08-29T22:00:00+08:00","ends_at":"2026-09-05T22:00:00+08:00","expected_signal":"入睡稳定","idempotency_key":"due-exp"}),
+        ),
+    );
+    let follow_up = cli(&ledger, "due", Some(now));
+    assert_eq!(follow_up["status"], "active_experiment_follow_up");
+    assert_eq!(follow_up["experiment_id"], experiment["experiment"]["id"]);
+}
+
+#[test]
+fn due_distinguishes_no_check_in_and_completed_experiment_review() {
+    let directory = TempDir::new().unwrap();
+    let ledger = directory.path().join("ledger.sqlite");
+    let now = json!({"now":"2026-08-30T08:00:00+08:00"});
+
+    let observed_today = cli(
+        &ledger,
+        "observe",
+        Some(json!({
+            "confirmation": "confirmed",
+            "kind": "initial",
+            "statement": "今天状态平稳",
+            "occurred_at": "2026-08-30T07:00:00+08:00",
+            "source": "owner_report",
+            "idempotency_key": "due-today-observation"
+        })),
+    );
+    assert_eq!(observed_today["status"], "accepted");
+    assert_eq!(
+        cli(&ledger, "due", Some(now.clone()))["status"],
+        "no_check_in_due"
+    );
+
+    let recommendation = cli(
+        &ledger,
+        "add-recommendation",
+        Some(json!({
+            "confirmation":"confirmed", "summary":"睡前少看屏幕", "source":"owner", "idempotency_key":"due-review-rec"
+        })),
+    );
+    let experiment = cli(
+        &ledger,
+        "start-experiment",
+        Some(json!({
+            "confirmation":"confirmed", "recommendation_id":recommendation["recommendation"]["id"], "action":"十点后不看手机", "starts_at":"2026-08-29T22:00:00+08:00", "ends_at":"2026-08-30T07:00:00+08:00", "expected_signal":"入睡稳定", "idempotency_key":"due-review-exp"
+        })),
+    );
+    assert_eq!(
+        cli(
+            &ledger,
+            "end-experiment",
+            Some(
+                json!({"confirmation":"confirmed","experiment_id":experiment["experiment"]["id"],"state":"completed","idempotency_key":"due-review-end"})
+            )
+        )["status"],
+        "accepted"
+    );
+
+    let review_due = cli(&ledger, "due", Some(now));
+    assert_eq!(review_due["status"], "review_due");
+    assert_eq!(review_due["read_only"], true);
+}
