@@ -356,3 +356,47 @@ fn due_distinguishes_no_check_in_and_completed_experiment_review() {
     assert_eq!(review_due["status"], "review_due");
     assert_eq!(review_due["read_only"], true);
 }
+
+#[test]
+fn export_backup_and_restore_preserve_public_ledger_state() {
+    let directory = TempDir::new().unwrap();
+    let ledger = directory.path().join("ledger.sqlite");
+    let accepted = cli(
+        &ledger,
+        "observe",
+        Some(initial("午后精力稳定", "recovery-1")),
+    );
+    assert_eq!(accepted["status"], "accepted");
+    let retracted = cli(
+        &ledger,
+        "retract",
+        Some(json!({
+            "confirmation":"confirmed", "observation_id":accepted["observation"]["id"],
+            "reason":"测试导出撤回审计", "idempotency_key":"recovery-retract"
+        })),
+    );
+    assert_eq!(retracted["status"], "accepted");
+    let exported = cli(&ledger, "export", None);
+    assert_eq!(exported["format"], "memorynexus-feedback-ledger");
+    assert_eq!(exported["version"], 1);
+    assert_eq!(exported["observations"][0]["statement"], "午后精力稳定");
+    assert_eq!(
+        exported["observation_retractions"][0]["observation_id"],
+        accepted["observation"]["id"]
+    );
+    assert!(exported["observations"][0].get("request_json").is_none());
+    let backup = directory.path().join("backup.sqlite");
+    assert_eq!(
+        cli(&ledger, "backup", Some(json!({"path":backup})))["status"],
+        "ok"
+    );
+    let restored = directory.path().join("restored.sqlite");
+    assert_eq!(
+        cli(&restored, "restore", Some(json!({"path":backup})))["status"],
+        "ok"
+    );
+    assert_eq!(
+        cli(&restored, "observation-history", None),
+        cli(&ledger, "observation-history", None)
+    );
+}
