@@ -44,6 +44,9 @@ async fn run(args: Vec<String>) -> Result<Value, CliError> {
         "record-outcome" => record_outcome(&ledger_path, read_json_input()?).await,
         "review" => review(&ledger_path).await,
         "due" => due(&ledger_path, read_optional_json_input()?).await,
+        "export" => export_ledger(&ledger_path).await,
+        "backup" => backup_ledger(&ledger_path, read_json_input()?).await,
+        "restore" => restore_ledger(&ledger_path, read_json_input()?).await,
         _ => Err(CliError::usage("unknown command")),
     }
 }
@@ -503,6 +506,70 @@ async fn due(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
     Ok(json!({"status":"no_check_in_due","question":null,"read_only":true}))
 }
 
+async fn export_ledger(ledger_path: &Path) -> Result<Value, CliError> {
+    let pool = open_ledger(ledger_path, false).await?;
+    let observations = sqlx::query("SELECT id, statement, occurred_at, source, confirmed_at, kind, supersedes_observation_id FROM observations ORDER BY confirmed_at, id").fetch_all(&pool).await.map_err(CliError::storage)?;
+    let observation_retractions = sqlx::query(
+        "SELECT id, observation_id, reason, confirmed_at FROM observation_retractions ORDER BY confirmed_at, id",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(CliError::storage)?;
+    let recommendations = sqlx::query(
+        "SELECT id, summary, source, created_at FROM recommendations ORDER BY created_at, id",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(CliError::storage)?;
+    let recommendation_observations = sqlx::query("SELECT recommendation_id, observation_id FROM recommendation_observations ORDER BY recommendation_id, observation_id").fetch_all(&pool).await.map_err(CliError::storage)?;
+    let experiments = sqlx::query("SELECT id, recommendation_id, action, starts_at, ends_at, expected_signal, state, created_at, ended_at FROM experiments ORDER BY created_at, id").fetch_all(&pool).await.map_err(CliError::storage)?;
+    let outcomes = sqlx::query("SELECT id, experiment_id, occurred_at, execution_state, evaluation, note, supersedes_outcome_id, confirmed_at FROM outcomes ORDER BY confirmed_at, id").fetch_all(&pool).await.map_err(CliError::storage)?;
+    Ok(
+        json!({"format":"memorynexus-feedback-ledger","version":1,"observations":observations.into_iter().map(|r| json!({"id":r.get::<String,_>("id"),"statement":r.get::<String,_>("statement"),"occurred_at":r.get::<String,_>("occurred_at"),"source":r.get::<String,_>("source"),"confirmed_at":r.get::<String,_>("confirmed_at"),"kind":r.get::<String,_>("kind"),"supersedes_observation_id":r.get::<Option<String>,_>("supersedes_observation_id")})).collect::<Vec<_>>(),"observation_retractions":observation_retractions.into_iter().map(|r| json!({"id":r.get::<String,_>("id"),"observation_id":r.get::<String,_>("observation_id"),"reason":r.get::<String,_>("reason"),"confirmed_at":r.get::<String,_>("confirmed_at")})).collect::<Vec<_>>(),"recommendations":recommendations.into_iter().map(|r| json!({"id":r.get::<String,_>("id"),"summary":r.get::<String,_>("summary"),"source":r.get::<String,_>("source"),"created_at":r.get::<String,_>("created_at")})).collect::<Vec<_>>(),"recommendation_observations":recommendation_observations.into_iter().map(|r| json!({"recommendation_id":r.get::<String,_>("recommendation_id"),"observation_id":r.get::<String,_>("observation_id")})).collect::<Vec<_>>(),"experiments":experiments.into_iter().map(|r| json!({"id":r.get::<String,_>("id"),"recommendation_id":r.get::<String,_>("recommendation_id"),"action":r.get::<String,_>("action"),"starts_at":r.get::<String,_>("starts_at"),"ends_at":r.get::<String,_>("ends_at"),"expected_signal":r.get::<String,_>("expected_signal"),"state":r.get::<String,_>("state"),"created_at":r.get::<String,_>("created_at"),"ended_at":r.get::<Option<String>,_>("ended_at")})).collect::<Vec<_>>(),"outcomes":outcomes.into_iter().map(|r| json!({"id":r.get::<String,_>("id"),"experiment_id":r.get::<String,_>("experiment_id"),"occurred_at":r.get::<String,_>("occurred_at"),"execution_state":r.get::<String,_>("execution_state"),"evaluation":r.get::<String,_>("evaluation"),"note":r.get::<String,_>("note"),"supersedes_outcome_id":r.get::<Option<String>,_>("supersedes_outcome_id"),"confirmed_at":r.get::<String,_>("confirmed_at")})).collect::<Vec<_>>() }),
+    )
+}
+
+async fn backup_ledger(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
+    let input: LedgerPathInput = serde_json::from_value(value)
+        .map_err(|_| CliError::invalid_input("backup input requires destination"))?;
+    let destination = PathBuf::from(&input.path);
+    if destination.exists() {
+        return Err(CliError::conflict("backup destination already exists"));
+    }
+    if let Some(parent) = destination.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .map_err(|_| CliError::storage("could not create backup directory"))?;
+    }
+    let pool = open_ledger(ledger_path, false).await?;
+    sqlx::query("VACUUM INTO ?")
+        .bind(&input.path)
+        .execute(&pool)
+        .await
+        .map_err(CliError::storage)?;
+    Ok(json!({"status":"ok","backup_path":input.path}))
+}
+
+async fn restore_ledger(ledger_path: &Path, value: Value) -> Result<Value, CliError> {
+    let input: LedgerPathInput = serde_json::from_value(value)
+        .map_err(|_| CliError::invalid_input("restore input requires source"))?;
+    let source = PathBuf::from(&input.path);
+    if !source.is_file() {
+        return Err(CliError::not_found("backup source does not exist"));
+    }
+    if ledger_path.exists() {
+        return Err(CliError::conflict(
+            "restore requires a new, empty ledger path",
+        ));
+    }
+    if let Some(parent) = ledger_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .map_err(|_| CliError::storage("could not create ledger directory"))?;
+    }
+    fs::copy(source, ledger_path).map_err(|_| CliError::storage("could not restore backup"))?;
+    let review = review(ledger_path).await?;
+    Ok(json!({"status":"ok","review":review}))
+}
+
 async fn open_ledger(ledger_path: &Path, create_if_missing: bool) -> Result<SqlitePool, CliError> {
     if create_if_missing {
         if let Some(parent) = ledger_path
@@ -760,6 +827,12 @@ struct RetractInput {
     observation_id: String,
     reason: String,
     idempotency_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LedgerPathInput {
+    path: String,
 }
 
 impl RetractInput {
