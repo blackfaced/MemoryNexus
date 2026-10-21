@@ -11,6 +11,8 @@ use std::{
 };
 use uuid::Uuid;
 
+mod lifecycle;
+
 const APPLICATION_ID: i64 = 0x4d4e5453;
 const SCHEMA_VERSION: i64 = 1;
 const LEDGER_ENV: &str = "MEMORYNEXUS_TASK_LEDGER";
@@ -19,7 +21,7 @@ const MAX_INPUT: u64 = 32 * 1024;
 pub async fn run(args: &[String]) -> Result<Value, Error> {
     if args == ["--help"] {
         return Ok(
-            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","commands":["init","record","context"]}}),
+            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","commands":["init","record","context","review","correct","retract"]}}),
         );
     }
     let [flag, path, action] = args else {
@@ -32,6 +34,9 @@ pub async fn run(args: &[String]) -> Result<Value, Error> {
         "init" => init(Path::new(path), read_input(false)?).await,
         "record" => record(Path::new(path), read_input(false)?).await,
         "context" => context(Path::new(path), read_input(true)?).await,
+        "review" => lifecycle::review(Path::new(path), read_input(false)?).await,
+        "correct" => lifecycle::correct(Path::new(path), read_input(false)?).await,
+        "retract" => lifecycle::retract(Path::new(path), read_input(false)?).await,
         _ => Err(Error::invalid()),
     }
 }
@@ -282,6 +287,9 @@ async fn initialize_ledger(path: &Path) -> Result<(), Error> {
         "CREATE TABLE tasks (id TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, execution_capture INTEGER NOT NULL, review_capture INTEGER NOT NULL, revision INTEGER NOT NULL)",
         "CREATE TABLE task_records (commit_sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, task_id TEXT NOT NULL REFERENCES tasks(id), kind TEXT NOT NULL, trust TEXT NOT NULL, text TEXT NOT NULL, occurred_at TEXT NOT NULL, run_id TEXT NOT NULL, client TEXT NOT NULL, evidence_refs TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL)",
         "CREATE INDEX task_records_scope ON task_records(task_id, state, commit_sequence)",
+        "CREATE TABLE task_record_sources (record_id TEXT NOT NULL REFERENCES task_records(id), source_id TEXT NOT NULL REFERENCES task_records(id), position INTEGER NOT NULL, PRIMARY KEY(record_id, source_id), UNIQUE(record_id, position))",
+        "CREATE INDEX task_record_sources_source ON task_record_sources(source_id)",
+        "CREATE TABLE task_record_revisions (record_id TEXT PRIMARY KEY NOT NULL REFERENCES task_records(id), supersedes_id TEXT NOT NULL UNIQUE REFERENCES task_records(id))",
         "CREATE TABLE task_receipts (task_id TEXT NOT NULL REFERENCES tasks(id), idempotency_key TEXT NOT NULL, action TEXT NOT NULL, digest TEXT NOT NULL, record_id TEXT NOT NULL REFERENCES task_records(id), revision INTEGER NOT NULL, PRIMARY KEY(task_id,idempotency_key))",
         "CREATE TABLE task_init_receipts (idempotency_key TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES tasks(id), revision INTEGER NOT NULL)",
     ] { sqlx::query(statement).execute(&mut *tx).await.map_err(Error::storage)?; }
@@ -434,37 +442,41 @@ impl RecordInput {
         bounded(&self.text, 1000)?;
         canonical_uuid(&self.run_id)?;
         chrono::DateTime::parse_from_rfc3339(&self.occurred_at).map_err(|_| Error::invalid())?;
-        if self.evidence_refs.len() > 5 {
+        validate_evidence_refs(&self.evidence_refs)
+    }
+}
+
+fn validate_evidence_refs(refs: &[EvidenceRef]) -> Result<(), Error> {
+    if refs.len() > 5 {
+        return Err(Error::invalid());
+    }
+    for reference in refs {
+        let uri_scheme = reference.path.split_once(':').is_some_and(|(prefix, _)| {
+            prefix.starts_with(|character: char| character.is_ascii_alphabetic())
+                && prefix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"+.-".contains(&byte))
+        });
+        if reference.path.trim().is_empty()
+            || Path::new(&reference.path).is_absolute()
+            || reference.path.starts_with('\\')
+            || uri_scheme
+            || reference.path.contains('\0')
+            || reference.path.split(['/', '\\']).any(|part| part == "..")
+        {
             return Err(Error::invalid());
         }
-        for reference in &self.evidence_refs {
-            let uri_scheme = reference.path.split_once(':').is_some_and(|(prefix, _)| {
-                prefix.starts_with(|character: char| character.is_ascii_alphabetic())
-                    && prefix
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || b"+.-".contains(&byte))
-            });
-            if reference.path.trim().is_empty()
-                || Path::new(&reference.path).is_absolute()
-                || reference.path.starts_with('\\')
-                || uri_scheme
-                || reference.path.contains('\0')
-                || reference.path.split(['/', '\\']).any(|part| part == "..")
+        if let Some(hash) = &reference.sha256 {
+            if hash.len() != 64
+                || !hash
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
             {
                 return Err(Error::invalid());
             }
-            if let Some(hash) = &reference.sha256 {
-                if hash.len() != 64
-                    || !hash
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-                {
-                    return Err(Error::invalid());
-                }
-            }
         }
-        Ok(())
     }
+    Ok(())
 }
 
 async fn registered_task(
@@ -521,7 +533,17 @@ async fn record(path: &Path, input: RecordInput) -> Result<Value, Error> {
     let id = Uuid::new_v4().to_string();
     let revision = task.get::<i64, _>("revision") + 1;
     if input.kind == RecordKind::Checkpoint {
-        sqlx::query("UPDATE task_records SET state='historical' WHERE task_id=? AND kind='checkpoint' AND state='current'").bind(&config.task_id).execute(&mut *tx).await.map_err(Error::storage)?;
+        let previous: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM task_records WHERE task_id=? AND kind='checkpoint' AND state='current'",
+        )
+        .bind(&config.task_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(Error::storage)?;
+        for id in previous {
+            lifecycle::invalidate_dependents(&mut tx, &config.task_id, &id, revision).await?;
+        }
+        sqlx::query("UPDATE task_records SET state='historical', revision=? WHERE task_id=? AND kind='checkpoint' AND state='current'").bind(revision).bind(&config.task_id).execute(&mut *tx).await.map_err(Error::storage)?;
     }
     sqlx::query("INSERT INTO task_records (id,task_id,kind,trust,text,occurred_at,run_id,client,evidence_refs,state,revision) VALUES (?,?,?,?,?,?,?,?,?,'current',?)")
         .bind(&id).bind(&config.task_id).bind(input.kind.as_str()).bind(trust).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(serde_json::to_string(&input.evidence_refs).map_err(Error::storage)?).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
@@ -615,6 +637,8 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
         fn priority(row: &sqlx::sqlite::SqliteRow) -> u8 {
             match row.get::<String, _>("kind").as_str() {
                 "instruction" => 0,
+                "lesson" if row.get::<String, _>("trust") == "owner_confirmed" => 0,
+                "lesson" => 3,
                 "checkpoint" => 1,
                 _ => 2,
             }
@@ -630,20 +654,56 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     let display_name: String = task.get("display_name");
     let mut characters = display_name.chars().count();
     let count = rows.len();
+    let candidate_count = rows
+        .iter()
+        .filter(|row| {
+            row.get::<String, _>("trust") == "review_candidate"
+                && row.get::<String, _>("state") == "current"
+        })
+        .count();
     let mut entries = Vec::new();
+    let mut candidates = Vec::new();
     for row in rows {
-        let text: String = row.get("text");
-        if entries.len() == input.limit || characters + text.chars().count() > 12000 {
+        let state: String = row.get("state");
+        let visible = state != "retracted" && state != "stale";
+        let text: String = if visible {
+            row.get("text")
+        } else {
+            String::new()
+        };
+        if entries.len() + candidates.len() == input.limit
+            || characters + text.chars().count() > 12000
+        {
             continue;
         }
         characters += text.chars().count();
         let refs: Value =
             serde_json::from_str(&row.get::<String, _>("evidence_refs")).map_err(Error::storage)?;
-        entries.push(json!({"id":row.get::<String,_>("id"),"kind":row.get::<String,_>("kind"),"trust":row.get::<String,_>("trust"),"text":text,"occurred_at":row.get::<String,_>("occurred_at"),"run_id":row.get::<String,_>("run_id"),"client":row.get::<String,_>("client"),"evidence_refs":refs,"state":row.get::<String,_>("state"),"revision":row.get::<i64,_>("revision"),"source_ids":[]}));
+        let id: String = row.get("id");
+        let sources = lifecycle::source_ids(&mut tx, &id).await?;
+        let supersedes: Option<String> =
+            sqlx::query_scalar("SELECT supersedes_id FROM task_record_revisions WHERE record_id=?")
+                .bind(&id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(Error::storage)?;
+        let mut entry = json!({"id":id,"kind":row.get::<String,_>("kind"),"trust":row.get::<String,_>("trust"),"occurred_at":row.get::<String,_>("occurred_at"),"run_id":row.get::<String,_>("run_id"),"client":row.get::<String,_>("client"),"state":state,"revision":row.get::<i64,_>("revision"),"source_ids":sources});
+        if visible {
+            entry["text"] = json!(text);
+            entry["evidence_refs"] = refs;
+        }
+        if let Some(supersedes) = supersedes {
+            entry["supersedes_id"] = json!(supersedes);
+        }
+        if row.get::<String, _>("trust") == "review_candidate" {
+            candidates.push(entry);
+        } else {
+            entries.push(entry);
+        }
     }
-    let omitted = count - entries.len();
+    let omitted = count - entries.len() - candidates.len();
     Ok(
-        json!({"schema_version":1,"status":"ok","task_id":config.task_id,"revision":task.get::<i64,_>("revision"),"result":{"display_name":display_name,"entries":entries,"candidates":[],"candidate_count":0,"omitted_count":omitted,"truncated":omitted>0}}),
+        json!({"schema_version":1,"status":"ok","task_id":config.task_id,"revision":task.get::<i64,_>("revision"),"result":{"display_name":display_name,"entries":entries,"candidates":candidates,"candidate_count":candidate_count,"omitted_count":omitted,"truncated":omitted>0}}),
     )
 }
 

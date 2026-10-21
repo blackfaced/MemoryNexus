@@ -97,6 +97,9 @@ capture. No flag may label an automatically reported execution as owner-confirme
 automatic checkpoint/execution → `execution_reported`, review → `review_candidate`.
 An owner may use `correct` to endorse or rewrite a candidate after inspecting its
 exact text and sources; no separate model-selected promotion is allowed.
+Only lesson revisions carry nonempty `source_ids`; base-record corrections reject
+nonempty sources. Omitted lesson sources are retained and must still be current;
+stale lessons require a fresh review rather than correction.
 
 `evidence_refs` has at most five `{ "path": "relative/text-artifact", "sha256":
 "<64 lowercase hex>" }` values; sha256 is optional. Validate relative nonempty

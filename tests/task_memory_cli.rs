@@ -52,7 +52,7 @@ fn help_identifies_available_task_commands_without_a_ledger() {
     assert_eq!(response["result"]["command"], "task");
     assert_eq!(
         response["result"]["commands"],
-        json!(["init", "record", "context"])
+        json!(["init", "record", "context", "review", "correct", "retract"])
     );
 }
 
@@ -86,6 +86,803 @@ fn initialization_reuses_confirmed_identity_and_survives_directory_moves() {
 
 fn record_input(key: &str, kind: &str, text: &str) -> Value {
     json!({"idempotency_key":key,"run_id":"ab11b084-e0c6-4d9e-a2d2-815f004a1d99","client":"minimax","kind":kind,"text":text,"occurred_at":"2026-10-21T10:00:00+08:00"})
+}
+
+fn review_input(key: &str, sources: Value, text: &str) -> Value {
+    json!({"idempotency_key":key,"run_id":"ab11b084-e0c6-4d9e-a2d2-815f004a1d99","client":"minimax","text":text,"source_ids":sources,"occurred_at":"2026-10-21T10:00:00+08:00"})
+}
+
+#[test]
+fn sourced_review_is_a_separate_candidate_even_when_retention_is_confirmed() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    let source = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("source", "execution", "拍摄前检查电量"),
+    );
+    let mut request = review_input(
+        "review",
+        json!([source["result"]["record_id"]]),
+        "下次拍摄前确认电量",
+    );
+    request["confirmation"] = json!("confirmed");
+    let review = task(&config, &ledger, "review", request.clone());
+    assert_eq!(review["status"], "accepted", "{review}");
+    let replay = task(&config, &ledger, "review", request.clone());
+    assert_eq!(replay["status"], "replayed");
+    assert_eq!(replay["result"]["record_id"], review["result"]["record_id"]);
+    let context = task(&config, &ledger, "context", json!({}));
+    assert_eq!(context["revision"], review["revision"]);
+    assert_eq!(context["result"]["entries"].as_array().unwrap().len(), 1);
+    let candidates = context["result"]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(context["result"]["candidate_count"], 1);
+    assert_eq!(candidates[0]["kind"], "lesson");
+    assert_eq!(candidates[0]["trust"], "review_candidate");
+    assert_eq!(candidates[0]["text"], request["text"]);
+    assert_eq!(candidates[0]["source_ids"], request["source_ids"]);
+    assert_eq!(candidates[0]["id"], review["result"]["record_id"]);
+    assert_eq!(task(&config, &ledger, "context", json!({})), context);
+}
+
+fn correct_input(key: &str, target: &Value, text: &str) -> Value {
+    json!({"idempotency_key":key,"run_id":"ab11b084-e0c6-4d9e-a2d2-815f004a1d99","client":"codex","target_id":target,"text":text,"occurred_at":"2026-10-21T10:30:00+08:00","confirmation":"confirmed"})
+}
+
+#[test]
+fn owner_correction_replaces_source_and_invalidates_candidates_in_fresh_context() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    let source_request = record_input("source", "execution", "拍摄完成");
+    let source = task(&config, &ledger, "record", source_request.clone());
+    let source_id = &source["result"]["record_id"];
+    let review_request = review_input("review", json!([source_id]), "现在可以剪辑");
+    let review = task(&config, &ledger, "review", review_request.clone());
+    let review_id = &review["result"]["record_id"];
+    let request = correct_input("correct", source_id, "仅拍摄完成第一段");
+    let corrected = task(&config, &ledger, "correct", request.clone());
+    assert_eq!(corrected["status"], "accepted", "{corrected}");
+    assert_ne!(corrected["result"]["record_id"], *source_id);
+    let context = task(&config, &ledger, "context", json!({}));
+    assert_eq!(context["revision"], corrected["revision"]);
+    assert_eq!(context["result"]["candidates"], json!([]));
+    let entries = context["result"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["text"], request["text"]);
+    assert_eq!(entries[0]["kind"], "execution");
+    assert_eq!(entries[0]["trust"], "owner_confirmed");
+    assert_eq!(entries[0]["supersedes_id"], *source_id);
+    let old = task(
+        &config,
+        &ledger,
+        "context",
+        json!({"record_ids":[source_id, review_id]}),
+    );
+    assert_eq!(old["result"]["entries"][0]["state"], "superseded");
+    assert_eq!(old["result"]["candidates"][0]["state"], "stale");
+    assert!(old["result"]["candidates"][0].get("text").is_none());
+    let replay = task(&config, &ledger, "correct", request);
+    assert_eq!(replay["status"], "replayed");
+    assert_eq!(
+        replay["result"]["record_id"],
+        corrected["result"]["record_id"]
+    );
+    let review_replay = task(&config, &ledger, "review", review_request);
+    assert_eq!(review_replay["status"], "replayed");
+    assert_eq!(review_replay["result"]["state"], "stale");
+    assert!(review_replay["result"].get("text").is_none());
+    let competing = task(
+        &config,
+        &ledger,
+        "correct",
+        correct_input("competing", source_id, "全部拍完"),
+    );
+    assert_eq!(competing["code"], "conflict");
+    assert_eq!(task(&config, &ledger, "context", json!({})), context);
+    let fresh = task(
+        &config,
+        &ledger,
+        "review",
+        review_input(
+            "fresh",
+            json!([corrected["result"]["record_id"]]),
+            "先补拍剩余片段",
+        ),
+    );
+    assert_eq!(fresh["status"], "accepted");
+    assert_eq!(
+        task(&config, &ledger, "context", json!({}))["result"]["candidates"][0]["id"],
+        fresh["result"]["record_id"]
+    );
+}
+
+#[test]
+fn a_new_checkpoint_invalidates_both_candidates_and_owner_endorsed_lessons() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    let source = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("source", "checkpoint", "目前完成两段"),
+    );
+    let source_id = &source["result"]["record_id"];
+    let candidate = task(
+        &config,
+        &ledger,
+        "review",
+        review_input("candidate", json!([source_id]), "还需要补拍"),
+    );
+    let reviewed = task(
+        &config,
+        &ledger,
+        "review",
+        review_input("review", json!([source_id]), "完成前保留原片"),
+    );
+    let endorsement = correct_input(
+        "endorse",
+        &reviewed["result"]["record_id"],
+        "完成前保留原片",
+    );
+    let endorsed = task(&config, &ledger, "correct", endorsement.clone());
+    assert_eq!(endorsed["status"], "accepted", "{endorsed}");
+    let before = task(&config, &ledger, "context", json!({}));
+    assert_eq!(
+        before["result"]["entries"][0]["id"],
+        endorsed["result"]["record_id"]
+    );
+    assert_eq!(before["result"]["entries"][0]["kind"], "lesson");
+    assert_eq!(before["result"]["entries"][0]["trust"], "owner_confirmed");
+    assert_eq!(
+        before["result"]["entries"][0]["source_ids"],
+        json!([source_id])
+    );
+    assert_eq!(before["result"]["candidate_count"], 1);
+    let next = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("next", "checkpoint", "全部片段已完成"),
+    );
+    let after = task(&config, &ledger, "context", json!({}));
+    assert_eq!(after["revision"], next["revision"]);
+    assert_eq!(after["result"]["candidates"], json!([]));
+    assert_eq!(after["result"]["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        after["result"]["entries"][0]["id"],
+        next["result"]["record_id"]
+    );
+    let stale = task(
+        &config,
+        &ledger,
+        "context",
+        json!({"record_ids":[candidate["result"]["record_id"],endorsed["result"]["record_id"]]}),
+    );
+    assert_eq!(stale["result"]["candidates"][0]["state"], "stale");
+    assert_eq!(stale["result"]["entries"][0]["state"], "stale");
+    assert!(stale["result"]["entries"][0].get("text").is_none());
+    let replay = task(&config, &ledger, "correct", endorsement);
+    assert_eq!(replay["status"], "replayed");
+    assert_eq!(replay["result"]["state"], "stale");
+    let mut cannot_revive = correct_input("revive", &endorsed["result"]["record_id"], "保留原片");
+    cannot_revive["source_ids"] = json!([next["result"]["record_id"]]);
+    assert_eq!(
+        task(&config, &ledger, "correct", cannot_revive)["code"],
+        "conflict"
+    );
+}
+
+fn retract_input(key: &str, target: &Value) -> Value {
+    json!({"idempotency_key":key,"run_id":"ab11b084-e0c6-4d9e-a2d2-815f004a1d99","client":"codex","target_id":target,"reason":"owner requests withdrawal","confirmation":"confirmed"})
+}
+
+#[test]
+fn retracting_an_older_revision_removes_the_entire_chain_and_replays_only_identity() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    let mut original_request = record_input("original", "execution", "original withdrawn text");
+    original_request["evidence_refs"] = json!([{"path":"notes/withdrawn-original.txt"}]);
+    let original = task(&config, &ledger, "record", original_request.clone());
+    let original_id = &original["result"]["record_id"];
+    let correction_request = correct_input("correct", original_id, "corrected withdrawn text");
+    let corrected = task(&config, &ledger, "correct", correction_request.clone());
+    let corrected_id = &corrected["result"]["record_id"];
+    let mut last_request = correct_input("correct-again", corrected_id, "latest withdrawn text");
+    last_request["evidence_refs"] = json!([{"path":"notes/withdrawn-latest.txt"}]);
+    let latest = task(&config, &ledger, "correct", last_request.clone());
+    let latest_id = &latest["result"]["record_id"];
+    let review_request = review_input(
+        "review",
+        json!([latest_id]),
+        "candidate from latest evidence",
+    );
+    let candidate = task(&config, &ledger, "review", review_request.clone());
+    let request = retract_input("withdraw", original_id);
+    let withdrawn = task(&config, &ledger, "retract", request.clone());
+    assert_eq!(withdrawn["status"], "accepted", "{withdrawn}");
+    assert_eq!(withdrawn["result"]["state"], "retracted");
+    let current = task(&config, &ledger, "context", json!({}));
+    assert_eq!(current["revision"], withdrawn["revision"]);
+    assert_eq!(current["result"]["entries"], json!([]));
+    assert_eq!(current["result"]["candidates"], json!([]));
+    let chain = task(
+        &config,
+        &ledger,
+        "context",
+        json!({"record_ids":[original_id,corrected_id,latest_id,candidate["result"]["record_id"]]}),
+    );
+    let entries = chain["result"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 3);
+    for entry in entries {
+        assert_eq!(entry["state"], "retracted");
+        assert!(entry.get("text").is_none());
+        assert!(entry.get("evidence_refs").is_none());
+    }
+    assert_eq!(chain["result"]["candidates"][0]["state"], "stale");
+    assert!(chain["result"]["candidates"][0].get("text").is_none());
+    for (action, envelope, expected_id, state) in [
+        ("record", original_request, original_id, "retracted"),
+        ("correct", correction_request, corrected_id, "retracted"),
+        ("correct", last_request, latest_id, "retracted"),
+        (
+            "review",
+            review_request,
+            &candidate["result"]["record_id"],
+            "stale",
+        ),
+        ("retract", request, original_id, "retracted"),
+    ] {
+        let replay = task(&config, &ledger, action, envelope);
+        assert_eq!(replay["status"], "replayed", "{replay}");
+        assert_eq!(replay["result"]["record_id"], *expected_id);
+        assert_eq!(replay["result"]["state"], state);
+        assert!(!replay.to_string().contains("withdrawn"));
+        assert!(replay["result"].get("text").is_none());
+    }
+    assert_eq!(task(&config, &ledger, "context", json!({})), current);
+}
+
+#[test]
+fn review_requires_authorization_and_current_same_task_non_lesson_sources() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    let foreign_config = temp.path().join("foreign.json");
+    let mut policy = init_input("init");
+    policy["automatic_capture"] = json!(["execution"]);
+    task(&config, &ledger, "init", policy);
+    task(&foreign_config, &ledger, "init", init_input("foreign"));
+    let source = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("source", "execution", "结果记录"),
+    );
+    let source_id = &source["result"]["record_id"];
+    let mut request = review_input("review", json!([source_id]), "候选经验");
+    let before = task(&config, &ledger, "context", json!({}));
+    assert_eq!(
+        task(&config, &ledger, "review", request.clone())["code"],
+        "invalid_input"
+    );
+    assert_eq!(task(&config, &ledger, "context", json!({})), before);
+    request["confirmation"] = json!("confirmed");
+    let candidate = task(&config, &ledger, "review", request.clone());
+    assert_eq!(candidate["status"], "accepted");
+    assert_eq!(
+        task(&config, &ledger, "context", json!({}))["result"]["candidates"][0]["trust"],
+        "review_candidate"
+    );
+    let foreign = task(
+        &foreign_config,
+        &ledger,
+        "record",
+        record_input("source", "execution", "其他任务记录"),
+    );
+    let old_checkpoint = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("checkpoint", "checkpoint", "旧进度"),
+    );
+    task(
+        &config,
+        &ledger,
+        "record",
+        record_input("new-checkpoint", "checkpoint", "新进度"),
+    );
+    let old_execution = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("old-execution", "execution", "错误报告"),
+    );
+    task(
+        &config,
+        &ledger,
+        "correct",
+        correct_input("replace", &old_execution["result"]["record_id"], "正确报告"),
+    );
+    let withdrawn = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("withdrawn", "execution", "撤回报告"),
+    );
+    task(
+        &config,
+        &ledger,
+        "retract",
+        retract_input("withdraw", &withdrawn["result"]["record_id"]),
+    );
+    let before = task(&config, &ledger, "context", json!({}));
+    for (sources, code) in [
+        (json!([]), "invalid_input"),
+        (json!([source_id, source_id]), "invalid_input"),
+        (json!(["not-a-uuid"]), "invalid_input"),
+        (
+            json!((0..21)
+                .map(|_| uuid::Uuid::new_v4().to_string())
+                .collect::<Vec<_>>()),
+            "invalid_input",
+        ),
+        (json!([uuid::Uuid::new_v4().to_string()]), "not_found"),
+        (json!([foreign["result"]["record_id"]]), "scope_mismatch"),
+        (json!([candidate["result"]["record_id"]]), "invalid_input"),
+        (json!([old_checkpoint["result"]["record_id"]]), "conflict"),
+        (json!([old_execution["result"]["record_id"]]), "conflict"),
+        (json!([withdrawn["result"]["record_id"]]), "conflict"),
+    ] {
+        let mut invalid = request.clone();
+        invalid["idempotency_key"] = json!("reusable-failed-key");
+        invalid["source_ids"] = sources;
+        let rejected = task(&config, &ledger, "review", invalid);
+        assert_eq!(rejected["code"], code, "{rejected}");
+        assert_eq!(task(&config, &ledger, "context", json!({})), before);
+    }
+    request["idempotency_key"] = json!("reusable-failed-key");
+    assert_eq!(
+        task(&config, &ledger, "review", request)["status"],
+        "accepted"
+    );
+}
+
+#[test]
+fn correcting_a_lesson_requires_valid_evidence_and_preserves_replacement_dependencies() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    let foreign_config = temp.path().join("foreign.json");
+    task(&config, &ledger, "init", init_input("init"));
+    task(&foreign_config, &ledger, "init", init_input("foreign"));
+    let source = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("source", "execution", "原始报告"),
+    );
+    let replacement = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("replacement", "execution", "替代依据"),
+    );
+    let foreign = task(
+        &foreign_config,
+        &ledger,
+        "record",
+        record_input("foreign", "execution", "另一任务"),
+    );
+    let historical = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("historical", "checkpoint", "旧进度"),
+    );
+    task(
+        &config,
+        &ledger,
+        "record",
+        record_input("next", "checkpoint", "新进度"),
+    );
+    let candidate = task(
+        &config,
+        &ledger,
+        "review",
+        review_input("review", json!([source["result"]["record_id"]]), "候选建议"),
+    );
+    let candidate_id = &candidate["result"]["record_id"];
+    let before = task(&config, &ledger, "context", json!({}));
+    let mut request = correct_input("correct", candidate_id, "owner 认可的经验");
+    for (sources, code) in [
+        (json!([]), "invalid_input"),
+        (json!([candidate_id]), "invalid_input"),
+        (json!([foreign["result"]["record_id"]]), "scope_mismatch"),
+        (json!([historical["result"]["record_id"]]), "conflict"),
+        (json!([uuid::Uuid::new_v4().to_string()]), "not_found"),
+    ] {
+        request["source_ids"] = sources;
+        assert_eq!(
+            task(&config, &ledger, "correct", request.clone())["code"],
+            code
+        );
+        assert_eq!(task(&config, &ledger, "context", json!({})), before);
+    }
+    request["source_ids"] = json!([replacement["result"]["record_id"]]);
+    request["evidence_refs"] = json!([{"path":"notes/owner-confirmed.txt"}]);
+    let endorsed = task(&config, &ledger, "correct", request.clone());
+    assert_eq!(endorsed["status"], "accepted", "{endorsed}");
+    let context = task(&config, &ledger, "context", json!({}));
+    assert_eq!(
+        context["result"]["entries"][0]["id"],
+        endorsed["result"]["record_id"]
+    );
+    assert_eq!(
+        context["result"]["entries"][0]["source_ids"],
+        request["source_ids"]
+    );
+    assert_eq!(
+        context["result"]["entries"][0]["evidence_refs"],
+        request["evidence_refs"]
+    );
+    let mut base_correction = correct_input("base", &source["result"]["record_id"], "报告订正");
+    base_correction["source_ids"] = request["source_ids"].clone();
+    assert_eq!(
+        task(&config, &ledger, "correct", base_correction.clone())["code"],
+        "invalid_input"
+    );
+    base_correction["source_ids"] = json!([]);
+    assert_eq!(
+        task(&config, &ledger, "correct", base_correction)["status"],
+        "accepted"
+    );
+    assert_eq!(
+        task(&config, &ledger, "context", json!({}))["result"]["entries"][0]["id"],
+        endorsed["result"]["record_id"]
+    );
+    task(
+        &config,
+        &ledger,
+        "retract",
+        retract_input("retract-replacement", &replacement["result"]["record_id"]),
+    );
+    let stale = task(
+        &config,
+        &ledger,
+        "context",
+        json!({"record_ids":[endorsed["result"]["record_id"]]}),
+    );
+    assert_eq!(stale["result"]["entries"][0]["state"], "stale");
+    assert!(stale["result"]["entries"][0].get("text").is_none());
+    assert_eq!(
+        task(&config, &ledger, "correct", request)["status"],
+        "replayed"
+    );
+}
+
+#[test]
+fn concurrent_reviews_replay_once_and_competing_corrections_have_one_current_winner() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    let source = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("source", "execution", "初始执行报告"),
+    );
+    let source_id = &source["result"]["record_id"];
+    let request = review_input("review-race", json!([source_id]), "待确认经验");
+    let barrier = std::sync::Barrier::new(2);
+    let reviews = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    task(&config, &ledger, "review", request.clone())
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        reviews
+            .iter()
+            .filter(|response| response["status"] == "accepted")
+            .count(),
+        1
+    );
+    assert_eq!(
+        reviews
+            .iter()
+            .filter(|response| response["status"] == "replayed")
+            .count(),
+        1
+    );
+    assert_eq!(
+        reviews[0]["result"]["record_id"],
+        reviews[1]["result"]["record_id"]
+    );
+    let before = task(&config, &ledger, "context", json!({}));
+    for (action, envelope) in [
+        (
+            "review",
+            review_input("source", json!([source_id]), "跨动作不能复用 key"),
+        ),
+        ("correct", correct_input("source", source_id, "修改报告")),
+        ("retract", retract_input("source", source_id)),
+    ] {
+        assert_eq!(task(&config, &ledger, action, envelope)["code"], "conflict");
+        assert_eq!(task(&config, &ledger, "context", json!({})), before);
+    }
+    let mut changed_envelope = request.clone();
+    changed_envelope["client"] = json!("codex");
+    assert_eq!(
+        task(&config, &ledger, "review", changed_envelope)["code"],
+        "conflict"
+    );
+    let correction_requests = [
+        correct_input("correction-a", source_id, "owner 订正 A"),
+        correct_input("correction-b", source_id, "owner 订正 B"),
+    ];
+    let corrections = std::thread::scope(|scope| {
+        let handles: Vec<_> = correction_requests
+            .iter()
+            .map(|request| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    task(&config, &ledger, "correct", request.clone())
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        corrections
+            .iter()
+            .filter(|response| response["status"] == "accepted")
+            .count(),
+        1
+    );
+    assert_eq!(
+        corrections
+            .iter()
+            .filter(|response| response["code"] == "conflict")
+            .count(),
+        1
+    );
+    let winner = corrections
+        .iter()
+        .position(|response| response["status"] == "accepted")
+        .unwrap();
+    let current = task(&config, &ledger, "context", json!({}));
+    assert_eq!(current["result"]["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        current["result"]["entries"][0]["text"],
+        correction_requests[winner]["text"]
+    );
+    assert_eq!(current["result"]["candidates"], json!([]));
+    assert_eq!(
+        current["revision"].as_i64().unwrap(),
+        before["revision"].as_i64().unwrap() + 1
+    );
+    let replay = task(
+        &config,
+        &ledger,
+        "correct",
+        correction_requests[winner].clone(),
+    );
+    assert_eq!(replay["status"], "replayed");
+    assert_eq!(
+        replay["result"]["record_id"],
+        corrections[winner]["result"]["record_id"]
+    );
+    assert_eq!(
+        task(&config, &ledger, "review", request)["result"]["state"],
+        "stale"
+    );
+    assert_eq!(task(&config, &ledger, "context", json!({})), current);
+}
+
+#[test]
+fn lifecycle_rejects_unconfirmed_malformed_or_foreign_mutations_without_changing_context() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    let other_config = temp.path().join("other.json");
+    task(&config, &ledger, "init", init_input("init"));
+    task(&other_config, &ledger, "init", init_input("other"));
+    let source = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("source", "execution", "valid source"),
+    );
+    let foreign = task(
+        &other_config,
+        &ledger,
+        "record",
+        record_input("foreign", "execution", "foreign source"),
+    );
+    let id = &source["result"]["record_id"];
+    let before = task(&config, &ledger, "context", json!({}));
+    for (action, request) in [
+        (
+            "review",
+            review_input("review", json!([id]), "sensitive-request-sentinel"),
+        ),
+        (
+            "correct",
+            correct_input("correct", id, "sensitive-request-sentinel"),
+        ),
+        ("retract", retract_input("retract", id)),
+    ] {
+        for (field, value) in [
+            ("unrecognized", json!("sensitive-request-sentinel")),
+            ("idempotency_key", json!("")),
+            ("idempotency_key", json!("k".repeat(129))),
+            ("run_id", json!("AB11B084-E0C6-4D9E-A2D2-815F004A1D99")),
+            ("client", json!("c".repeat(65))),
+            ("confirmation", json!("automatic")),
+            ("confirmation", Value::Null),
+        ] {
+            let mut invalid = request.clone();
+            invalid[field] = value;
+            let rejected = task(&config, &ledger, action, invalid);
+            assert_eq!(rejected["code"], "invalid_input", "{rejected}");
+            assert!(!rejected.to_string().contains("sensitive-request-sentinel"));
+            assert_eq!(task(&config, &ledger, "context", json!({})), before);
+        }
+        if action != "review" {
+            let mut no_confirmation = request.clone();
+            no_confirmation
+                .as_object_mut()
+                .unwrap()
+                .remove("confirmation");
+            assert_eq!(
+                task(&config, &ledger, action, no_confirmation)["code"],
+                "invalid_input"
+            );
+            for (target, code) in [
+                (foreign["result"]["record_id"].clone(), "scope_mismatch"),
+                (json!(uuid::Uuid::new_v4().to_string()), "not_found"),
+            ] {
+                let mut wrong_target = request.clone();
+                wrong_target["target_id"] = target;
+                assert_eq!(task(&config, &ledger, action, wrong_target)["code"], code);
+                assert_eq!(task(&config, &ledger, "context", json!({})), before);
+            }
+        }
+        let text_field = if action == "retract" {
+            "reason"
+        } else {
+            "text"
+        };
+        let max = if action == "retract" { 240 } else { 1000 };
+        for text in [String::new(), " ".to_string(), "字".repeat(max + 1)] {
+            let mut invalid = request.clone();
+            invalid[text_field] = json!(text);
+            assert_eq!(
+                task(&config, &ledger, action, invalid)["code"],
+                "invalid_input"
+            );
+            assert_eq!(task(&config, &ledger, "context", json!({})), before);
+        }
+    }
+    let mut correction = correct_input("correct", id, "replacement");
+    correction["evidence_refs"] = json!([{"path":"../private.txt"}]);
+    assert_eq!(
+        task(&config, &ledger, "correct", correction)["code"],
+        "invalid_input"
+    );
+    for (action, mut request) in [
+        ("review", review_input("review", json!([id]), "candidate")),
+        ("correct", correct_input("correct", id, "replacement")),
+    ] {
+        request["occurred_at"] = json!("2026-10-21T10:00:00");
+        assert_eq!(
+            task(&config, &ledger, action, request)["code"],
+            "invalid_input"
+        );
+    }
+    assert_eq!(task(&config, &ledger, "context", json!({})), before);
+    let mut valid = correct_input("correct", id, &"字".repeat(1000));
+    valid["evidence_refs"] = json!([]);
+    assert_eq!(
+        task(&config, &ledger, "correct", valid)["status"],
+        "accepted"
+    );
+}
+
+#[test]
+fn candidate_context_shares_entry_and_unicode_budgets_with_evidence() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    let source = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("source", "execution", "reported execution"),
+    );
+    let mut candidate_ids = Vec::new();
+    for index in 0..23 {
+        let mut request = review_input(
+            &format!("review-{index}"),
+            json!([source["result"]["record_id"]]),
+            &format!("候选 {index}"),
+        );
+        request["occurred_at"] = json!("2020-01-01T00:00:00Z");
+        let response = task(&config, &ledger, "review", request);
+        assert_eq!(response["status"], "accepted");
+        candidate_ids.push(response["result"]["record_id"].clone());
+    }
+    let context = task(&config, &ledger, "context", json!({}));
+    assert_eq!(context["result"]["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        context["result"]["candidates"].as_array().unwrap().len(),
+        19
+    );
+    assert_eq!(context["result"]["candidates"][0]["id"], candidate_ids[22]);
+    assert_eq!(context["result"]["candidate_count"], 23);
+    assert_eq!(context["result"]["omitted_count"], 4);
+    assert_eq!(context["result"]["truncated"], true);
+    let limited = task(&config, &ledger, "context", json!({"limit":2}));
+    assert_eq!(limited["result"]["candidates"].as_array().unwrap().len(), 1);
+    assert_eq!(limited["result"]["candidate_count"], 23);
+    assert_eq!(limited["result"]["omitted_count"], 22);
+    assert_eq!(task(&config, &ledger, "context", json!({})), context);
+
+    let wide_config = temp.path().join("wide.json");
+    let mut init = init_input("wide");
+    init["display_name"] = json!("名".repeat(120));
+    task(&wide_config, &ledger, "init", init);
+    let source = task(
+        &wide_config,
+        &ledger,
+        "record",
+        record_input("source", "execution", &"证".repeat(1000)),
+    );
+    for index in 0..12 {
+        let response = task(
+            &wide_config,
+            &ledger,
+            "review",
+            review_input(
+                &format!("review-{index}"),
+                json!([source["result"]["record_id"]]),
+                &"候".repeat(1000),
+            ),
+        );
+        assert_eq!(response["status"], "accepted");
+    }
+    let wide = task(&wide_config, &ledger, "context", json!({}));
+    assert_eq!(wide["result"]["entries"].as_array().unwrap().len(), 1);
+    let candidates = wide["result"]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 10);
+    assert!(candidates
+        .iter()
+        .all(|entry| entry["text"].as_str().unwrap().chars().count() == 1000));
+    assert_eq!(wide["result"]["candidate_count"], 12);
+    assert_eq!(wide["result"]["omitted_count"], 2);
 }
 
 #[test]
