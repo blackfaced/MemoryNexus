@@ -1,6 +1,6 @@
 ---
 name: memorynexus-feedback
-description: "Use for an owner's MemoryNexus requests to record an observation, reduce pasted external advice, choose or finish one reversible action, record what happened, ask what to record today, or review the current loop. Translate natural language into the local feedback CLI; require explicit confirmation immediately before every write."
+description: "Use for MemoryNexus diary records, observations, chosen actions and results, today's check-in, or weekly diary interpretations from 策展人 and 生活编辑. Use the formal local feedback CLI; require explicit confirmation immediately before every authoritative write."
 ---
 
 # MemoryNexus feedback
@@ -35,6 +35,8 @@ inventing a successful write.
    answer grounded only in that response. Reads are `observation-history`,
    `review`, and `due`. Chat context is useful only to understand the request;
    it is never ledger evidence and never a substitute for a read.
+   For weekly diary interpretation, follow the weekly workflow below; its
+   helper calls the same read commands and separates interpretation from fact.
 3. For a write, make a short, bounded "准备记录" summary in the owner's
    language. Wait for an explicit confirmation of that exact summary before
    invoking the CLI.
@@ -94,7 +96,15 @@ a check-in is due.
 
 ### Review and a fresh session
 
-Call `review` for a review request. It returns the current action, completed
+For “每周解读”, “看看这周日记”, “让策展人和生活编辑看看”, or a request to
+interpret recent diary entries through two perspectives, read
+[references/weekly-perspectives.md](references/weekly-perspectives.md) and follow
+that workflow. The context helper returns fresh `reading_rules` from the installed
+reference; use them even when this conversation contains an older version.
+The workflow also covers comparing with the previous week's reading.
+The owner initiates this through the existing MiniMax / WeChat conversation.
+
+For an action/result review, call `review`. It returns the current action, completed
 actions, recorded results, and explicit evidence gaps. In a fresh session,
 read the same ledger first; do not rely on prior chat history to reconstruct
 the owner's state.
