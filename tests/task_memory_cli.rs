@@ -962,6 +962,124 @@ fn init_recovers_committed_identity_after_config_publication_failure() {
 }
 
 #[test]
+fn concurrent_initializers_publish_one_identity_across_fresh_ledgers() {
+    let temp = tempfile::TempDir::new().unwrap();
+    for round in 0..32 {
+        let ledger = temp.path().join(format!("ledger-{round}.sqlite"));
+        let config = temp.path().join(format!("task-{round}.json"));
+        let start = std::sync::Arc::new(std::sync::Barrier::new(4));
+        let initializers: Vec<_> = (0..4)
+            .map(|_| {
+                let ledger = ledger.clone();
+                let config = config.clone();
+                let start = start.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    task(&config, &ledger, "init", init_input("fresh-init"))
+                })
+            })
+            .collect();
+        let responses: Vec<_> = initializers
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect();
+        assert_eq!(
+            responses
+                .iter()
+                .filter(|r| r["status"] == "accepted")
+                .count(),
+            1,
+            "round {round}: {responses:?}"
+        );
+        assert_eq!(
+            responses
+                .iter()
+                .filter(|r| r["status"] == "replayed")
+                .count(),
+            3,
+            "round {round}: {responses:?}"
+        );
+        assert!(responses
+            .iter()
+            .all(|r| r["task_id"] == responses[0]["task_id"]));
+        let context = task(&config, &ledger, "context", json!({}));
+        assert_eq!(context["task_id"], responses[0]["task_id"]);
+        assert_eq!(context["revision"], 1);
+        assert_eq!(context["result"]["entries"], json!([]));
+    }
+}
+
+#[test]
+fn concurrent_first_writes_after_restore_preserve_one_record_and_receipt() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("source.sqlite");
+    let config = temp.path().join("task.json");
+    let initialized = task(&config, &ledger, "init", init_input("source"));
+    let backup = temp.path().join("backup.sqlite");
+    assert_eq!(
+        recovery(&ledger, "backup", json!({"path": backup}))["status"],
+        "ok"
+    );
+    for round in 0..32 {
+        let restored = temp.path().join(format!("restored-{round}.sqlite"));
+        assert_eq!(
+            recovery(&restored, "restore", json!({"path": backup}))["status"],
+            "ok"
+        );
+        let start = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let clients: Vec<_> = (0..8)
+            .map(|client| {
+                let ledger = restored.clone();
+                let config = config.clone();
+                let start = start.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    if client < 4 {
+                        task(
+                            &config,
+                            &ledger,
+                            "record",
+                            record_input("first-write", "execution", "恢复后仅写入一次"),
+                        )
+                    } else {
+                        recovery(&ledger, "export", json!({}))
+                    }
+                })
+            })
+            .collect();
+        let responses: Vec<_> = clients
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect();
+        let writes = &responses[..4];
+        assert_eq!(
+            writes.iter().filter(|r| r["status"] == "accepted").count(),
+            1,
+            "round {round}: {responses:?}"
+        );
+        assert_eq!(
+            writes.iter().filter(|r| r["status"] == "replayed").count(),
+            3,
+            "round {round}: {responses:?}"
+        );
+        assert!(writes
+            .iter()
+            .all(|r| r["result"]["record_id"] == writes[0]["result"]["record_id"]));
+        assert!(responses[4..].iter().all(|r| r["status"] == "ok"));
+        let context = task(&config, &restored, "context", json!({}));
+        assert_eq!(context["task_id"], initialized["task_id"]);
+        assert_eq!(context["revision"], 2);
+        assert_eq!(context["result"]["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            context["result"]["entries"][0]["id"],
+            writes[0]["result"]["record_id"]
+        );
+        let exported = recovery(&restored, "export", json!({}));
+        assert_eq!(exported["result"]["receipts"].as_array().unwrap().len(), 1);
+    }
+}
+
+#[test]
 fn parallel_writes_and_parallel_init_share_receipts_without_duplicate_records() {
     let temp = tempfile::TempDir::new().unwrap();
     let ledger = temp.path().join("ledger.sqlite");

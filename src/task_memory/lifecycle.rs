@@ -106,7 +106,7 @@ async fn save_sources(
     Ok(())
 }
 
-async fn replay(
+pub(super) async fn replay(
     conn: &mut SqliteConnection,
     task_id: &str,
     key: &str,
@@ -141,11 +141,17 @@ async fn replay(
     )))
 }
 
-fn write_response(status: &str, task_id: &str, revision: i64, id: &str, state: &str) -> Value {
+pub(super) fn write_response(
+    status: &str,
+    task_id: &str,
+    revision: i64,
+    id: &str,
+    state: &str,
+) -> Value {
     json!({"schema_version":1,"status":status,"task_id":task_id,"revision":revision,"result":{"record_id":id,"state":state}})
 }
 
-async fn save_receipt(
+pub(super) async fn save_receipt(
     conn: &mut SqliteConnection,
     task_id: &str,
     key: &str,

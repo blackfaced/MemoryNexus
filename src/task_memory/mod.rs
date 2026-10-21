@@ -280,15 +280,40 @@ async fn open(path: &Path, read_only: bool) -> Result<SqliteConnection, Error> {
     if !path.is_file() {
         return Err(Error::not_found());
     }
-    let mut conn = connection(path, read_only).await?;
-    validate_format(&mut conn).await?;
-    if !read_only {
-        sqlx::query("PRAGMA journal_mode=WAL")
-            .execute(&mut conn)
-            .await
-            .map_err(Error::storage)?;
-    }
-    Ok(conn)
+    let setup = async {
+        loop {
+            let mut conn = connection(path, read_only).await?;
+            validate_format(&mut conn).await?;
+            if read_only {
+                return Ok(conn);
+            }
+            match sqlx::query_scalar::<_, String>("PRAGMA journal_mode=WAL")
+                .fetch_one(&mut conn)
+                .await
+            {
+                Ok(mode) if mode == "wal" => return Ok(conn),
+                Ok(_) => return Err(Error::storage("WAL activation failed")),
+                Err(error)
+                    if error
+                        .as_database_error()
+                        .and_then(|error| error.code())
+                        .is_some_and(|code| {
+                            code.parse::<i32>().is_ok_and(|code| code & 0xff == 5)
+                        }) =>
+                {
+                    // Concurrent DELETE -> WAL upgrades may return SQLITE_BUSY
+                    // without invoking busy_timeout. Release this connection's
+                    // locks before retrying setup; no task transaction has begun.
+                    conn.close().await.map_err(Error::storage)?;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                Err(error) => return Err(Error::storage(error)),
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(5), setup)
+        .await
+        .map_err(Error::storage)?
 }
 
 async fn initialize_ledger(path: &Path) -> Result<(), Error> {
@@ -520,24 +545,18 @@ async fn record(path: &Path, input: RecordInput) -> Result<Value, Error> {
         .await
         .map_err(Error::storage)?;
     let task = registered_task(&mut tx, &config.task_id).await?;
-    let receipt = sqlx::query("SELECT action,digest,record_id,revision FROM task_receipts WHERE task_id=? AND idempotency_key=?").bind(&config.task_id).bind(&input.idempotency_key).fetch_optional(&mut *tx).await.map_err(Error::storage)?;
-    if let Some(receipt) = receipt {
-        if receipt.get::<String, _>("action") != "record"
-            || receipt.get::<String, _>("digest") != request_digest
-        {
-            return Err(Error::conflict());
-        }
-        let record_id: String = receipt.get("record_id");
-        let state: String =
-            sqlx::query_scalar("SELECT state FROM task_records WHERE task_id=? AND id=?")
-                .bind(&config.task_id)
-                .bind(&record_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(Error::storage)?;
-        return Ok(
-            json!({"schema_version":1,"status":"replayed","task_id":config.task_id,"revision":task.get::<i64,_>("revision"),"result":{"record_id":record_id,"state":state}}),
-        );
+    let previous_revision = task.get::<i64, _>("revision");
+    if let Some(response) = lifecycle::replay(
+        &mut tx,
+        &config.task_id,
+        &input.idempotency_key,
+        "record",
+        &request_digest,
+        previous_revision,
+    )
+    .await?
+    {
+        return Ok(response);
     }
     if input.confirmation.is_none()
         && (input.kind == RecordKind::Instruction || !task.get::<bool, _>("execution_capture"))
@@ -550,7 +569,7 @@ async fn record(path: &Path, input: RecordInput) -> Result<Value, Error> {
         "execution_reported"
     };
     let id = Uuid::new_v4().to_string();
-    let revision = task.get::<i64, _>("revision") + 1;
+    let revision = previous_revision + 1;
     if input.kind == RecordKind::Checkpoint {
         let previous: Vec<String> = sqlx::query_scalar(
             "SELECT id FROM task_records WHERE task_id=? AND kind='checkpoint' AND state='current'",
@@ -566,26 +585,24 @@ async fn record(path: &Path, input: RecordInput) -> Result<Value, Error> {
     }
     sqlx::query("INSERT INTO task_records (id,task_id,kind,trust,text,occurred_at,run_id,client,evidence_refs,state,revision) VALUES (?,?,?,?,?,?,?,?,?,'current',?)")
         .bind(&id).bind(&config.task_id).bind(input.kind.as_str()).bind(trust).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(serde_json::to_string(&input.evidence_refs).map_err(Error::storage)?).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
-    sqlx::query("INSERT INTO task_receipts VALUES (?,?,?,?,?,?)")
-        .bind(&config.task_id)
-        .bind(&input.idempotency_key)
-        .bind("record")
-        .bind(&request_digest)
-        .bind(&id)
-        .bind(revision)
-        .execute(&mut *tx)
-        .await
-        .map_err(Error::storage)?;
-    sqlx::query("UPDATE tasks SET revision=? WHERE id=?")
-        .bind(revision)
-        .bind(&config.task_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(Error::storage)?;
-    tx.commit().await.map_err(Error::storage)?;
-    Ok(
-        json!({"schema_version":1,"status":"accepted","task_id":config.task_id,"revision":revision,"result":{"record_id":id,"state":"current"}}),
+    lifecycle::save_receipt(
+        &mut tx,
+        &config.task_id,
+        &input.idempotency_key,
+        "record",
+        &request_digest,
+        &id,
+        revision,
     )
+    .await?;
+    tx.commit().await.map_err(Error::storage)?;
+    Ok(lifecycle::write_response(
+        "accepted",
+        &config.task_id,
+        revision,
+        &id,
+        "current",
+    ))
 }
 
 #[derive(Deserialize)]
