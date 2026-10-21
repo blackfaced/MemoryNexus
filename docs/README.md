@@ -2,6 +2,10 @@
 
 ## Start Here
 
+- [ADR-028: MiniMax / Codex shared task memory](../decisions/ADR-028-shared-task-memory.md)
+- [Task memory implementation contract](task-memory-contract.md)
+- [Task memory onboarding on another machine](task-memory-onboarding.md)
+- [Existing feedback ledger recovery](feedback-ledger-recovery.md)
 - [Vision](vision.md)
 - [Architecture](architecture/README.md)
 - [TODO](TODO.md)
@@ -10,7 +14,7 @@
 
 ## Frozen legacy documentation
 
-The remaining documents describe the frozen pre-ADR-027 runtime. They are
+The legacy documents listed below describe the frozen pre-ADR-027 runtime. They are
 preserved for historical context during expand–contract, but are not supported
 setup, architecture, or roadmap instructions.
 
@@ -23,7 +27,8 @@ setup, architecture, or roadmap instructions.
 
 ## Notes
 
-#274 has validated MiniMax local-command and shared-state assumptions, with an
-owner-initiated pull constraint for scheduled output. No current installation
-commands exist until the follow-on implementation tickets are complete. Do not
-use legacy docs as setup guidance.
+#274 validated MiniMax local-command and shared-state assumptions, with an
+owner-initiated pull constraint for scheduled output. The feedback CLI now has
+source implementation and recovery commands; clean-install acceptance remains
+separate. ADR-028 task commands are planned and must pass their own real-client
+gate. Do not use legacy docs as setup guidance.

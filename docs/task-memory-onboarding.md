@@ -1,0 +1,151 @@
+# 在另一台机器接入共享任务记忆
+
+目标：同一个任务目录里，MiniMax 写入，新的 Codex 会话读回并使用；反向也成立。
+依据 [ADR-028](../decisions/ADR-028-shared-task-memory.md) 和
+[v1 命令合同](task-memory-contract.md)。
+
+**当前状态：接入设计已完成，`task` 命令尚待实现。下面标为“实现后”的命令不能在当前
+baseline `c9b4373` 上当作现成功能运行。** 实施与验收顺序见 [TODO](TODO.md)。
+这份说明可以交给任务所在机器上的 Agent；它不要求访问本次规划机器。
+
+## 1. 先做只读盘点
+
+记录操作系统/架构、一个无敏感内容的任务目录、MiniMax 的实际执行器、Codex 的执行位置，
+以及现有定时 review 如何启动。确认两种执行器都能运行本地程序、传入 stdin、读取 JSON
+stdout，并能访问同一个本地目录。模型名称或客户端品牌本身不能证明这些能力。
+
+若一个执行器位于容器、沙盒或远端主机，先证明它看到的是同一份本机 ledger。不能满足时
+记录阻碍并停止实际接入；不要各建一个同名数据库，或假装已通过。HTTP/MCP 网络桥接是
+独立后续工作，不是这份 v1 安装说明的隐含步骤。
+
+完成条件：记录两边的真实本地命令执行能力、任务路径和 review 入口；不读取私人聊天，
+不修改原来的调度频率，不动 existing personal-experiment ledger。
+
+## 2. 安装包含 task 功能的同一版 CLI（实现后）
+
+使用已交付 task 功能的版本/commit，记录来源和二进制校验值。优先使用经验证、匹配目标
+OS/CPU 的 release binary；若尚无该制品，可在源码 checkout 构建：
+
+```sh
+cargo build --release --bin memorynexus-feedback-cli
+```
+
+把该二进制放到两种执行器都能访问的位置。新安装路径不要覆盖仍用于个人实验的已验证
+二进制，直到既有命令的回归检查通过。通过 `memorynexus-feedback-cli task --help`
+核对 schema version 1 和 init/record/context/review/correct/retract/backup/restore/export
+能力；缺少任何所需命令就停止，不回退到 legacy REST/MCP 文档。
+
+计划中的 task 功能无需启动 PostgreSQL、Qdrant、Docker 或 MemoryNexus daemon。
+源码构建仍受当前 Cargo 依赖影响；这里不承诺安装耗时或所有平台都有预编译制品。
+
+## 3. 绑定一个试点目录（实现后）
+
+两个执行器及原来的 review 任务必须显式得到同一环境变量。例如在任务机器上：
+
+```sh
+export MEMORYNEXUS_TASK_LEDGER="$HOME/.local/share/memorynexus/task-memory.sqlite"
+```
+
+不要将此路径设为现有健康/个人实验 ledger，也不要依赖定时任务继承交互式 shell 的环境。
+选择试点目录，令 `TASK_CONFIG` 指向该目录的 `.memorynexus.json` **绝对路径**。
+每次调用都显式传该路径。配置只含稳定 task ID、schema version 和环境变量名称。
+
+由 owner 确认该任务允许自动保留哪些内容，再准备 stdin JSON（本例幂等键仅用于临时试点；
+正式任务生成自己的 key，重试保留原值）：
+
+```json
+{
+  "idempotency_key": "pilot-init-2026-10-21",
+  "display_name": "共享任务记忆试点",
+  "confirmation": "confirmed",
+  "automatic_capture": ["execution", "review"]
+}
+```
+
+```sh
+memorynexus-feedback-cli task --config "$TASK_CONFIG" init < init-request.json
+```
+
+检查返回 task ID 与生成配置一致。重复执行原请求应恢复同一绑定；不能擦除已有数据。
+另一个无关任务应生成不同 task ID。同一目录搬家保留配置；新任务不复制旧 task ID。
+
+## 4. 安装同一份操作协议（实现后）
+
+实施票将提供 `integrations/task-memory/PROTOCOL.md` 及两个薄客户端入口。MiniMax 按该
+执行器实际支持的 Skill/指令入口引用协议；Codex 可从任务目录的 AGENTS.md 引用同一协议。
+不要覆盖已有配置；协议放在两边都能读取的绝对路径，或明确版本的本地副本中。
+
+协议要求：
+
+1. 开工先调用 `context`；依据返回的 task ID、revision 和来源说明已加载什么。
+2. 执行结束，用 `record` 写入受限 checkpoint/execution；明确的 owner 要求以经确认的
+   instruction 写入。Agent 自己推测的成功不得冒充 owner 确认。
+3. 既有定时 review 先读取 context，再提交带 `source_ids` 的 `review` 候选。
+4. 每次写前把 JSON 暂存为 owner-only 请求文件；参数中不拼接自由文本。失败保留同一
+   文件和幂等键，accepted/replayed 后清理；pending 文件不提交 Git。
+5. 用户纠正或撤回时使用对应命令，下一次读取检查旧结论与依赖候选是否已退出当前上下文。
+
+支持启动 hook 的执行器可在 hook 中调用 context；支持包装启动的使用显式前置步骤。
+只有提示词约定的标记为 **best effort**。定时 review 内必须显式读取配置和 ledger 环境，
+不能依赖 cwd、上一会话或模型的隐藏记忆。实际客户端配置格式要在该机器核对，不照抄
+另一品牌的配置，也不宣称计划任务结果会主动推送手机。
+
+## 5. 双向交接验收（实现后，真实客户端）
+
+先用如下无敏感内容样本，所有文本均为演示任务事实：
+
+```json
+{
+  "idempotency_key": "pilot-checkpoint-1",
+  "run_id": "50b928e6-b195-4098-9e14-53fc9ab76916",
+  "client": "minimax",
+  "kind": "checkpoint",
+  "text": "演示任务：已完成三段素材的编号，下次从选择开场片段继续。",
+  "occurred_at": "2026-10-21T10:00:00+08:00"
+}
+```
+
+替换为实际时间与一次生成的 run ID，将 JSON 放在请求文件中。让 **实际 MiniMax 会话**
+调用以下命令，再在 **全新 Codex 会话**读取。不能只改 JSON 里的 client 标签。
+
+```sh
+memorynexus-feedback-cli task --config "$TASK_CONFIG" record < checkpoint-request.json
+memorynexus-feedback-cli task --config "$TASK_CONFIG" context
+```
+
+| 验收 | 必须保留的证据 |
+| --- | --- |
+| MiniMax → Codex | 实际写入 receipt，fresh Codex 的同 task ID/context revision/记录 ID，以及依据该记录继续任务的回答；不复制旧聊天。 |
+| Codex → MiniMax | Codex 写入新的执行报告，fresh MiniMax 读取到对应 ID 并使用。 |
+| 定时 review | 由已有 review 入口执行一次，记录其读到的 task ID、来源 ID 和新候选 ID；另一个客户端看到候选标记。手动模拟只算预检。 |
+| 隔离与限额 | 任务 B 看不到任务 A 内容；context 返回省略数量；候选不显示为已确认指令。 |
+| 丢失响应与重试 | 原请求第二次调用为 replay，同 key 改文案为 conflict，没有重复事实。 |
+| 纠正与撤回 | owner 确认后订正来源，旧内容及依赖候选不再用于回答；撤回后当前查询/新导出没有原文字。 |
+| 故障 | 隐藏 env 或临时指向不存在 ledger，读取失败明确呈现；不自动创建替代 ledger，不报告“没有历史”。 |
+| 恢复 | 一致备份恢复到新文件，切换两边的同一 env 后读回相同身份/状态；重放备份前请求仍不重复。 |
+
+## 6. 备份、故障与停用（实现后）
+
+```sh
+memorynexus-feedback-cli task --ledger "$MEMORYNEXUS_TASK_LEDGER" backup < backup-request.json
+memorynexus-feedback-cli task --ledger "$NEW_TASK_LEDGER" restore < restore-request.json
+```
+
+backup/restore 请求都是 `{ "path": "<absolute-path>" }`。backup 是新目的文件；restore
+的 path 是源备份，`NEW_TASK_LEDGER` 必须是不存在的新文件路径。验证恢复后再一致地更改
+两种执行器的环境变量。JSON export 仅用于检查和可移植数据，不承诺 v1 JSON import。
+历史备份可能保留后来撤回的内容，owner 自行管理保留策略。
+
+读失败：显式说明未加载历史，必要时仅根据当前指令继续。写失败：保留请求文件，报告未
+同步状态。权限、格式或 migration 错误停止写入；不删除库、不切换到实验库、不创建新库
+掩盖故障。SQLite 一致备份必须通过命令完成，不只复制正在使用的主文件。
+
+停用时移除该目录的接入指令/启动 hook 和 review 提交步骤，保留 ledger 与备份供 owner
+处理；原任务与原定时 review 可以独立继续。只有确认不再需要后才删除本地请求或数据。
+
+## 交付报告
+
+报告版本/commit、OS/CPU、两种实际执行器及连接方式、脱敏后的 task ID 与 ledger 路径、
+逐项通过/失败/未验证、对应 request/record IDs、启动是否强制或 best effort、pending
+请求状态，以及备份恢复结果。机器不可访问或客户端不可执行时，真实 gate 保持未通过；
+不以本地单元测试、品牌标签或这份文档的存在替代验收。

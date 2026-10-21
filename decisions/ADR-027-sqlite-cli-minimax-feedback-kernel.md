@@ -2,6 +2,10 @@
 
 ## 状态
 
+2026-10-21 补充：[ADR-028](ADR-028-shared-task-memory.md) 为共享任务记忆有界重开产品
+扩展、客户端及任务记录授权限制。下文四对象确认与 #283 删除 gate 仍适用于个人实验。
+本文记录原决策时的实现状态；当前反馈 CLI 已有代码，不代表安装与 dogfood 已通过。
+
 ✅ 已接受。[#274](https://github.com/blackfaced/MemoryNexus/issues/274) 已通过，
 验证了跨 session 的本地命令与共享状态；其 delivery constraint 见下文。
 

@@ -33,12 +33,17 @@ decisions/
 ├── ADR-024-private-mac-mini-local-lab.md ✅ Private Mac mini Local Lab
 ├── ADR-025-personal-feedback-dogfood.md ✅ Personal Feedback Dogfood
 ├── ADR-026-loose-coupled-source-adapter-sync.md ✅ Loose-Coupled Source Adapter Synchronization
-└── ADR-027-sqlite-cli-minimax-feedback-kernel.md ✅ SQLite CLI MiniMax Personal Experiment Feedback Kernel (current default)
+├── ADR-027-sqlite-cli-minimax-feedback-kernel.md ✅ SQLite CLI Personal Experiment Feedback Kernel
+└── ADR-028-shared-task-memory.md ✅ MiniMax / Codex shared task memory (current priority)
 ```
 
 ## 当前默认方向
 
-[ADR-027](ADR-027-sqlite-cli-minimax-feedback-kernel.md) 是当前默认产品方向：本地 SQLite
+[ADR-028](ADR-028-shared-task-memory.md) 是当前优先交付切片：同一 owner 的目录任务在
+MiniMax 与 Codex 间通过本地 CLI/JSON 和 SQLite 共享任务经验。它明确重开 ADR-027 的部分
+产品边界，保留本地简单部署和原个人实验 gate；不恢复旧 HTTP/Surface roadmap。
+
+[ADR-027](ADR-027-sqlite-cli-minimax-feedback-kernel.md) 保留个人实验产品合同：本地 SQLite
 权威 ledger、用例级 CLI 和 MiniMax Skill，以 Observation、Recommendation、Experiment、
 Outcome 四对象支持 personal experiment feedback。它以 #274 的 MiniMax 可行性验证为实施
 前置条件；#274 已通过，并确认定时任务结果采用 owner-initiated pull，而非主动推送。

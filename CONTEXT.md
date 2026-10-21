@@ -1,8 +1,36 @@
 # MemoryNexus
 
-MemoryNexus is a user-owned long-term feedback engine that turns source-linked
-evidence from independent products into longitudinal observations and bounded
-next actions.
+MemoryNexus keeps one owner's durable task experience and confirmed personal
+experiment history across client sessions. ADR-028 defines the current shared
+task-memory slice; ADR-027 continues to define the personal-experiment records.
+
+## Shared task memory
+
+**Task Identity**:
+The stable identity of one ongoing task across directory moves, client changes
+and fresh conversations. It is a partition of one owner's records, not a person
+or an access-control boundary.
+_Avoid_: directory path, client namespace, session identity
+
+**Task Record**:
+A bounded instruction, progress checkpoint or execution report with explicit
+source and evidence status. Reported execution does not imply owner confirmation.
+_Avoid_: raw transcript, generic memory blob, inferred user fact
+
+**Review Candidate**:
+A proposed lesson grounded in current records of the same task. It remains a
+candidate until explicitly endorsed and becomes stale when its evidence changes.
+_Avoid_: confirmed fact, automatic instruction, model confidence
+
+**Task Context**:
+A bounded view of current task records and separately identified candidates
+that a new session can use to continue work. It preserves gaps and source identity.
+_Avoid_: chat history, hidden model memory, authoritative generated summary
+
+## Historical terminology
+
+The definitions below describe the frozen pre-ADR-027 runtime. They remain
+reference vocabulary and are not dependencies of the task-memory slice.
 
 ## Ownership and scope
 

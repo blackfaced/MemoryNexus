@@ -1,14 +1,22 @@
 # MemoryNexus
 
-MemoryNexus is a local-first personal experiment feedback kernel for a Mac mini:
-MiniMax Skill + local CLI + one authoritative SQLite ledger.
+MemoryNexus keeps local task experience across MiniMax and Codex sessions, and
+confirmed personal experiment history for one owner. Rust CLI + stable JSON +
+SQLite remain the implementation direction.
 
-It helps one owner keep a confirmed record of what they observed, which advice
-they chose, what reversible adjustment they tried, and what happened later. It
+The current priority is [shared task memory, ADR-028](decisions/ADR-028-shared-task-memory.md):
+read a task's context, record execution, retain sourced review candidates, and
+continue in another client. See the [contract](docs/task-memory-contract.md),
+[other-machine onboarding](docs/task-memory-onboarding.md) and [issues](docs/TODO.md).
+The new `task` commands are planned; the cross-client gate has not run.
+
+The existing personal-experiment path helps one owner keep a confirmed record of
+what they observed, which advice they chose, what reversible adjustment they tried,
+and what happened later. It
 is not a generic AI memory store, a medical-analysis product, a cloud service,
 or an Agent runtime.
 
-The current default direction is [ADR-027](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)
+The personal-experiment contract remains [ADR-027](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)
 and its parent [spec #273](https://github.com/blackfaced/MemoryNexus/issues/273).
 [#274](https://github.com/blackfaced/MemoryNexus/issues/274) has passed: a real
 MiniMax cross-session tracer proved shared local state. It also established that
@@ -33,13 +41,13 @@ confirmed Observation
 - `Outcome`: whether it was performed, skipped, or not evaluable, plus the
   confirmed result.
 
-SQLite in WAL mode is the accepted first-version authoritative store. After
-#274 and the follow-on #276–#281 work, the target compiled CLI will be the
-primary behavior seam and return stable JSON for `observe`, `retract`,
+SQLite in WAL mode is the authoritative store. At baseline `c9b4373`, the
+compiled `memorynexus-feedback-cli` contains JSON commands for `observe`, `retract`,
 `add-recommendation`, `start-experiment`, `record-outcome`, `review`, and
-`due`. It will not expose generic CRUD or internal database objects. The
-currently runnable implementation is the frozen legacy runtime and does not
-yet satisfy this target contract.
+`due`, `end-experiment`, `observation-history`, `export`, `backup` and `restore`.
+Source presence is not clean-machine acceptance: #282 and #283 remain separate
+installation and owner gates. Task records will use a separate task ledger;
+they do not change the existing experiment database or its confirmation rules.
 
 ## MiniMax and health boundary
 
@@ -72,7 +80,9 @@ projection from the SQLite ledger.
 
 ## Roadmap and documentation
 
-- [Current architecture decision](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)
+- [Shared task memory decision](decisions/ADR-028-shared-task-memory.md)
+- [Shared task memory onboarding](docs/task-memory-onboarding.md)
+- [Personal-experiment decision](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)
 - [Current roadmap and tracker reconciliation](docs/TODO.md)
 - [Current architecture](docs/architecture/README.md)
 - [Vision](docs/vision.md)
@@ -85,8 +95,9 @@ as the supported product path.
 
 ## Verification
 
-This change is documentation-only. Rust tests are intentionally not run because
-it changes neither Rust sources nor runtime behavior.
+For the planning documents, check links, command/field consistency and issue
+dependencies. Runtime implementation and real-client acceptance are tracked
+separately; documentation does not establish a passing runtime gate.
 
 ## License
 
