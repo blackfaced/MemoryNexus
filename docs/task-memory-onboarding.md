@@ -124,21 +124,63 @@ memorynexus-feedback-cli task --config "$TASK_CONFIG" context
 | 故障 | 隐藏 env 或临时指向不存在 ledger，读取失败明确呈现；不自动创建替代 ledger，不报告“没有历史”。 |
 | 恢复 | 一致备份恢复到新文件，切换两边的同一 env 后读回相同身份/状态；重放备份前请求仍不重复。 |
 
-## 6. 备份、故障与停用（实现后）
+## 6. 备份、故障与停用
+
+包含 #299 的源码版本提供以下恢复命令；安装和真实客户端验收仍按前面的步骤单独执行。
 
 ```sh
+memorynexus-feedback-cli task --ledger "$MEMORYNEXUS_TASK_LEDGER" export > task-export.json
 memorynexus-feedback-cli task --ledger "$MEMORYNEXUS_TASK_LEDGER" backup < backup-request.json
 memorynexus-feedback-cli task --ledger "$NEW_TASK_LEDGER" restore < restore-request.json
 ```
 
-backup/restore 请求都是 `{ "path": "<absolute-path>" }`。backup 是新目的文件；restore
-的 path 是源备份，`NEW_TASK_LEDGER` 必须是不存在的新文件路径。验证恢复后再一致地更改
-两种执行器的环境变量。JSON export 仅用于检查和可移植数据，不承诺 v1 JSON import。
-历史备份可能保留后来撤回的内容，owner 自行管理保留策略。
+backup/restore 请求都是 `{ "path": "<absolute-path>" }`。backup 的 path 是新目的文件；
+restore 的 path 是源 SQLite 备份，`NEW_TASK_LEDGER` 必须是不存在的新文件路径。目的父目录
+必须已经存在且可写。已有文件、目录、符号链接，以及目的路径旁残留的 `-wal`、`-shm` 或
+`-journal` 都会被拒绝；不要为了重试自动删除它们。恢复不覆盖当前 ledger，不复制任务配置。
+保留 `.memorynexus.json`，验证恢复后再一致地更改两种执行器的同一 ledger 环境变量。
 
-读失败：显式说明未加载历史，必要时仅根据当前指令继续。写失败：保留请求文件，报告未
-同步状态。权限、格式或 migration 错误停止写入；不删除库、不切换到实验库、不创建新库
-掩盖故障。SQLite 一致备份必须通过命令完成，不只复制正在使用的主文件。
+backup 使用 SQLite `VACUUM INTO` 生成包含已提交 WAL 内容的一致快照。restore 重新生成
+完整快照，检查 task 格式、v1 schema、SQLite integrity 与外键，再以不覆盖方式发布新文件。
+任务 ID、自动捕获策略、记录顺序、修订/来源关系、失效状态、撤回 tombstone 和 receipt
+均保留。恢复后先比对 context 的 task ID、revision、记录 ID，再用原始请求验证 replay；
+同 key 改内容仍应 conflict。备份之后的新写入不会出现在较早的快照中。
+
+### 导出格式 v1
+
+export 接受空 stdin 或 `{}`，输出一个 `schema_version: 1`、`status: "ok"` 的 JSON。
+`result.format` 为 `memorynexus-task-ledger`，`result.version` 为 `1`。导出包含同一读取
+快照中的全部任务，字段如下：
+
+| 字段 | 含义 |
+| --- | --- |
+| `tasks` | 稳定 ID、display_name、automatic_capture 策略与各任务 revision。 |
+| `records` | 按 commit_sequence 排序的记录、来源 client/run/time、kind/trust/state/revision；未撤回的文字及 evidence_refs。撤回记录省略 text 和 evidence_refs。 |
+| `record_sources` | record_id、source_id 和来源顺序 position；包含失效经验的来源关系。 |
+| `record_revisions` | record_id 与其 supersedes_id；包括已撤回修订链。 |
+| `receipts` | task_id、idempotency_key、action、SHA-256 digest、record_id 和原接受 revision。 |
+| `init_receipts` | 初始化 key、digest、task_id 和原接受 revision。 |
+| `commit_sequence` | 已分配的全局记录顺序上界；恢复后的新记录继续递增。 |
+
+外层 `revision` 是此快照中各任务 revision 的总和，用于标识整份 ledger 的状态；任务
+context 仍使用各自的 revision。备份/恢复成功响应的 revision 取自所生成快照，result
+返回目的 path、format 和 version。导出保留历史状态，不能把 stale/superseded/historical
+记录当作当前上下文。它不含原始请求、撤回原因副本或 personal-experiment 数据。
+JSON export 仅用于检查，**v1 不支持 JSON import**；恢复必须使用 SQLite 备份。
+
+### 失败与保留策略
+
+读失败：显式说明未加载历史，必要时仅根据当前指令继续。写失败：保留原请求文件，报告未
+同步状态。权限、格式或 schema 错误停止写入；不删除库、不切换到实验库、不创建新库
+掩盖故障。目的父目录缺失或不可写会返回 storage_unavailable；已有目的返回 conflict。
+失败重试前检查目的路径：若进程在完成发布后、返回成功前中断，那里可能已有完整快照；
+先用 task export/context 检查，再选择另一个新路径，不能覆盖或假定上次失败意味着文件为空。
+未完成发布的随机临时文件不构成可用备份；正常错误会清理本次临时文件，崩溃遗留交由 owner
+检查。SQLite 一致备份必须通过命令完成，不只复制正在使用的主文件。
+
+撤回清除 live ledger 修订链的文字和证据引用，后续导出及备份保留最小 tombstone。
+**历史备份可能仍含后来撤回的内容**，owner 自行管理保留或删除；这里不承诺 SQLite/WAL、
+文件系统快照或物理磁盘的安全擦除。导出和备份同样含 owner 数据，不提交到任务 Git 仓库。
 
 停用时移除该目录的接入指令/启动 hook 和 review 提交步骤，保留 ledger 与备份供 owner
 处理；原任务与原定时 review 可以独立继续。只有确认不再需要后才删除本地请求或数据。

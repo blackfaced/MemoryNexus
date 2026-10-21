@@ -52,7 +52,10 @@ fn help_identifies_available_task_commands_without_a_ledger() {
     assert_eq!(response["result"]["command"], "task");
     assert_eq!(
         response["result"]["commands"],
-        json!(["init", "record", "context", "review", "correct", "retract"])
+        json!([
+            "init", "record", "context", "review", "correct", "retract", "export", "backup",
+            "restore"
+        ])
     );
 }
 
@@ -1477,4 +1480,488 @@ fn evidence_references_are_relative_descriptors_without_filesystem_reads() {
         task(&config, &ledger, "record", traversal)["code"],
         "invalid_input"
     );
+}
+
+fn recovery(ledger: &Path, action: &str, input: Value) -> Value {
+    invoke(
+        &["task", "--ledger", ledger.to_str().unwrap(), action],
+        None,
+        &input.to_string(),
+    )
+}
+
+#[test]
+fn export_inspects_task_state_without_withdrawn_payloads_or_request_copies() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    let init = task(&config, &ledger, "init", init_input("init"));
+    let mut request = record_input("source", "execution", "withdrawn-secret-original");
+    request["evidence_refs"] = json!([{"path":"withdrawn-secret-artifact.txt"}]);
+    let first = task(&config, &ledger, "record", request);
+    let id = &first["result"]["record_id"];
+    let candidate = task(
+        &config,
+        &ledger,
+        "review",
+        review_input("review", json!([id]), "candidate must remain stale"),
+    );
+    let correction = task(
+        &config,
+        &ledger,
+        "correct",
+        correct_input("correct", id, "withdrawn-secret-correction"),
+    );
+    let retracted = task(&config, &ledger, "retract", retract_input("retract", id));
+    let export = recovery(&ledger, "export", json!({}));
+    assert_eq!(export["status"], "ok", "{export}");
+    assert_eq!(export["schema_version"], 1);
+    assert_eq!(export["revision"], retracted["revision"]);
+    let result = &export["result"];
+    assert_eq!(result["format"], "memorynexus-task-ledger");
+    assert_eq!(result["version"], 1);
+    assert_eq!(result["tasks"][0]["id"], init["task_id"]);
+    assert_eq!(
+        result["tasks"][0]["automatic_capture"],
+        json!(["execution", "review"])
+    );
+    let records = result["records"].as_array().unwrap();
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0]["id"], *id);
+    assert_eq!(records[1]["id"], candidate["result"]["record_id"]);
+    assert_eq!(records[1]["state"], "stale");
+    assert_eq!(records[2]["id"], correction["result"]["record_id"]);
+    for row in [&records[0], &records[2]] {
+        assert_eq!(row["state"], "retracted");
+        assert!(row.get("text").is_none());
+        assert!(row.get("evidence_refs").is_none());
+    }
+    assert_eq!(
+        result["record_sources"],
+        json!([{"record_id":candidate["result"]["record_id"],"source_id":id,"position":0}])
+    );
+    assert_eq!(
+        result["record_revisions"],
+        json!([{"record_id":correction["result"]["record_id"],"supersedes_id":id}])
+    );
+    assert_eq!(result["receipts"].as_array().unwrap().len(), 4);
+    assert_eq!(result["init_receipts"].as_array().unwrap().len(), 1);
+    assert_eq!(result["commit_sequence"], 3);
+    assert!(!export.to_string().contains("withdrawn-secret"));
+    for receipt in result["receipts"].as_array().unwrap() {
+        assert!(receipt.get("request").is_none());
+        assert!(receipt.get("text").is_none());
+        assert_eq!(receipt["digest"].as_str().unwrap().len(), 64);
+    }
+    assert!(result.get("observations").is_none());
+    let empty = invoke(
+        &["task", "--ledger", ledger.to_str().unwrap(), "export"],
+        None,
+        "",
+    );
+    assert_eq!(empty, export);
+}
+
+#[test]
+fn backup_restore_preserves_context_policy_links_and_exact_retry_after_withdrawal() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    let other = temp.path().join("other.json");
+    let mut policy = init_input("other");
+    policy["automatic_capture"] = json!([]);
+    task(&config, &ledger, "init", init_input("init"));
+    task(&other, &ledger, "init", policy.clone());
+    let request = record_input("source", "checkpoint", "withdrawn-before-backup");
+    let source = task(&config, &ledger, "record", request.clone());
+    let id = &source["result"]["record_id"];
+    let review_request = review_input("review", json!([id]), "sourced candidate");
+    let candidate = task(&config, &ledger, "review", review_request.clone());
+    let correction_request = correct_input("correct", id, "withdrawn-correction-before-backup");
+    let corrected = task(&config, &ledger, "correct", correction_request.clone());
+    let retract_request = retract_input("retract", id);
+    let withdrawn = task(&config, &ledger, "retract", retract_request.clone());
+    let current = task(
+        &config,
+        &ledger,
+        "record",
+        record_input("current", "checkpoint", "continue here"),
+    );
+    let fresh_review = task(
+        &config,
+        &ledger,
+        "review",
+        review_input(
+            "fresh",
+            json!([current["result"]["record_id"]]),
+            "new candidate",
+        ),
+    );
+    let confirmed = task(
+        &config,
+        &ledger,
+        "correct",
+        correct_input(
+            "endorse",
+            &fresh_review["result"]["record_id"],
+            "confirmed lesson",
+        ),
+    );
+    let before = task(&config, &ledger, "context", json!({}));
+    let old_ids = json!({"record_ids":[id, corrected["result"]["record_id"], candidate["result"]["record_id"]]});
+    let old_context = task(&config, &ledger, "context", old_ids.clone());
+    let export = recovery(&ledger, "export", json!({}));
+    let backup = temp.path().join("backup.sqlite");
+    let copied = recovery(&ledger, "backup", json!({"path":backup}));
+    assert_eq!(copied["status"], "ok", "{copied}");
+    assert_eq!(copied["revision"], export["revision"]);
+    assert_eq!(copied["result"]["path"], backup.to_str().unwrap());
+    // Backup is a point-in-time snapshot, independent of subsequent live writes.
+    task(
+        &config,
+        &ledger,
+        "record",
+        record_input("after-backup", "execution", "later live activity"),
+    );
+    let restored = temp.path().join("restored.sqlite");
+    let response = recovery(&restored, "restore", json!({"path":backup}));
+    assert_eq!(response["status"], "ok", "{response}");
+    assert_eq!(response["revision"], export["revision"]);
+    assert_eq!(task(&config, &restored, "context", json!({})), before);
+    assert_eq!(task(&config, &restored, "context", old_ids), old_context);
+    assert_eq!(recovery(&restored, "export", json!({})), export);
+    assert_eq!(
+        task(&other, &restored, "init", policy)["status"],
+        "replayed"
+    );
+    assert_eq!(
+        task(
+            &other,
+            &restored,
+            "record",
+            record_input("denied", "execution", "unconfirmed")
+        )["code"],
+        "invalid_input"
+    );
+    for (action, request, original) in [
+        ("record", request.clone(), source),
+        ("review", review_request, candidate),
+        ("correct", correction_request, corrected),
+        ("retract", retract_request, withdrawn),
+    ] {
+        let replay = task(&config, &restored, action, request.clone());
+        assert_eq!(replay["status"], "replayed");
+        assert_eq!(
+            replay["result"]["record_id"],
+            original["result"]["record_id"]
+        );
+        assert!(!replay.to_string().contains("withdrawn-"));
+        let mut changed = request;
+        changed["client"] = json!("changed-client");
+        assert_eq!(
+            task(&config, &restored, action, changed)["code"],
+            "conflict"
+        );
+    }
+    // Dependencies remain active after recovery, including endorsed lessons.
+    task(
+        &config,
+        &restored,
+        "record",
+        record_input("new-checkpoint", "checkpoint", "new progress"),
+    );
+    let stale = task(
+        &config,
+        &restored,
+        "context",
+        json!({"record_ids":[confirmed["result"]["record_id"]]}),
+    );
+    assert_eq!(stale["result"]["entries"][0]["state"], "stale");
+    let next = recovery(&restored, "export", json!({}));
+    assert!(
+        next["result"]["commit_sequence"].as_i64().unwrap()
+            > export["result"]["commit_sequence"].as_i64().unwrap()
+    );
+    assert!(!next.to_string().contains("withdrawn-"));
+}
+
+#[test]
+fn recovery_rejects_invalid_format_schema_and_corruption_without_publishing() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    task(
+        &config,
+        &ledger,
+        "record",
+        record_input("record", "execution", "intact"),
+    );
+    let backup = temp.path().join("backup.sqlite");
+    assert_eq!(
+        recovery(&ledger, "backup", json!({"path":backup}))["status"],
+        "ok"
+    );
+    let pristine = std::fs::read(&backup).unwrap();
+    let before = task(&config, &ledger, "context", json!({}));
+    let mut future = pristine.clone();
+    future[60..64].copy_from_slice(&2u32.to_be_bytes());
+    let experiment = temp.path().join("experiment.sqlite");
+    let request = json!({"confirmation":"confirmed","kind":"initial","statement":"experiment-only-sentinel","occurred_at":"2026-08-29T08:00:00+08:00","source":"owner_report","idempotency_key":"experiment"});
+    assert_eq!(
+        invoke(
+            &["--ledger", experiment.to_str().unwrap(), "observe"],
+            None,
+            &request.to_string()
+        )["status"],
+        "accepted"
+    );
+    // A genuine non-task SQLite fixture with copied task format header fields
+    // must still fail schema validation. No private task tables are inspected.
+    let experiment_backup = temp.path().join("experiment-backup.sqlite");
+    assert_eq!(
+        invoke(
+            &["--ledger", experiment.to_str().unwrap(), "backup"],
+            None,
+            &json!({"path":experiment_backup}).to_string()
+        )["status"],
+        "ok"
+    );
+    let mut schema = std::fs::read(experiment_backup).unwrap();
+    schema[60..64].copy_from_slice(&pristine[60..64]);
+    schema[68..72].copy_from_slice(&pristine[68..72]);
+    for (name, bytes, code) in [
+        ("future", future, "unsupported_version"),
+        ("schema", schema, "unsupported_version"),
+        (
+            "truncated",
+            pristine[..pristine.len() / 2].to_vec(),
+            "storage_unavailable",
+        ),
+        (
+            "json",
+            recovery(&ledger, "export", json!({}))
+                .to_string()
+                .into_bytes(),
+            "storage_unavailable",
+        ),
+    ] {
+        let source = temp.path().join(format!("{name}.sqlite"));
+        std::fs::write(&source, &bytes).unwrap();
+        let destination = temp.path().join(format!("{name}-restored.sqlite"));
+        let rejected = recovery(&destination, "restore", json!({"path":source}));
+        assert_eq!(rejected["code"], code, "{name}: {rejected}");
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read(&source).unwrap(), bytes);
+        assert_eq!(
+            recovery(&source, "export", json!({}))["code"],
+            code,
+            "{name}"
+        );
+    }
+    let destination = temp.path().join("wrong-type.sqlite");
+    assert_eq!(
+        recovery(&destination, "restore", json!({"path":experiment}))["code"],
+        "scope_mismatch"
+    );
+    assert!(!destination.exists());
+    assert_eq!(
+        recovery(&experiment, "export", json!({}))["code"],
+        "scope_mismatch"
+    );
+    assert_eq!(task(&config, &ledger, "context", json!({})), before);
+}
+
+#[test]
+fn recovery_never_overwrites_existing_paths_or_adopts_destination_sidecars() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    task(
+        &config,
+        &ledger,
+        "record",
+        record_input("record", "execution", "keep this record"),
+    );
+    let before = recovery(&ledger, "export", json!({}));
+    let existing = temp.path().join("existing.sqlite");
+    std::fs::write(&existing, b"owner existing file").unwrap();
+    let directory = temp.path().join("directory");
+    std::fs::create_dir(&directory).unwrap();
+    let mut destinations = vec![existing.clone(), directory, ledger.clone()];
+    #[cfg(unix)]
+    {
+        let dangling = temp.path().join("dangling.sqlite");
+        std::os::unix::fs::symlink(temp.path().join("absent-target"), &dangling).unwrap();
+        destinations.push(dangling);
+    }
+    for destination in destinations {
+        assert_eq!(
+            recovery(&ledger, "backup", json!({"path":destination}))["code"],
+            "conflict"
+        );
+        assert_eq!(
+            recovery(&destination, "restore", json!({"path":ledger}))["code"],
+            "conflict"
+        );
+    }
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let destination = temp.path().join(format!("orphan{suffix}.sqlite"));
+        let sidecar = std::path::PathBuf::from(format!("{}{suffix}", destination.display()));
+        std::fs::write(&sidecar, b"owner sidecar").unwrap();
+        assert_eq!(
+            recovery(&ledger, "backup", json!({"path":destination}))["code"],
+            "conflict"
+        );
+        assert_eq!(
+            recovery(&destination, "restore", json!({"path":ledger}))["code"],
+            "conflict"
+        );
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read(sidecar).unwrap(), b"owner sidecar");
+    }
+    assert_eq!(std::fs::read(existing).unwrap(), b"owner existing file");
+    assert_eq!(recovery(&ledger, "export", json!({})), before);
+}
+
+#[test]
+fn recovery_errors_are_strict_and_do_not_create_missing_or_unwritable_destinations() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    let absent = temp.path().join("missing.sqlite");
+    assert_eq!(recovery(&absent, "export", json!({}))["code"], "not_found");
+    assert!(!absent.exists());
+    let destination = temp.path().join("destination.sqlite");
+    assert_eq!(
+        recovery(&destination, "restore", json!({"path":absent}))["code"],
+        "not_found"
+    );
+    assert!(!destination.exists());
+    for input in [
+        json!({}),
+        json!({"path":"relative.sqlite"}),
+        json!({"path":destination,"unknown":"sensitive-path"}),
+        json!({"path":null}),
+    ] {
+        for action in ["backup", "restore"] {
+            let response = recovery(&ledger, action, input.clone());
+            assert_eq!(response["code"], "invalid_input", "{response}");
+            assert!(!response.to_string().contains("sensitive-path"));
+        }
+    }
+    assert_eq!(
+        recovery(&ledger, "export", json!({"path":destination}))["code"],
+        "invalid_input"
+    );
+    let missing_parent = temp.path().join("missing-parent");
+    let unwritable_parent = temp.path().join("regular-file");
+    std::fs::write(&unwritable_parent, b"owner file").unwrap();
+    for parent in [&missing_parent, &unwritable_parent] {
+        let destination = parent.join("ledger.sqlite");
+        assert_eq!(
+            recovery(&ledger, "backup", json!({"path":destination}))["code"],
+            "storage_unavailable"
+        );
+        assert_eq!(
+            recovery(&destination, "restore", json!({"path":ledger}))["code"],
+            "storage_unavailable"
+        );
+        assert!(!destination.exists());
+    }
+    assert!(!missing_parent.exists());
+    assert_eq!(std::fs::read(unwritable_parent).unwrap(), b"owner file");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let readonly = temp.path().join("readonly");
+        std::fs::create_dir(&readonly).unwrap();
+        std::fs::set_permissions(&readonly, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let destination = readonly.join("ledger.sqlite");
+        let backup = recovery(&ledger, "backup", json!({"path":destination}));
+        let restore = recovery(&destination, "restore", json!({"path":ledger}));
+        std::fs::set_permissions(&readonly, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(backup["code"], "storage_unavailable");
+        assert_eq!(restore["code"], "storage_unavailable");
+        assert!(!destination.exists());
+    }
+}
+
+#[test]
+fn concurrent_snapshot_publication_has_one_winner_and_preserves_committed_writes() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let ledger = temp.path().join("ledger.sqlite");
+    let config = temp.path().join("task.json");
+    task(&config, &ledger, "init", init_input("init"));
+    let base = record_input("base", "execution", "committed before backup");
+    let accepted = task(&config, &ledger, "record", base.clone());
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(9));
+    let writers = (0..8)
+        .map(|i| {
+            let barrier = barrier.clone();
+            let ledger = ledger.clone();
+            let config = config.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                let request =
+                    record_input(&format!("racing-{i}"), "execution", &format!("write {i}"));
+                let result = task(&config, &ledger, "record", request.clone());
+                assert_eq!(result["status"], "accepted");
+                (request, result)
+            })
+        })
+        .collect::<Vec<_>>();
+    let backup = temp.path().join("backup.sqlite");
+    barrier.wait();
+    let snapshot = recovery(&ledger, "backup", json!({"path":backup}));
+    assert_eq!(snapshot["status"], "ok", "{snapshot}");
+    let mut writes = vec![(base, accepted)];
+    writes.extend(writers.into_iter().map(|writer| writer.join().unwrap()));
+    let destination = temp.path().join("restored.sqlite");
+    let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let restorers = (0..2)
+        .map(|_| {
+            let gate = gate.clone();
+            let destination = destination.clone();
+            let backup = backup.clone();
+            std::thread::spawn(move || {
+                gate.wait();
+                recovery(&destination, "restore", json!({"path":backup}))
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = restorers
+        .into_iter()
+        .map(|worker| worker.join().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(results.iter().filter(|r| r["status"] == "ok").count(), 1);
+    assert_eq!(
+        results.iter().filter(|r| r["code"] == "conflict").count(),
+        1
+    );
+    let recovered = recovery(&destination, "export", json!({}));
+    assert_eq!(recovered["revision"], snapshot["revision"]);
+    let records = recovered["result"]["records"].as_array().unwrap();
+    assert!(!records.is_empty());
+    assert!(records.len() <= 9);
+    assert_eq!(
+        recovered["result"]["receipts"].as_array().unwrap().len(),
+        records.len()
+    );
+    assert_eq!(records[0]["text"], "committed before backup");
+    for record in records {
+        let (request, receipt) = writes
+            .iter()
+            .find(|(_, receipt)| receipt["result"]["record_id"] == record["id"])
+            .unwrap();
+        let replay = task(&config, &destination, "record", request.clone());
+        assert_eq!(replay["status"], "replayed");
+        assert_eq!(
+            replay["result"]["record_id"],
+            receipt["result"]["record_id"]
+        );
+    }
+    assert_eq!(recovery(&destination, "export", json!({})), recovered);
 }

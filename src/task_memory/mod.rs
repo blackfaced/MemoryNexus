@@ -12,22 +12,47 @@ use std::{
 use uuid::Uuid;
 
 mod lifecycle;
+mod recovery;
 
 const APPLICATION_ID: i64 = 0x4d4e5453;
 const SCHEMA_VERSION: i64 = 1;
 const LEDGER_ENV: &str = "MEMORYNEXUS_TASK_LEDGER";
 const MAX_INPUT: u64 = 32 * 1024;
 
+const SCHEMA: &[&str] = &[
+        "PRAGMA application_id=1296979027",
+        "PRAGMA user_version=1",
+        "CREATE TABLE tasks (id TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, execution_capture INTEGER NOT NULL, review_capture INTEGER NOT NULL, revision INTEGER NOT NULL)",
+        "CREATE TABLE task_records (commit_sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, task_id TEXT NOT NULL REFERENCES tasks(id), kind TEXT NOT NULL, trust TEXT NOT NULL, text TEXT NOT NULL, occurred_at TEXT NOT NULL, run_id TEXT NOT NULL, client TEXT NOT NULL, evidence_refs TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL)",
+        "CREATE INDEX task_records_scope ON task_records(task_id, state, commit_sequence)",
+        "CREATE TABLE task_record_sources (record_id TEXT NOT NULL REFERENCES task_records(id), source_id TEXT NOT NULL REFERENCES task_records(id), position INTEGER NOT NULL, PRIMARY KEY(record_id, source_id), UNIQUE(record_id, position))",
+        "CREATE INDEX task_record_sources_source ON task_record_sources(source_id)",
+        "CREATE TABLE task_record_revisions (record_id TEXT PRIMARY KEY NOT NULL REFERENCES task_records(id), supersedes_id TEXT NOT NULL UNIQUE REFERENCES task_records(id))",
+        "CREATE TABLE task_receipts (task_id TEXT NOT NULL REFERENCES tasks(id), idempotency_key TEXT NOT NULL, action TEXT NOT NULL, digest TEXT NOT NULL, record_id TEXT NOT NULL REFERENCES task_records(id), revision INTEGER NOT NULL, PRIMARY KEY(task_id,idempotency_key))",
+        "CREATE TABLE task_init_receipts (idempotency_key TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES tasks(id), revision INTEGER NOT NULL)",
+];
+
 pub async fn run(args: &[String]) -> Result<Value, Error> {
     if args == ["--help"] {
         return Ok(
-            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","commands":["init","record","context","review","correct","retract"]}}),
+            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","commands":["init","record","context","review","correct","retract","export","backup","restore"]}}),
         );
     }
     let [flag, path, action] = args else {
         return Err(Error::invalid());
     };
-    if flag != "--config" || !Path::new(path).is_absolute() {
+    if !Path::new(path).is_absolute() {
+        return Err(Error::invalid());
+    }
+    if flag == "--ledger" {
+        return match action.as_str() {
+            "export" => recovery::export(Path::new(path), read_input(true)?).await,
+            "backup" => recovery::backup(Path::new(path), read_input(false)?).await,
+            "restore" => recovery::restore(Path::new(path), read_input(false)?).await,
+            _ => Err(Error::invalid()),
+        };
+    }
+    if flag != "--config" {
         return Err(Error::invalid());
     }
     match action.as_str() {
@@ -281,18 +306,12 @@ async fn initialize_ledger(path: &Path) -> Result<(), Error> {
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(Error::storage)?;
-    for statement in [
-        "PRAGMA application_id=1296979027",
-        "PRAGMA user_version=1",
-        "CREATE TABLE tasks (id TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, execution_capture INTEGER NOT NULL, review_capture INTEGER NOT NULL, revision INTEGER NOT NULL)",
-        "CREATE TABLE task_records (commit_sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, task_id TEXT NOT NULL REFERENCES tasks(id), kind TEXT NOT NULL, trust TEXT NOT NULL, text TEXT NOT NULL, occurred_at TEXT NOT NULL, run_id TEXT NOT NULL, client TEXT NOT NULL, evidence_refs TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL)",
-        "CREATE INDEX task_records_scope ON task_records(task_id, state, commit_sequence)",
-        "CREATE TABLE task_record_sources (record_id TEXT NOT NULL REFERENCES task_records(id), source_id TEXT NOT NULL REFERENCES task_records(id), position INTEGER NOT NULL, PRIMARY KEY(record_id, source_id), UNIQUE(record_id, position))",
-        "CREATE INDEX task_record_sources_source ON task_record_sources(source_id)",
-        "CREATE TABLE task_record_revisions (record_id TEXT PRIMARY KEY NOT NULL REFERENCES task_records(id), supersedes_id TEXT NOT NULL UNIQUE REFERENCES task_records(id))",
-        "CREATE TABLE task_receipts (task_id TEXT NOT NULL REFERENCES tasks(id), idempotency_key TEXT NOT NULL, action TEXT NOT NULL, digest TEXT NOT NULL, record_id TEXT NOT NULL REFERENCES task_records(id), revision INTEGER NOT NULL, PRIMARY KEY(task_id,idempotency_key))",
-        "CREATE TABLE task_init_receipts (idempotency_key TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES tasks(id), revision INTEGER NOT NULL)",
-    ] { sqlx::query(statement).execute(&mut *tx).await.map_err(Error::storage)?; }
+    for statement in SCHEMA {
+        sqlx::query(statement)
+            .execute(&mut *tx)
+            .await
+            .map_err(Error::storage)?;
+    }
     tx.commit().await.map_err(Error::storage)?;
     conn.close().await.map_err(Error::storage)?;
     fs::File::open(&temporary.0)
