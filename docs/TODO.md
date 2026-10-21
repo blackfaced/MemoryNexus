@@ -1,12 +1,39 @@
 # MemoryNexus Roadmap
 
-> Updated: 2026-08-28
+> Updated: 2026-10-21
 > Executable tracker source of truth: [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues).
-> This document records the current architecture direction and a **read-only**
-> reconciliation recommendation; it does not alter issue state, labels, or
-> milestones.
+> The shared-task-memory issues below are published. The older reconciliation
+> section remains a historical recommendation, not a claim that its issues were closed.
 
 ## Current direction
+
+[ADR-028](../decisions/ADR-028-shared-task-memory.md) and
+[shared task-memory spec #296](https://github.com/blackfaced/MemoryNexus/issues/296)
+are the current priority: MiniMax and Codex on the task machine share bounded
+task context through the same Rust CLI/JSON and local SQLite task ledger.
+The task ledger is separate from existing experiment data. HTTP/MCP transport,
+legacy Surface work, model SDKs and a new scheduler are not prerequisites.
+
+Implementation is not complete. The architecture/contract documents must land
+before workers begin; a `ready-for-agent` label means the ticket is specified,
+not that its dependencies have been satisfied. Parent closure is not required
+to start T1 after the documentation gate.
+
+| Order | Issue | Outcome / dependency |
+| --- | --- | --- |
+| Plan | [#296](https://github.com/blackfaced/MemoryNexus/issues/296) | ADR-028, contract, docs and complete mirrored specification; tracks the real-client gate. |
+| T1 | [#297](https://github.com/blackfaced/MemoryNexus/issues/297) | Task init/config, scoped record/context, strict JSON and idempotency; after the documentation gate. |
+| T2 | [#298](https://github.com/blackfaced/MemoryNexus/issues/298) | Review candidates, owner correction/retraction and source invalidation; after #297. |
+| T3 | [#299](https://github.com/blackfaced/MemoryNexus/issues/299) | WAL-consistent backup/restore/export preserving task identity and receipts; after #298. |
+| T4 | [#300](https://github.com/blackfaced/MemoryNexus/issues/300) | Shared protocol, thin MiniMax/Codex entry instructions, existing-review integration and simulated smoke; after #299. |
+| T5 | [#301](https://github.com/blackfaced/MemoryNexus/issues/301) | Owner/Coordinator real MiniMax↔Codex and scheduled-review acceptance on the other machine; after #300. |
+
+Read [the exact contract](task-memory-contract.md) before implementation and
+[the onboarding guide](task-memory-onboarding.md) before target-machine work.
+T5 requires actual client execution and an owner decision; it remains open when
+the target machine is unavailable. This planning work does not claim deployment.
+
+## Existing personal-experiment track
 
 [ADR-027](../decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md) and
 [parent spec #273](https://github.com/blackfaced/MemoryNexus/issues/273) reset
@@ -22,13 +49,13 @@ frozen while replacement is validated. It is historical context, not a second
 active product roadmap. No historical data migration, dual write, or
 compatibility layer is planned.
 
-## Dependency-ordered replacement
+## Personal-experiment dependencies retained
 
 | Order | Issue | Required outcome |
 | --- | --- | --- |
 | 1 | [#274](https://github.com/blackfaced/MemoryNexus/issues/274) | **Completed:** normal WeChat MiniMax and an independent native scheduled session share local state. Cron output is owner-queryable through the existing conversation, not a proactive App/WeChat reminder. |
 | 2 | [#275](https://github.com/blackfaced/MemoryNexus/issues/275) | Record ADR-027, align positioning, and prepare legacy-roadmap reconciliation. |
-| 3 | [#276–#281](https://github.com/blackfaced/MemoryNexus/issues/276) | Build the four-object SQLite CLI (including `retract`), MiniMax Skill, `due`, and recovery path. |
+| 3 | [#276–#281](https://github.com/blackfaced/MemoryNexus/issues/276) | Feedback CLI/Skill/recovery source exists at `c9b4373`; installation and owner gates are separate. |
 | 4 | [#282](https://github.com/blackfaced/MemoryNexus/issues/282) | Clean-Mac-mini installation acceptance. |
 | 5 | [#283](https://github.com/blackfaced/MemoryNexus/issues/283) | Fixed fourteen-calendar-day owner dogfood gate. |
 | 6 | [#284–#286](https://github.com/blackfaced/MemoryNexus/issues/284) | Only after a passed gate: cut over defaults, then remove legacy interfaces and storage. |
@@ -40,6 +67,10 @@ or WeChat delivery is not a first-version capability and must not become an
 implementation assumption.
 
 ## Fourteen-day deletion gate
+
+ADR-028 authorizes only its bounded task-memory slice ahead of this gate. It
+does not change the following criteria, substitute #301 for #283, or authorize
+legacy deletion early. Future #284–#286 must preserve the new task path.
 
 The old runtime remains until #283 passes. The fixed gate requires at least ten
 valid confirmed Observations, one Experiment, five execution updates

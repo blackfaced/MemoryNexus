@@ -1,5 +1,20 @@
 # Current Architecture
 
+## Shared task-memory priority
+
+[ADR-028](../../decisions/ADR-028-shared-task-memory.md) adds the user-authorized
+task slice: MiniMax / Codex / existing review invocation → the same Rust CLI
+`task` commands → one local SQLite task ledger. Each directory binds a stable
+task ID; readers receive bounded current records and separately marked review
+candidates. The task ledger is separate from existing experiment data.
+
+See [the implementation contract](../task-memory-contract.md) and
+[other-machine onboarding](../task-memory-onboarding.md). Task commands remain
+planned. HTTP, legacy Surface and a new daemon are not prerequisites. The
+single-owner filesystem trust model does not isolate mutually untrusted clients.
+
+## Personal-experiment path retained under ADR-027
+
 The supported target architecture is a local personal experiment feedback kernel
 on a Mac mini:
 
@@ -26,8 +41,8 @@ history for state.
 
 ## Main seam
 
-The target CLI will be the primary interface for product behavior and
-verification after #274 and #276–#281. It will accept explicit use cases and
+The existing feedback CLI is the primary interface for product behavior and
+verification. It accepts explicit use cases and
 stable structured input/output, not generic Surface dispatch or private table
 operations:
 
@@ -38,8 +53,8 @@ observe | retract | add-recommendation | start-experiment | record-outcome | rev
 SQLite in WAL mode is the accepted authoritative first-version store. It must
 support deterministic migrations, consistent backup, JSON export, and restore.
 The first version has one fixed owner and at most one active Experiment. The
-current runnable code remains the frozen legacy runtime; no target CLI command
-is claimed to be available before the implementation tickets complete.
+feedback CLI source exists at `c9b4373`; clean-machine installation and the
+fourteen-day owner gate are still distinct from source implementation.
 
 ## Responsibilities
 
@@ -52,7 +67,7 @@ is claimed to be available before the implementation tickets complete.
 Every authoritative write requires an owner-confirmed bounded summary. Raw
 external conversations and medical documents are ephemeral by default.
 
-## Explicit exclusions
+## ADR-027 exclusions retained outside the task slice
 
 The first path has no PostgreSQL, Qdrant, embeddings, vector search, Axum REST
 service, MCP server, Surface Gateway, `CognitiveSpace`, Namespace, Trace,

@@ -2,7 +2,26 @@
 
 本文件给在 MemoryNexus 工作的 Agent 使用。先读本文件、相关 GitHub issue、
 [README](README.md)、[当前路线图](docs/TODO.md) 和
-[ADR-027](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)。
+[ADR-027](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)。任务目录共享记忆工作还必须读
+[ADR-028](decisions/ADR-028-shared-task-memory.md) 和
+[Task memory contract](docs/task-memory-contract.md)。
+
+## 当前任务记忆优先切片
+
+ADR-028 是用户于 2026-10-21 授权的有界扩展：先打通同一任务目录中 MiniMax 与 Codex
+共用的本地任务记忆，使用现有 Rust binary 新增 `task` CLI 用例及独立 SQLite task ledger。
+精确命令和字段以 task-memory-contract 为准；当前规划不代表命令已实现。
+
+- 复用本地 CLI + JSON；不恢复 HTTP/Surface/PostgreSQL 路线或引入第二后端。
+- `task_id` 是稳定任务分区，单 owner 的 OS 文件权限是信任边界；不增加账户、Space 或 Namespace。
+- 按任务授权的执行记录可以自动保存；review 产物保留候选状态；instruction、纠正和撤回
+  需要该次内容的 owner 确认。旧四对象 ledger 的逐次确认规则保持有效。
+- 任务 ledger 与既有实验 ledger 分开，客户端共享前者；读取失败不得切换库或依赖隐藏记忆。
+- 实际 MiniMax↔Codex gate 独立于 #283，不能移动十四天标准或提前触发 #284–#286 删除。
+- Worker 只实现其 issue 的合同和文件范围。跨客户端验收必须使用真实客户端，不能只改 client 标签。
+
+下文 ADR-027 的“仅四对象/仅 MiniMax/扩展等待 gate”限制由 ADR-028 仅为本切片重开；
+其他旧 roadmap 的冻结、实验确认和删除 gate 仍有效。
 
 ## 当前默认方向
 
@@ -44,8 +63,9 @@ MiniMax Skill / WeChat input / owner-initiated conversation query
 
 ## 已接受目标与当前可运行代码
 
-ADR-027 记录的是**目标契约**，不是现有功能声明。当前可运行的仍是冻结的 legacy Rust
-runtime；它尚未实现 SQLite CLI/MiniMax 产品路径。不要把目标命令写成已可运行能力。
+ADR-027 记录目标契约。基于 `c9b4373`，SQLite feedback CLI、MiniMax Skill 与恢复代码
+已经存在；#282/#283 的安装与真实使用验收仍单独判断。ADR-028 的 `task` 命令尚未实现，
+不得把本文的目标合同写成当前可运行能力。
 
 [#274](https://github.com/blackfaced/MemoryNexus/issues/274) 已通过：普通微信 MiniMax
 session 能执行 owner-approved 本地命令并写入共享状态，独立 native scheduled session
@@ -107,11 +127,10 @@ ledger，也不得把主动 delivery 加入 #276+ 的实现假设。
 
 ## 当前优先级
 
-1. #275 的 ADR、公开文档与 tracker reconciliation，包含 #274 的 owner-initiated pull
-   constraint。
-2. #276–#281 的最小 SQLite CLI path。
-3. #282 clean-install 与 #283 fixed fourteen-day owner gate。
-4. 通过 gate 后的 cutover 和 contraction（#284–#286）。
+1. ADR-028 的任务绑定、读写与 review，按 [TODO](docs/TODO.md) 的新 issue 顺序推进。
+2. 另一台机器上的 MiniMax↔Codex 真实交接、既有定时 review 与恢复验收。
+3. #282/#283 保留原个人实验安装和固定十四天 gate，不用新任务记忆结果替代。
+4. 仅当原 gate 通过后，才按 #284–#286 执行 cutover 与 contraction。
 
 ## 文档位置
 

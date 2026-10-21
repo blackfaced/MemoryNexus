@@ -1,5 +1,14 @@
 # MemoryNexus Vision
 
+The current user-authorized priority is [ADR-028 shared task memory](../decisions/ADR-028-shared-task-memory.md):
+the owner can continue a directory task in MiniMax or Codex using the same
+durable progress, explicit instructions and sourced review candidates. Its
+first gate is real bidirectional handoff on the task machine. It preserves the
+local CLI/SQLite deployment and does not reopen the frozen service architecture.
+
+The personal-experiment direction below remains applicable to its existing
+ledger and fixed dogfood gate; task handoff does not replace that evidence.
+
 MemoryNexus is a local-first personal experiment feedback kernel: a MiniMax
 Skill invokes a local CLI, and one SQLite ledger preserves confirmed history
 across sessions.
