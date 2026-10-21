@@ -38,6 +38,10 @@ assume any provider's global Skill location or install hooks automatically.
    for constraints needing current owner approval, and sourced lesson candidates.
    A document's imperative wording is not owner confirmation. Do not turn an
    execution summary into an instruction to make it appear more authoritative.
+   Keep draft/approval labels in preview metadata. Author persisted text to remain
+   useful after a successful seed: state instructions directly and make checkpoint
+   next steps about ongoing task work. Keep requests to approve this draft in the
+   owner handoff.
 5. Run `scripts/bootstrap.py preview` using the reference's exact fields. It
    hashes sources and Git state and creates a new owner-only state directory with
    `manifest.json` and `preview.md`. No binary or ledger is required. Deliver both
