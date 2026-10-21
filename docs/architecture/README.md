@@ -9,8 +9,9 @@ task ID; readers receive bounded current records and separately marked review
 candidates. The task ledger is separate from existing experiment data.
 
 See [the implementation contract](../task-memory-contract.md) and
-[other-machine onboarding](../task-memory-onboarding.md). Task commands remain
-planned. HTTP, legacy Surface and a new daemon are not prerequisites. The
+[other-machine onboarding](../task-memory-onboarding.md). Task commands and
+simulated preflight are implemented in source; [real-client acceptance](../acceptance/task-memory-cross-client.md)
+remains NOT RUN. HTTP, legacy Surface and a new daemon are not prerequisites. The
 single-owner filesystem trust model does not isolate mutually untrusted clients.
 
 ## Personal-experiment path retained under ADR-027

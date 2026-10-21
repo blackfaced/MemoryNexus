@@ -14,10 +14,11 @@ task context through the same Rust CLI/JSON and local SQLite task ledger.
 The task ledger is separate from existing experiment data. HTTP/MCP transport,
 legacy Surface work, model SDKs and a new scheduler are not prerequisites.
 
-Implementation is not complete. The architecture/contract documents must land
-before workers begin; a `ready-for-agent` label means the ticket is specified,
-not that its dependencies have been satisfied. Parent closure is not required
-to start T1 after the documentation gate.
+The architecture/contract gate landed in [#302](https://github.com/blackfaced/MemoryNexus/pull/302)
+(`7ae3d67`). #297–#300 have source implementation on the integration branch in
+[#303](https://github.com/blackfaced/MemoryNexus/pull/303); live issue/PR status is
+the closure authority. The target machine is unavailable, so #301 and parent
+#296 remain open. A `ready-for-agent` label means specified, not dependency acceptance.
 
 | Order | Issue | Outcome / dependency |
 | --- | --- | --- |
@@ -31,7 +32,9 @@ to start T1 after the documentation gate.
 Read [the exact contract](task-memory-contract.md) before implementation and
 [the onboarding guide](task-memory-onboarding.md) before target-machine work.
 T5 requires actual client execution and an owner decision; it remains open when
-the target machine is unavailable. This planning work does not claim deployment.
+the target machine is unavailable. Complete the [real-client TODO and evidence
+record](acceptance/task-memory-cross-client.md) when access is supplied. The local
+simulated preflight does not establish deployment or an actual scheduled run.
 
 ## Existing personal-experiment track
 

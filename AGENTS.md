@@ -10,7 +10,8 @@
 
 ADR-028 是用户于 2026-10-21 授权的有界扩展：先打通同一任务目录中 MiniMax 与 Codex
 共用的本地任务记忆，使用现有 Rust binary 新增 `task` CLI 用例及独立 SQLite task ledger。
-精确命令和字段以 task-memory-contract 为准；当前规划不代表命令已实现。
+精确命令和字段以 task-memory-contract 为准；源码已实现九个 task 命令和模拟预检，
+真实 MiniMax↔Codex / 定时 review 验收仍为 NOT RUN，见 #301 与接入说明。
 
 - 复用本地 CLI + JSON；不恢复 HTTP/Surface/PostgreSQL 路线或引入第二后端。
 - `task_id` 是稳定任务分区，单 owner 的 OS 文件权限是信任边界；不增加账户、Space 或 Namespace。
@@ -64,8 +65,10 @@ MiniMax Skill / WeChat input / owner-initiated conversation query
 ## 已接受目标与当前可运行代码
 
 ADR-027 记录目标契约。基于 `c9b4373`，SQLite feedback CLI、MiniMax Skill 与恢复代码
-已经存在；#282/#283 的安装与真实使用验收仍单独判断。ADR-028 的 `task` 命令尚未实现，
-不得把本文的目标合同写成当前可运行能力。
+已经存在；#282/#283 的安装与真实使用验收仍单独判断。ADR-028 的 `task` 命令、
+共用协议和模拟预检已在当前源码实现；使用固定源码 commit 构建，不能假设旧 release 包含它。
+另一台机器暂不可访问，#301 的真实客户端验收待办保存在
+[验收记录](docs/acceptance/task-memory-cross-client.md)，不得用模拟结果关闭 #301 或 #296。
 
 [#274](https://github.com/blackfaced/MemoryNexus/issues/274) 已通过：普通微信 MiniMax
 session 能执行 owner-approved 本地命令并写入共享状态，独立 native scheduled session

@@ -18,3 +18,5 @@ pub mod state;
 pub mod storage;
 pub mod study_buddy_adapter;
 pub mod vector;
+
+pub mod task_memory;

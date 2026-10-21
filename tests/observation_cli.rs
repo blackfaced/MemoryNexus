@@ -400,3 +400,30 @@ fn export_backup_and_restore_preserve_public_ledger_state() {
         cli(&ledger, "observation-history", None)
     );
 }
+
+#[test]
+fn experiment_commands_reject_task_ledgers_before_write_or_restore_copy() {
+    let directory = TempDir::new().unwrap();
+    let ledger = directory.path().join("task.sqlite");
+    let config = directory.path().join("task.json");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_memorynexus-feedback-cli"))
+        .args(["task", "--config", config.to_str().unwrap(), "init"])
+        .env("MEMORYNEXUS_TASK_LEDGER", &ledger)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(json!({"idempotency_key":"init","display_name":"Task","confirmation":"confirmed","automatic_capture":[]}).to_string().as_bytes()).unwrap();
+    assert!(child.wait_with_output().unwrap().status.success());
+    let rejected = cli(
+        &ledger,
+        "observe",
+        Some(initial("Must not enter task ledger", "observation-1")),
+    );
+    assert_eq!(rejected["status"], "rejected");
+    assert_eq!(rejected["code"], "scope_mismatch");
+    let destination = directory.path().join("experiment.sqlite");
+    let restore = cli(&destination, "restore", Some(json!({"path":ledger})));
+    assert_eq!(restore["code"], "scope_mismatch");
+    assert!(!destination.exists());
+}
