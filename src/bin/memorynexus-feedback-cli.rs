@@ -22,7 +22,18 @@ const MAX_ACTION_LENGTH: usize = 300;
 
 #[tokio::main]
 async fn main() {
-    match run(env::args().skip(1).collect()).await {
+    let args: Vec<String> = env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "task") {
+        match memorynexus::task_memory::run(&args[1..]).await {
+            Ok(response) => println!("{response}"),
+            Err(error) => {
+                println!("{}", error.response());
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
+    match run(args).await {
         Ok(response) => println!("{response}"),
         Err(error) => {
             println!("{}", error.response());
@@ -556,6 +567,7 @@ async fn restore_ledger(ledger_path: &Path, value: Value) -> Result<Value, CliEr
     if !source.is_file() {
         return Err(CliError::not_found("backup source does not exist"));
     }
+    reject_task_ledger(&source).await?;
     if ledger_path.exists() {
         return Err(CliError::conflict(
             "restore requires a new, empty ledger path",
@@ -570,7 +582,21 @@ async fn restore_ledger(ledger_path: &Path, value: Value) -> Result<Value, CliEr
     Ok(json!({"status":"ok","review":review}))
 }
 
+async fn reject_task_ledger(path: &Path) -> Result<(), CliError> {
+    if memorynexus::task_memory::is_task_ledger(path)
+        .await
+        .map_err(CliError::storage)?
+    {
+        return Err(CliError {
+            code: "scope_mismatch",
+            message: "experiment commands cannot use a task ledger".to_owned(),
+        });
+    }
+    Ok(())
+}
+
 async fn open_ledger(ledger_path: &Path, create_if_missing: bool) -> Result<SqlitePool, CliError> {
+    reject_task_ledger(ledger_path).await?;
     if create_if_missing {
         if let Some(parent) = ledger_path
             .parent()
