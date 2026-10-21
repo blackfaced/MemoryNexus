@@ -64,7 +64,7 @@ def bounded(value, limit):
     require(isinstance(value, str) and value.strip() and len(value) <= limit, 'invalid bounded text')
 
 
-def safe_path(value, private=False):
+def safe_path(value, private=False, *, cli_executable=False):
     require(isinstance(value, str) and Path(value).is_absolute(), 'absolute path required')
     path = Path(value)
     require('..' not in path.parts and str(path) == value, 'canonical absolute path required')
@@ -73,7 +73,9 @@ def safe_path(value, private=False):
             continue
         info = part.lstat()
         require(not stat.S_ISLNK(info.st_mode), 'symlink path refused')
-        require(not stat.S_ISREG(info.st_mode) or info.st_nlink == 1, 'hardlinked file refused')
+        # Cargo can hardlink the read-only CLI artifact into target/debug/deps.
+        require(not stat.S_ISREG(info.st_mode) or info.st_nlink == 1 or
+                (cli_executable and part == path), 'hardlinked file refused')
         require(info.st_uid in (0, os.getuid()), 'path owner mismatch')
         # System temporary roots are safe only with their sticky bit.
         require(not info.st_mode & 0o022 or (stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and info.st_mode & stat.S_ISVTX), 'writable parent refused')
@@ -427,7 +429,7 @@ def apply(args):
     import fcntl
     state, manifest = load_approved(args)
     require(0 < args.timeout <= 300, 'timeout must be between 0 and 300 seconds')
-    binary = safe_path(args.binary)
+    binary = safe_path(args.binary, cli_executable=True)
     require(binary.is_file() and os.access(binary, os.X_OK), 'compiled CLI missing or not executable')
     ledger = safe_path(args.ledger, private=True)
     for suffix in ('-wal', '-shm', '-journal'):

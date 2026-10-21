@@ -392,6 +392,24 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(code, 0, done)
         self.assertEqual(done['attempted'], [])
 
+    @unittest.skipUnless(BINARY, 'set MEMORYNEXUS_TEST_BINARY to compiled CLI')
+    def test_hardlinked_compiled_cli_runs_but_symlinked_cli_is_refused(self):
+        _, result = self.preview()
+        executable = self.home / 'compiled-cli'
+        executable.symlink_to(BINARY)
+        code, rejected = self.apply(result['manifest_sha256'], binary=executable)
+        self.assertEqual(code, 2, rejected)
+        self.assertIn('symlink', rejected['message'])
+        self.assertFalse(self.config.exists())
+        self.assertFalse(self.ledger.exists())
+        executable.unlink()
+        os.link(BINARY, executable)
+        self.assertGreater(executable.stat().st_nlink, 1)
+        code, done = self.apply(result['manifest_sha256'], binary=executable)
+        self.assertEqual(code, 0, done)
+        self.assertEqual(done['status'], 'complete')
+        self.assertEqual(len(self.context()['result']['entries']), 1)
+
 
 if __name__ == '__main__':
     unittest.main()
