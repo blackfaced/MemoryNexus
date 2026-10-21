@@ -5,6 +5,8 @@
 - [ADR-028: MiniMax / Codex shared task memory](../decisions/ADR-028-shared-task-memory.md)
 - [Task memory implementation contract](task-memory-contract.md)
 - [Task memory onboarding on another machine](task-memory-onboarding.md)
+- [Shared client protocol](../integrations/task-memory/PROTOCOL.md)
+- [Real-client acceptance TODO](acceptance/task-memory-cross-client.md)
 - [Existing feedback ledger recovery](feedback-ledger-recovery.md)
 - [Vision](vision.md)
 - [Architecture](architecture/README.md)
@@ -30,5 +32,5 @@ setup, architecture, or roadmap instructions.
 #274 validated MiniMax local-command and shared-state assumptions, with an
 owner-initiated pull constraint for scheduled output. The feedback CLI now has
 source implementation and recovery commands; clean-install acceptance remains
-separate. ADR-028 task commands are planned and must pass their own real-client
-gate. Do not use legacy docs as setup guidance.
+separate. ADR-028 task commands and simulated CLI preflight exist in source;
+their own real-client gate #301 remains NOT RUN. Do not use legacy docs as setup guidance.

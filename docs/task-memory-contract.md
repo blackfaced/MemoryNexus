@@ -1,7 +1,9 @@
 # Shared task memory: implementation contract v1
 
 Status: accepted design under [ADR-028](../decisions/ADR-028-shared-task-memory.md).
-All `task` commands below are **planned**, not available on baseline `c9b4373`.
+All nine `task` commands below are implemented in the current source; they are
+not available on old baseline `c9b4373` or the existing release packages. The
+[real-client gate](acceptance/task-memory-cross-client.md) remains **NOT RUN**.
 Existing personal-experiment commands in `memorynexus-feedback-cli` must retain
 their behavior and never open a task ledger by accident. GitHub child issues
 carry implementation ownership and dependencies: [parent #296](https://github.com/blackfaced/MemoryNexus/issues/296),
@@ -10,7 +12,7 @@ then #297 → #298 → #299 → #300 → #301 after the documentation landing ga
 ## Binding and command boundary
 
 One owner, one local machine, one task ledger shared by both clients. Use the
-existing Rust binary with this exact proposed grammar:
+existing Rust binary with this exact grammar:
 
 ```text
 memorynexus-feedback-cli task --config <absolute-config-path> <init|record|context|review|correct|retract>

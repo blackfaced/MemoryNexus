@@ -8,7 +8,9 @@ The current priority is [shared task memory, ADR-028](decisions/ADR-028-shared-t
 read a task's context, record execution, retain sourced review candidates, and
 continue in another client. See the [contract](docs/task-memory-contract.md),
 [other-machine onboarding](docs/task-memory-onboarding.md) and [issues](docs/TODO.md).
-The new `task` commands are planned; the cross-client gate has not run.
+The source implements `task` init/record/context/review/correct/retract/export/backup/restore
+and a simulated CLI preflight. The [real-client gate](docs/acceptance/task-memory-cross-client.md)
+has **not run**; #301 and parent #296 remain open.
 
 The existing personal-experiment path helps one owner keep a confirmed record of
 what they observed, which advice they chose, what reversible adjustment they tried,
@@ -46,7 +48,7 @@ compiled `memorynexus-feedback-cli` contains JSON commands for `observe`, `retra
 `add-recommendation`, `start-experiment`, `record-outcome`, `review`, and
 `due`, `end-experiment`, `observation-history`, `export`, `backup` and `restore`.
 Source presence is not clean-machine acceptance: #282 and #283 remain separate
-installation and owner gates. Task records will use a separate task ledger;
+installation and owner gates. Task records use a separate task ledger;
 they do not change the existing experiment database or its confirmation rules.
 
 ## MiniMax and health boundary
@@ -82,6 +84,8 @@ projection from the SQLite ledger.
 
 - [Shared task memory decision](decisions/ADR-028-shared-task-memory.md)
 - [Shared task memory onboarding](docs/task-memory-onboarding.md)
+- [Shared client protocol](integrations/task-memory/PROTOCOL.md)
+- [Real-client acceptance TODO](docs/acceptance/task-memory-cross-client.md)
 - [Personal-experiment decision](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)
 - [Current roadmap and tracker reconciliation](docs/TODO.md)
 - [Current architecture](docs/architecture/README.md)
@@ -95,9 +99,21 @@ as the supported product path.
 
 ## Verification
 
-For the planning documents, check links, command/field consistency and issue
-dependencies. Runtime implementation and real-client acceptance are tracked
-separately; documentation does not establish a passing runtime gate.
+From a source checkout containing the task implementation:
+
+```sh
+cargo build --locked --bin memorynexus-feedback-cli
+python3 scripts/task-memory-smoke.py --binary target/debug/memorynexus-feedback-cli
+cargo test --test task_memory_cli
+cargo test --test observation_cli
+```
+
+The smoke uses temporary synthetic data and fresh CLI processes; its JSON report
+is explicitly `simulated_cli`, with real-client acceptance `not_run`. Installation
+uses a pinned source build: current release packages omit this binary. Follow
+[onboarding](docs/task-memory-onboarding.md) for commit/hash/help checks and the
+actual MiniMax, fresh Codex and existing scheduled-review gate. These checks do
+not replace the independent #283 fourteen-day personal-experiment gate.
 
 ## License
 
