@@ -27,6 +27,41 @@ private paths, transcripts, credentials, and ledger contents on the task machine
 | Entry mechanism | TODO — forced hook / explicit wrapper / prompt-only best effort |
 | Existing review entry and explicit config/environment mapping | TODO |
 
+### Planning-machine observations (2026-10-21)
+
+These come from the **planning machine**, not the task machine, and they do not
+satisfy any row above. They are recorded because they describe build and access
+obstacles worth checking on the task machine before starting the real run.
+
+| Field | Observed on the planning machine |
+| --- | --- |
+| OS and CPU architecture | Darwin arm64, macOS 26.5.2 (25F84) |
+| Rust toolchain | rustc/cargo 1.96.1, but `rustup` reports `stable-x86_64-apple-darwin` and runs under Rosetta emulation |
+| Python | 3.13.13 |
+| Codex runtime | `codex-cli 0.142.5` on `PATH` |
+| MiniMax executor | MiniMax Code desktop session (local shell, local file access, stdin/JSON stdout) |
+| Installed CLI | `~/.local/bin/memorynexus-feedback-cli`, built 2026-08-30, Mach-O x86_64, **no `task` command group** — `task` is not in its usage string |
+
+Three obstacles blocked building the task-capable binary here:
+
+1. **A stale sparse-index cache.** `--offline` fails because the local index
+   cache predates `syn 3.0.9` and `async-trait 0.1.92`, so the resolver cannot
+   select the locked versions.
+2. **Index refresh stalls.** With a corporate zero-trust HTTP agent, a local
+   TUN proxy and the toolchain running under Rosetta, `cargo` holds established
+   TLS sessions to the crates CDN but transfers no bytes.
+3. **No native toolchain.** `rustup toolchain install stable-aarch64-apple-darwin`
+   is refused because the installed `rustup` binary itself is x86_64; it only
+   offers `--force-non-host`.
+
+Consequences for the task machine: install the binary from a checkout that can
+fetch its dependencies, or transfer a binary built elsewhere together with its
+SHA-256. A prebuilt binary does not currently exist — the release workflow and
+the one-click package do not include `memorynexus-feedback-cli`. Also confirm
+that the task machine actually runs a **review** entry on a schedule. A backup
+entry is not a review entry: a backup job produces no sourced candidate for the
+other client to read.
+
 ## Case evidence
 
 Record each result as passed, failed, or not-run. Include relevant request keys,
