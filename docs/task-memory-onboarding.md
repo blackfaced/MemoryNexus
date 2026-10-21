@@ -69,6 +69,15 @@ task 功能运行时无需启动 PostgreSQL、Qdrant、Docker 或 MemoryNexus da
 
 ## 3. 绑定一个试点目录
 
+已有目录第一次接入且希望整理当前进度时，先用
+[初始化 Skill](../integrations/task-memory/memorynexus-task-bootstrap/SKILL.md)
+生成完整 Markdown/JSON 导入草稿。复制完整 Skill 目录（含 scripts/references），并保留
+共用协议的可读路径；不假设 MiniMax/Codex 的全局安装位置。草稿阶段不需要 binary/ledger，
+也不创建配置。owner 确认精确草稿、绑定和 policy 后再 apply；它复用下列 CLI 初始化流程，
+因此不要提前执行本节的手动 init。已存在配置的任务不会自动重新导入。状态目录必须在任务
+仓库外且 owner-only；批准的 ledger 父目录需明确创建并核对权限。详见 Skill 的 manifest
+说明。这一步不能替代 #301 的真实客户端及定时 review 验收。
+
 两个执行器及原来的 review 任务必须显式得到同一环境变量。例如在任务机器上：
 
 ```sh

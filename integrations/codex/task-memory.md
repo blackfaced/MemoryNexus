@@ -19,3 +19,9 @@ Review text remains a sourced candidate; exact-content owner confirmation is
 required for instructions, correction and withdrawal. Apply the shared pending,
 error and recovery rules. Never silently substitute chat history for a failed
 read or claim another machine was accepted from a simulated CLI check.
+
+For first-time initialization from existing repository material, use the shared
+[bootstrap Skill](../task-memory/memorynexus-task-bootstrap/SKILL.md). Copy its
+complete bundle and retain the common protocol path; show the exact draft and
+obtain approval before any initialization/write. Existing tasks require review,
+not automatic reseeding.

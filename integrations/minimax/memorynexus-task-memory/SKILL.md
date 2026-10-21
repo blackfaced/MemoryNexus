@@ -24,3 +24,8 @@ The actual executor's Skill location, loading syntax and hooks must be verified
 on the task machine. Merely copying this file does not prove it was loaded.
 Prompt-only loading is best effort. Do not install a second scheduler, change
 global settings, promise proactive delivery or mark #301 accepted from this file.
+
+For first-time initialization from existing task material, use the shared
+[bootstrap Skill](../../task-memory/memorynexus-task-bootstrap/SKILL.md). Copy
+its complete bundle and retain the common protocol path. Preview first; exact
+owner approval precedes initialization and writes. Do not reseed existing tasks.

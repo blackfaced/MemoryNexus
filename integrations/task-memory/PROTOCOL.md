@@ -7,6 +7,11 @@ Read this protocol from both clients and from the existing review entry. The
 Only compiled local CLI + JSON is supported. No model SDK, server or scheduler
 is needed. Client names are provenance labels, never task identity or authority.
 
+For an existing directory's first seed, use the shared
+[bootstrap Skill](memorynexus-task-bootstrap/SKILL.md): prepare a source-backed
+preview, obtain exact owner approval, then apply/resume with the existing CLI.
+Drafting does not initialize memory. Continue with this protocol after seeding.
+
 ## Bind the entry explicitly
 
 The operator supplies an absolute `MEMORYNEXUS_BIN`, an absolute `TASK_CONFIG`,

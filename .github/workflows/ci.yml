@@ -63,6 +63,13 @@ jobs:
       - uses: swatinem/rust-cache@v2
       - run: cargo test --all-features --all-targets
         timeout-minutes: 20
+      - name: Task bootstrap public-process acceptance
+        env:
+          MEMORYNEXUS_TEST_BINARY: ${{ github.workspace }}/target/debug/memorynexus-feedback-cli
+        run: |
+          test -x "$MEMORYNEXUS_TEST_BINARY"
+          python3 scripts/test_task_memory_bootstrap.py
+        timeout-minutes: 3
 
   surface-postgres:
     name: PostgreSQL Surface Integration
