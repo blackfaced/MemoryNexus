@@ -12,6 +12,13 @@ The source implements `task` init/record/context/review/correct/retract/export/b
 and a simulated CLI preflight. The [real-client gate](docs/acceptance/task-memory-cross-client.md)
 has **not run**; #301 and parent #296 remain open.
 
+For an existing repository, the [onboarding Skill](integrations/task-memory/memorynexus-repo-onboard/SKILL.md)
+maps its current memory mechanisms and prepares a reviewed integration proposal.
+The [R2 exact contract](docs/repository-memory-v1.md) tracks bounded experience,
+source freshness, independent Lens adoption and memory replacement/withdrawal.
+It is **pending owner acceptance**; the proposed incremental commands and runner
+are not implemented. [R3–R6](docs/repository-memory-workflows-issues.md) remain gated.
+
 The existing personal-experiment path helps one owner keep a confirmed record of
 what they observed, which advice they chose, what reversible adjustment they tried,
 and what happened later. It

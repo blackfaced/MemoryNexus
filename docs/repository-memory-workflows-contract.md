@@ -1,6 +1,10 @@
 # 仓库记忆工作流：行为合同
 
-**行为边界已于 2026-10-22 获 owner 接受；精确接口待 R2 冻结，功能尚未实现。**
+**行为边界已于 2026-10-22 获 owner 接受；R2 精确接口草案待 owner 审阅，增量功能尚未实现。**
+
+[R2 精确合同](repository-memory-v1.md) 给出字段、版本、生命周期、完整请求序列及
+R3/R4 命令级验收交接；其 owner acceptance 仍为 PENDING。本文件保留行为边界，
+以下精确化以该草案为准，不能将文档交付当成运行时可用。
 本文用于设计与验收，不是当前可运行命令说明。
 架构依据见 [ADR-029](../decisions/ADR-029-repository-memory-workflows.md)，执行拆分见
 [issue 索引](repository-memory-workflows-issues.md)。实现者需先读
@@ -111,7 +115,10 @@ digest。文件路径用于追溯，不充当永久身份；修改时间不充�
 
 ## 6. 独立消费与失效
 
-消费关系按 `(task_id, consumer_id, lens_version, entry_id, entry_revision)` 唯一。
+R2 将原先按 entry/version 描述的消费关系精确化为
+`(task_id, workflow_id, consumer_id, root_record_id)` 稳定槽位与不可变 generation。
+每代固定 input ID、全部实际判定证据及其版本、Lens/profile 版本；record.revision 是
+可变状态版本，不能当正文身份。同源不变而关联纠正变化也必须使受影响决定失效。
 每个 consumer 的决定是 proposed/approved/skipped/deferred；有效性另记 current/stale/
 retracted，发布状态另记 not_applied/applied/conflict 或恢复中。
 
@@ -123,7 +130,8 @@ retracted，发布状态另记 not_applied/applied/conflict 或恢复中。
 - 来源失效与旧决定失效必须同一事务；批准不能跨来源版本、Lens 版本或目标配置复用。
 - source revision 和 ledger commit sequence 用于增量；发生时间仅供语义解释。
   按各 consumer 的未完成集合读取，分页或局部失败不能将任务整体标成已处理。
-- 撤回清除 live 原文及派生正文，留下最小 tombstone/receipt；不承诺擦除外部历史备份。
+- 撤回清除 ledger 内对应修订链与结构依赖正文，留下最小 tombstone/receipt；
+  已发布文件需独立协调/授权中性化，不承诺即时擦除文件或外部历史备份。
 
 ## 7. 文档发布属于接入脚本
 

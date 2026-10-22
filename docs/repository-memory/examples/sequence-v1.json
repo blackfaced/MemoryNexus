@@ -1,0 +1,975 @@
+{
+  "schema_version": 1,
+  "fixture": "synthetic contract walkthrough; no actual receipts or owner consent",
+  "response_symbols": {
+    "task_id": "10000000-0000-4000-8000-000000000001",
+    "incarnation": "20000000-0000-4000-8000-000000000001",
+    "capture_record_id": "80000000-0000-4000-8000-000000000001",
+    "decision_a": "90000000-0000-4000-8000-000000000001",
+    "decision_b": "90000000-0000-4000-8000-000000000002",
+    "decision_b_v2": "90000000-0000-4000-8000-000000000003",
+    "approval_a": "a0000000-0000-4000-8000-000000000001",
+    "approval_b": "a0000000-0000-4000-8000-000000000002",
+    "rule": "IDs, decision_sha256 and plan_sha256 are illustrative. In execution, substitute validated CLI response IDs/digests and the independently approved canonical plan digest; never treat fixture constants as approval."
+  },
+  "source_fixtures": {
+    "incident": {
+      "text": "The checker echoed the requested target; an independent readback found it absent. The replacement check has one reported trial.\n",
+      "sha256": "57bc6acbc736c4db23a4cea8dc4c7e2588d034a1916a87525b1fb845c4fc5d90"
+    },
+    "mechanism": {
+      "text": "# Observed result\nThe current navigation points to independent readback; coverage is not established.\n",
+      "sha256": "0089cc4f3ddc00796734a3f52012e871a30ff57104e0979e31ed127cc1a63a88"
+    },
+    "correction_v1": {
+      "text": "The fallback check has not been independently verified.\n",
+      "sha256": "16086e6f9621caf6072b1e76d5a66e778fc1738ac3cf92e1ab5ac3f530e889fa"
+    },
+    "correction_v2": {
+      "text": "The incident document reports two independent fallback trials; both detected an absent target.\n",
+      "sha256": "e57f7c170d8f22d4d966fe0e3c0c4e8cb6ec611034f0ac96cac43ea45e55f26b"
+    }
+  },
+  "profile": {
+    "schema_version": 1,
+    "workflow_id": "40000000-0000-4000-8000-000000000001",
+    "revision": 1,
+    "purpose": "Retain bounded checker experience and two independent views.",
+    "mechanisms": [
+      {
+        "name": "upstream_review",
+        "purpose": "Owns formal knowledge",
+        "trigger": "external morning review",
+        "read_paths": [
+          "inbox/incidents.jsonl"
+        ],
+        "write_paths": [
+          "knowledge/checker.md"
+        ],
+        "evidence": "AGENTS.md#review"
+      }
+    ],
+    "collections": [
+      {
+        "collection_id": "50000000-0000-4000-8000-000000000001",
+        "format": "text",
+        "path": "notes/incident.md",
+        "selector": {
+          "kind": "full"
+        },
+        "extractor_version": "bounded-v1",
+        "authority": "Document-reported incident."
+      },
+      {
+        "collection_id": "50000000-0000-4000-8000-000000000002",
+        "format": "text",
+        "path": "knowledge/checker.md",
+        "selector": {
+          "kind": "full"
+        },
+        "extractor_version": "bounded-v1",
+        "authority": "Mechanism navigation evidence."
+      },
+      {
+        "collection_id": "50000000-0000-4000-8000-000000000003",
+        "format": "text",
+        "path": "notes/correction.md",
+        "selector": {
+          "kind": "full"
+        },
+        "extractor_version": "bounded-v1",
+        "authority": "Follow-up verification status."
+      }
+    ],
+    "capture": {
+      "automatic_drafts": true,
+      "automatic_reviews": true
+    },
+    "consumers": [
+      {
+        "consumer_id": "mechanism",
+        "lens_version": "pointer-v1",
+        "rules_sha256": "b912b250fccceade99e59d42eb09ce1add64594a19f6acbe8f877a7acba59bd7",
+        "target_id": "mechanism_doc",
+        "neutralize_stale": true
+      },
+      {
+        "consumer_id": "lessons",
+        "lens_version": "lesson-v1",
+        "rules_sha256": "8d5aeb17564dec1d2e41f4f9f194bbb1351877fb0a84fc48fa43854f8d8054ff",
+        "target_id": "lessons_doc",
+        "neutralize_stale": true
+      }
+    ],
+    "operation": {
+      "workflow_name": "repository_review",
+      "trigger": "not_configured"
+    }
+  },
+  "binding": {
+    "schema_version": 1,
+    "workflow_id": "40000000-0000-4000-8000-000000000001",
+    "task_id": "10000000-0000-4000-8000-000000000001",
+    "task_root": "/srv/synthetic/checker",
+    "config": "/srv/synthetic/checker/.memorynexus.json",
+    "ledger": "/srv/synthetic/private/task-v2.sqlite",
+    "binary": "/srv/synthetic/install/v1/memorynexus-feedback-cli",
+    "binary_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "python": "/usr/bin/python3",
+    "package": "/srv/synthetic/install/v1",
+    "package_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "profile": "/srv/synthetic/private/profile.json",
+    "state_root": "/srv/synthetic/private/runs",
+    "targets": [
+      {
+        "target_id": "mechanism_doc",
+        "path": "/srv/synthetic/private/mechanism.md"
+      },
+      {
+        "target_id": "lessons_doc",
+        "path": "/srv/synthetic/private/lessons.md"
+      }
+    ],
+    "timeout_seconds": 60
+  },
+  "requests": {
+    "bind": {
+      "action": "workflow-bind",
+      "input": {
+        "idempotency_key": "example:bind",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "expected_profile_revision": 0,
+        "profile": {
+          "schema_version": 1,
+          "workflow_id": "40000000-0000-4000-8000-000000000001",
+          "revision": 1,
+          "purpose": "Retain bounded checker experience and two independent views.",
+          "mechanisms": [
+            {
+              "name": "upstream_review",
+              "purpose": "Owns formal knowledge",
+              "trigger": "external morning review",
+              "read_paths": [
+                "inbox/incidents.jsonl"
+              ],
+              "write_paths": [
+                "knowledge/checker.md"
+              ],
+              "evidence": "AGENTS.md#review"
+            }
+          ],
+          "collections": [
+            {
+              "collection_id": "50000000-0000-4000-8000-000000000001",
+              "format": "text",
+              "path": "notes/incident.md",
+              "selector": {
+                "kind": "full"
+              },
+              "extractor_version": "bounded-v1",
+              "authority": "Document-reported incident."
+            },
+            {
+              "collection_id": "50000000-0000-4000-8000-000000000002",
+              "format": "text",
+              "path": "knowledge/checker.md",
+              "selector": {
+                "kind": "full"
+              },
+              "extractor_version": "bounded-v1",
+              "authority": "Mechanism navigation evidence."
+            },
+            {
+              "collection_id": "50000000-0000-4000-8000-000000000003",
+              "format": "text",
+              "path": "notes/correction.md",
+              "selector": {
+                "kind": "full"
+              },
+              "extractor_version": "bounded-v1",
+              "authority": "Follow-up verification status."
+            }
+          ],
+          "capture": {
+            "automatic_drafts": true,
+            "automatic_reviews": true
+          },
+          "consumers": [
+            {
+              "consumer_id": "mechanism",
+              "lens_version": "pointer-v1",
+              "rules_sha256": "b912b250fccceade99e59d42eb09ce1add64594a19f6acbe8f877a7acba59bd7",
+              "target_id": "mechanism_doc",
+              "neutralize_stale": true
+            },
+            {
+              "consumer_id": "lessons",
+              "lens_version": "lesson-v1",
+              "rules_sha256": "8d5aeb17564dec1d2e41f4f9f194bbb1351877fb0a84fc48fa43854f8d8054ff",
+              "target_id": "lessons_doc",
+              "neutralize_stale": true
+            }
+          ],
+          "operation": {
+            "workflow_name": "repository_review",
+            "trigger": "not_configured"
+          }
+        },
+        "profile_sha256": "a5540bec31cc7bed931c94aa2b6554cf40e387cd72c028364b5e648006c6b949",
+        "binding_sha256": "7b3e323ee0dca9ae8b8afa1c0d92e65f9a70b95e7d395464a39cc5a3f69b6036",
+        "confirmation": "confirmed"
+      }
+    },
+    "observe_incident": {
+      "action": "source-sync",
+      "input": {
+        "idempotency_key": "example:observe_incident",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "collection_id": "50000000-0000-4000-8000-000000000001",
+        "expected_scan": 0,
+        "observed_at": "2026-01-01T09:00:00+00:00",
+        "availability": "available",
+        "units": [
+          {
+            "sha256": "57bc6acbc736c4db23a4cea8dc4c7e2588d034a1916a87525b1fb845c4fc5d90"
+          }
+        ]
+      }
+    },
+    "observe_mechanism": {
+      "action": "source-sync",
+      "input": {
+        "idempotency_key": "example:observe_mechanism",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "collection_id": "50000000-0000-4000-8000-000000000002",
+        "expected_scan": 0,
+        "observed_at": "2026-01-01T09:00:00+00:00",
+        "availability": "available",
+        "units": [
+          {
+            "sha256": "0089cc4f3ddc00796734a3f52012e871a30ff57104e0979e31ed127cc1a63a88"
+          }
+        ]
+      }
+    },
+    "observe_correction": {
+      "action": "source-sync",
+      "input": {
+        "idempotency_key": "example:observe_correction",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "collection_id": "50000000-0000-4000-8000-000000000003",
+        "expected_scan": 0,
+        "observed_at": "2026-01-01T09:00:00+00:00",
+        "availability": "available",
+        "units": [
+          {
+            "sha256": "16086e6f9621caf6072b1e76d5a66e778fc1738ac3cf92e1ab5ac3f530e889fa"
+          }
+        ]
+      }
+    },
+    "capture": {
+      "action": "source-capture",
+      "input": {
+        "idempotency_key": "example:capture",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "source_id": "50000000-0000-4000-8000-000000000001",
+        "source_revision": 1,
+        "extractor_version": "bounded-v1",
+        "text": "The incident document reports a false success: the checker echoed the requested target, while independent readback found it absent. This applies to checks that can echo their own inputs. One replacement trial is reported; coverage remains unknown.",
+        "occurred_at": "2026-01-01T08:00:00+00:00"
+      }
+    },
+    "review_a": {
+      "action": "consumer-review",
+      "input": {
+        "idempotency_key": "example:review_a",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "consumer_id": "mechanism",
+        "input_record_id": "80000000-0000-4000-8000-000000000001",
+        "decision": "proposed",
+        "reason": "The section exists; this pointer does not certify all branches.",
+        "dependencies": [
+          {
+            "type": "record",
+            "id": "80000000-0000-4000-8000-000000000001",
+            "sha256": "9ff24ddb3ae2610d4796d516bb47953c374155e0bbb02414b7bf92dd4b0d4de4"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000001",
+            "revision": 1,
+            "sha256": "57bc6acbc736c4db23a4cea8dc4c7e2588d034a1916a87525b1fb845c4fc5d90"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000002",
+            "revision": 1,
+            "sha256": "0089cc4f3ddc00796734a3f52012e871a30ff57104e0979e31ed127cc1a63a88"
+          }
+        ],
+        "output_sha256": "d483ea381c4a6d75838e69d682d41eed5d8420f853555bfe28278224ed97f4dd"
+      }
+    },
+    "review_b": {
+      "action": "consumer-review",
+      "input": {
+        "idempotency_key": "example:review_b",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "consumer_id": "lessons",
+        "input_record_id": "80000000-0000-4000-8000-000000000001",
+        "decision": "deferred",
+        "reason": "The auxiliary correction still lacks verification.",
+        "dependencies": [
+          {
+            "type": "record",
+            "id": "80000000-0000-4000-8000-000000000001",
+            "sha256": "9ff24ddb3ae2610d4796d516bb47953c374155e0bbb02414b7bf92dd4b0d4de4"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000001",
+            "revision": 1,
+            "sha256": "57bc6acbc736c4db23a4cea8dc4c7e2588d034a1916a87525b1fb845c4fc5d90"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000003",
+            "revision": 1,
+            "sha256": "16086e6f9621caf6072b1e76d5a66e778fc1738ac3cf92e1ab5ac3f530e889fa"
+          }
+        ]
+      }
+    },
+    "observe_correction_v2": {
+      "action": "source-sync",
+      "input": {
+        "idempotency_key": "example:observe_correction_v2",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "collection_id": "50000000-0000-4000-8000-000000000003",
+        "expected_scan": 1,
+        "observed_at": "2026-01-01T10:00:00+00:00",
+        "availability": "available",
+        "units": [
+          {
+            "sha256": "e57f7c170d8f22d4d966fe0e3c0c4e8cb6ec611034f0ac96cac43ea45e55f26b"
+          }
+        ]
+      }
+    },
+    "review_b_v2": {
+      "action": "consumer-review",
+      "input": {
+        "idempotency_key": "example:review_b_v2",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "consumer_id": "lessons",
+        "input_record_id": "80000000-0000-4000-8000-000000000001",
+        "decision": "proposed",
+        "reason": "Correction now reports bounded independent evidence.",
+        "dependencies": [
+          {
+            "type": "record",
+            "id": "80000000-0000-4000-8000-000000000001",
+            "sha256": "9ff24ddb3ae2610d4796d516bb47953c374155e0bbb02414b7bf92dd4b0d4de4"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000001",
+            "revision": 1,
+            "sha256": "57bc6acbc736c4db23a4cea8dc4c7e2588d034a1916a87525b1fb845c4fc5d90"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000003",
+            "revision": 2,
+            "sha256": "e57f7c170d8f22d4d966fe0e3c0c4e8cb6ec611034f0ac96cac43ea45e55f26b"
+          }
+        ],
+        "output_sha256": "df568d441a12bbd5129176afeea60d488e336a9e4155787f273317033bf77ecd",
+        "previous_decision_id": "90000000-0000-4000-8000-000000000002"
+      }
+    },
+    "approve_a": {
+      "action": "consumer-approve",
+      "input": {
+        "idempotency_key": "example:approve_a",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "decision_id": "90000000-0000-4000-8000-000000000001",
+        "decision_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "proposal": {
+          "target_id": "mechanism_doc",
+          "block_id": "8f2a82382c288c8d0045a6432b1cf89dae5a8e7b39d3fe24799f2eac94030052",
+          "base_exists": false,
+          "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "after_sha256": "2f1217e1cd4c823776770562f4fe2caf5f8131d360467d2336e6bc970831a57d",
+          "output_sha256": "d483ea381c4a6d75838e69d682d41eed5d8420f853555bfe28278224ed97f4dd",
+          "plan_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "confirmation": "confirmed"
+      }
+    },
+    "publish_a": {
+      "action": "publication-result",
+      "input": {
+        "idempotency_key": "example:publish_a",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "approval_id": "a0000000-0000-4000-8000-000000000001",
+        "outcome": "applied",
+        "observed_at": "2026-01-01T10:05:00+00:00",
+        "observed_sha256": "2f1217e1cd4c823776770562f4fe2caf5f8131d360467d2336e6bc970831a57d"
+      }
+    },
+    "approve_b": {
+      "action": "consumer-approve",
+      "input": {
+        "idempotency_key": "example:approve_b",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "decision_id": "90000000-0000-4000-8000-000000000003",
+        "decision_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "proposal": {
+          "target_id": "lessons_doc",
+          "block_id": "f0e263c6336b7c7cdfb62ae1c6126d6ef1388ac76e74cf67a12457ef1d6202e9",
+          "base_exists": false,
+          "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "after_sha256": "e9dbe08890dd4954a7f2579f8c97c363702f407efd68eb109f418825a4924440",
+          "output_sha256": "df568d441a12bbd5129176afeea60d488e336a9e4155787f273317033bf77ecd",
+          "plan_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "confirmation": "confirmed"
+      }
+    },
+    "publish_b": {
+      "action": "publication-result",
+      "input": {
+        "idempotency_key": "example:publish_b",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "approval_id": "a0000000-0000-4000-8000-000000000002",
+        "outcome": "applied",
+        "observed_at": "2026-01-01T10:05:00+00:00",
+        "observed_sha256": "e9dbe08890dd4954a7f2579f8c97c363702f407efd68eb109f418825a4924440"
+      }
+    },
+    "header": {
+      "action": "workflow-status",
+      "input": {}
+    },
+    "status": {
+      "action": "workflow-status",
+      "input": {
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "view": "summary"
+      }
+    },
+    "receipt_query": {
+      "action": "workflow-status",
+      "input": {
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "view": "receipts",
+        "keys": [
+          "example:capture"
+        ]
+      }
+    },
+    "init": {
+      "action": "init",
+      "input": {
+        "idempotency_key": "example:bootstrap:init",
+        "display_name": "Synthetic checker",
+        "confirmation": "confirmed",
+        "automatic_capture": [
+          "execution",
+          "review"
+        ]
+      }
+    },
+    "seed": {
+      "action": "record",
+      "input": {
+        "idempotency_key": "example:bootstrap:seed",
+        "run_id": "60000000-0000-4000-8000-000000000002",
+        "client": "task-bootstrap",
+        "kind": "execution",
+        "text": "The repository documents an inbox and owner-controlled formal review. Source navigation remains upstream.",
+        "occurred_at": "2026-01-01T07:00:00+00:00",
+        "evidence_refs": [
+          {
+            "path": "AGENTS.md",
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        ]
+      }
+    },
+    "backup_v1": {
+      "action": "backup",
+      "input": {
+        "path": "/srv/synthetic/private/before-v2.sqlite"
+      }
+    },
+    "migrate": {
+      "action": "migrate",
+      "input": {
+        "path": "/srv/synthetic/private/task-v2.sqlite",
+        "backup_path": "/srv/synthetic/private/before-v2.sqlite",
+        "backup_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "expected_version": 1,
+        "target_version": 2,
+        "confirmation": "confirmed"
+      }
+    },
+    "inspect_v1": {
+      "action": "export",
+      "input": {}
+    },
+    "backup_v2": {
+      "action": "backup",
+      "input": {
+        "path": "/srv/synthetic/private/after-v2.sqlite"
+      }
+    },
+    "restore_v2": {
+      "action": "restore",
+      "input": {
+        "path": "/srv/synthetic/private/after-v2.sqlite"
+      }
+    },
+    "retract": {
+      "action": "retract",
+      "input": {
+        "idempotency_key": "example:withdraw",
+        "run_id": "60000000-0000-4000-8000-000000000003",
+        "client": "synthetic-walkthrough",
+        "target_id": "80000000-0000-4000-8000-000000000001",
+        "reason": "Owner withdraws this source-derived incident memory.",
+        "confirmation": "confirmed"
+      }
+    },
+    "observe_incident_noop": {
+      "action": "source-sync",
+      "input": {
+        "idempotency_key": "example:observe_incident:new-key",
+        "run_id": "60000000-0000-4000-8000-000000000004",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "collection_id": "50000000-0000-4000-8000-000000000001",
+        "expected_scan": 0,
+        "observed_at": "2026-01-01T09:00:00+00:00",
+        "availability": "available",
+        "units": [
+          {
+            "sha256": "57bc6acbc736c4db23a4cea8dc4c7e2588d034a1916a87525b1fb845c4fc5d90"
+          }
+        ]
+      }
+    },
+    "capture_noop": {
+      "action": "source-capture",
+      "input": {
+        "idempotency_key": "example:capture:new-key",
+        "run_id": "60000000-0000-4000-8000-000000000004",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "source_id": "50000000-0000-4000-8000-000000000001",
+        "source_revision": 1,
+        "extractor_version": "bounded-v1",
+        "text": "The incident document reports a false success: the checker echoed the requested target, while independent readback found it absent. This applies to checks that can echo their own inputs. One replacement trial is reported; coverage remains unknown.",
+        "occurred_at": "2026-01-01T08:00:00+00:00"
+      }
+    },
+    "review_a_noop": {
+      "action": "consumer-review",
+      "input": {
+        "idempotency_key": "example:review_a:new-key",
+        "run_id": "60000000-0000-4000-8000-000000000004",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "consumer_id": "mechanism",
+        "input_record_id": "80000000-0000-4000-8000-000000000001",
+        "decision": "proposed",
+        "reason": "The section exists; this pointer does not certify all branches.",
+        "dependencies": [
+          {
+            "type": "record",
+            "id": "80000000-0000-4000-8000-000000000001",
+            "sha256": "9ff24ddb3ae2610d4796d516bb47953c374155e0bbb02414b7bf92dd4b0d4de4"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000001",
+            "revision": 1,
+            "sha256": "57bc6acbc736c4db23a4cea8dc4c7e2588d034a1916a87525b1fb845c4fc5d90"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000002",
+            "revision": 1,
+            "sha256": "0089cc4f3ddc00796734a3f52012e871a30ff57104e0979e31ed127cc1a63a88"
+          }
+        ],
+        "output_sha256": "d483ea381c4a6d75838e69d682d41eed5d8420f853555bfe28278224ed97f4dd"
+      }
+    },
+    "review_b_noop": {
+      "action": "consumer-review",
+      "input": {
+        "idempotency_key": "example:review_b:new-key",
+        "run_id": "60000000-0000-4000-8000-000000000004",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "consumer_id": "lessons",
+        "input_record_id": "80000000-0000-4000-8000-000000000001",
+        "decision": "deferred",
+        "reason": "The auxiliary correction still lacks verification.",
+        "dependencies": [
+          {
+            "type": "record",
+            "id": "80000000-0000-4000-8000-000000000001",
+            "sha256": "9ff24ddb3ae2610d4796d516bb47953c374155e0bbb02414b7bf92dd4b0d4de4"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000001",
+            "revision": 1,
+            "sha256": "57bc6acbc736c4db23a4cea8dc4c7e2588d034a1916a87525b1fb845c4fc5d90"
+          },
+          {
+            "type": "source",
+            "id": "50000000-0000-4000-8000-000000000003",
+            "revision": 1,
+            "sha256": "16086e6f9621caf6072b1e76d5a66e778fc1738ac3cf92e1ab5ac3f530e889fa"
+          }
+        ]
+      }
+    },
+    "publish_b_failed": {
+      "action": "publication-result",
+      "input": {
+        "idempotency_key": "example:publish_b_failed",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "approval_id": "a0000000-0000-4000-8000-000000000002",
+        "outcome": "failed",
+        "observed_at": "2026-01-01T10:05:00+00:00",
+        "error_code": "io_error"
+      }
+    },
+    "publish_b_after_failure": {
+      "action": "publication-result",
+      "input": {
+        "idempotency_key": "example:publish_b:attempt1",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "approval_id": "a0000000-0000-4000-8000-000000000002",
+        "outcome": "applied",
+        "observed_at": "2026-01-01T10:06:00+00:00",
+        "observed_sha256": "e9dbe08890dd4954a7f2579f8c97c363702f407efd68eb109f418825a4924440"
+      }
+    },
+    "publish_b_conflict": {
+      "action": "publication-result",
+      "input": {
+        "idempotency_key": "example:publish_b_conflict",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 1,
+        "incarnation": "20000000-0000-4000-8000-000000000001",
+        "approval_id": "a0000000-0000-4000-8000-000000000002",
+        "outcome": "conflict",
+        "observed_at": "2026-01-01T10:05:00+00:00",
+        "observed_sha256": "2b7798a79010fc3514545af2f893e73d2e23191f6b77bdfd61bb7c8794c6e7ae",
+        "error_code": "baseline_changed"
+      }
+    },
+    "bind_after_restore": {
+      "action": "workflow-bind",
+      "input": {
+        "idempotency_key": "example:bind_after_restore",
+        "run_id": "60000000-0000-4000-8000-000000000001",
+        "client": "synthetic-walkthrough",
+        "workflow_id": "40000000-0000-4000-8000-000000000001",
+        "profile_revision": 2,
+        "incarnation": "20000000-0000-4000-8000-000000000002",
+        "expected_profile_revision": 1,
+        "profile": {
+          "schema_version": 1,
+          "workflow_id": "40000000-0000-4000-8000-000000000001",
+          "revision": 2,
+          "purpose": "Retain bounded checker experience and two independent views.",
+          "mechanisms": [
+            {
+              "name": "upstream_review",
+              "purpose": "Owns formal knowledge",
+              "trigger": "external morning review",
+              "read_paths": [
+                "inbox/incidents.jsonl"
+              ],
+              "write_paths": [
+                "knowledge/checker.md"
+              ],
+              "evidence": "AGENTS.md#review"
+            }
+          ],
+          "collections": [
+            {
+              "collection_id": "50000000-0000-4000-8000-000000000001",
+              "format": "text",
+              "path": "notes/incident.md",
+              "selector": {
+                "kind": "full"
+              },
+              "extractor_version": "bounded-v1",
+              "authority": "Document-reported incident."
+            },
+            {
+              "collection_id": "50000000-0000-4000-8000-000000000002",
+              "format": "text",
+              "path": "knowledge/checker.md",
+              "selector": {
+                "kind": "full"
+              },
+              "extractor_version": "bounded-v1",
+              "authority": "Mechanism navigation evidence."
+            },
+            {
+              "collection_id": "50000000-0000-4000-8000-000000000003",
+              "format": "text",
+              "path": "notes/correction.md",
+              "selector": {
+                "kind": "full"
+              },
+              "extractor_version": "bounded-v1",
+              "authority": "Follow-up verification status."
+            }
+          ],
+          "capture": {
+            "automatic_drafts": true,
+            "automatic_reviews": true
+          },
+          "consumers": [
+            {
+              "consumer_id": "mechanism",
+              "lens_version": "pointer-v1",
+              "rules_sha256": "b912b250fccceade99e59d42eb09ce1add64594a19f6acbe8f877a7acba59bd7",
+              "target_id": "mechanism_doc",
+              "neutralize_stale": true
+            },
+            {
+              "consumer_id": "lessons",
+              "lens_version": "lesson-v1",
+              "rules_sha256": "8d5aeb17564dec1d2e41f4f9f194bbb1351877fb0a84fc48fa43854f8d8054ff",
+              "target_id": "lessons_doc",
+              "neutralize_stale": true
+            }
+          ],
+          "operation": {
+            "workflow_name": "repository_review",
+            "trigger": "not_configured"
+          }
+        },
+        "profile_sha256": "4e1b2e6e25a20dbde0c2aeb066f08fec83395d0cbaf9a9a1172b72470a8c662b",
+        "binding_sha256": "3782bb43628f22979a1c2c3ac531fee0d0d18a8efff9536adce0485474314f22",
+        "confirmation": "confirmed",
+        "recovery_acknowledged": true
+      }
+    }
+  },
+  "outputs": {
+    "a": {
+      "text": "See knowledge/checker.md#observed-result. Evidence level: document-reported; coverage remains unverified.\n",
+      "output_sha256": "d483ea381c4a6d75838e69d682d41eed5d8420f853555bfe28278224ed97f4dd",
+      "rendered": "<!-- memorynexus:8f2a82382c288c8d0045a6432b1cf89dae5a8e7b39d3fe24799f2eac94030052:begin -->\nSee knowledge/checker.md#observed-result. Evidence level: document-reported; coverage remains unverified.\n<!-- memorynexus:8f2a82382c288c8d0045a6432b1cf89dae5a8e7b39d3fe24799f2eac94030052:end -->\n",
+      "after_sha256": "2f1217e1cd4c823776770562f4fe2caf5f8131d360467d2336e6bc970831a57d"
+    },
+    "b": {
+      "text": "A requested target label was mistaken for observed success. The correction note reports two independent fallback checks. Use independent observed output for this class of check; general coverage remains unverified.\n",
+      "output_sha256": "df568d441a12bbd5129176afeea60d488e336a9e4155787f273317033bf77ecd",
+      "rendered": "<!-- memorynexus:f0e263c6336b7c7cdfb62ae1c6126d6ef1388ac76e74cf67a12457ef1d6202e9:begin -->\nA requested target label was mistaken for observed success. The correction note reports two independent fallback checks. Use independent observed output for this class of check; general coverage remains unverified.\n<!-- memorynexus:f0e263c6336b7c7cdfb62ae1c6126d6ef1388ac76e74cf67a12457ef1d6202e9:end -->\n",
+      "after_sha256": "e9dbe08890dd4954a7f2579f8c97c363702f407efd68eb109f418825a4924440"
+    }
+  },
+  "new_task_sequence": [
+    "init",
+    "seed",
+    "backup_v1",
+    "migrate",
+    "header",
+    "bind",
+    "observe_incident",
+    "observe_mechanism",
+    "observe_correction",
+    "capture",
+    "review_a",
+    "review_b",
+    "approve_a",
+    "publish_a",
+    "status",
+    "observe_incident_noop",
+    "capture_noop",
+    "review_a_noop",
+    "review_b_noop",
+    "observe_correction_v2",
+    "review_b_v2",
+    "approve_b",
+    "publish_b",
+    "backup_v2"
+  ],
+  "existing_v1_task_sequence": [
+    "inspect_v1",
+    "backup_v1",
+    "migrate",
+    "header",
+    "bind",
+    "observe_incident",
+    "observe_mechanism",
+    "observe_correction",
+    "capture",
+    "receipt_query",
+    "capture",
+    "review_a",
+    "review_b",
+    "approve_a",
+    "publish_a",
+    "status",
+    "observe_incident_noop",
+    "capture_noop",
+    "review_a_noop",
+    "review_b_noop",
+    "observe_correction_v2",
+    "review_b_v2",
+    "approve_b",
+    "publish_b_failed",
+    "publish_b_after_failure",
+    "backup_v2"
+  ],
+  "recovery_binding": {
+    "schema_version": 1,
+    "workflow_id": "40000000-0000-4000-8000-000000000001",
+    "task_id": "10000000-0000-4000-8000-000000000001",
+    "task_root": "/srv/synthetic/checker",
+    "config": "/srv/synthetic/checker/.memorynexus.json",
+    "ledger": "/srv/synthetic/private/restored-v2.sqlite",
+    "binary": "/srv/synthetic/install/v1/memorynexus-feedback-cli",
+    "binary_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "python": "/usr/bin/python3",
+    "package": "/srv/synthetic/install/v1",
+    "package_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "profile": "/srv/synthetic/private/profile.json",
+    "state_root": "/srv/synthetic/private/runs",
+    "targets": [
+      {
+        "target_id": "mechanism_doc",
+        "path": "/srv/synthetic/private/mechanism.md"
+      },
+      {
+        "target_id": "lessons_doc",
+        "path": "/srv/synthetic/private/lessons.md"
+      }
+    ],
+    "timeout_seconds": 60
+  },
+  "recovery_sequence": [
+    "restore_v2",
+    "header",
+    "bind_after_restore"
+  ],
+  "alternate_conflict_request": "Alternate branch: run the existing sequence only through approve_b, then publish_b_conflict and STOP. Do not execute publish_b_after_failure or reuse that absent-target approval. A changed baseline requires explicit reconsideration, a new decision generation, plan and owner approval as walkthrough section 3.4 describes. Never run this branch after applied.",
+  "jsonl_identity_case": {
+    "collection_id": "50000000-0000-4000-8000-000000000004",
+    "lines": [
+      "{\"body\":\"Document reports an uncertain retry.\",\"ts\":\"2026-01-01T10:00:00Z\"}\n",
+      "{\"body\":\"Earlier event appended later.\",\"ts\":\"2025-12-31T08:00:00Z\"}\n",
+      "{\"body\":\"Earlier event appended later.\",\"ts\":\"2025-12-31T08:00:00Z\"}\n"
+    ],
+    "units_with_derived_ids": [
+      {
+        "start": 0,
+        "end": 76,
+        "sha256": "92b5390a434be8e15d0670727ec7425ca31aec7b01933e36e9d45e7555f59834",
+        "source_id": "eb3fc063-9d0a-51d0-9c60-9b33276e279c"
+      },
+      {
+        "start": 76,
+        "end": 145,
+        "sha256": "81b2bad80cfdef1322655c1bd42f162ff5399a151f88d6e97e2a1cf4389c5ff2",
+        "source_id": "a6b76bd4-3a6e-52af-8086-1488fd1ea226"
+      },
+      {
+        "start": 145,
+        "end": 214,
+        "sha256": "81b2bad80cfdef1322655c1bd42f162ff5399a151f88d6e97e2a1cf4389c5ff2",
+        "source_id": "56437ef1-d5f9-554c-8a7d-c0cd6ab854ae"
+      }
+    ],
+    "cursor": {
+      "offset": 214,
+      "prefix_sha256": "8e06c7a59c5a029cc0dba02d150b3f6729b23f4a7431c1d7c31184a6fba48dc4"
+    },
+    "expected": "three distinct source IDs; last two have identical bytes but different offsets; ts is never cursor; EOF rule change revises all three without moving cursor"
+  }
+}
