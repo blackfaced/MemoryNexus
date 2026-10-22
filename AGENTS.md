@@ -24,6 +24,18 @@ ADR-028 是用户于 2026-10-21 授权的有界扩展：先打通同一任务目
 下文 ADR-027 的“仅四对象/仅 MiniMax/扩展等待 gate”限制由 ADR-028 仅为本切片重开；
 其他旧 roadmap 的冻结、实验确认和删除 gate 仍有效。
 
+## 仓库记忆接入的已接受方向
+
+处理仓库接入、增量或 Lens 消费任务时，读
+[ADR-029](decisions/ADR-029-repository-memory-workflows.md)、
+[行为合同](docs/repository-memory-workflows-contract.md) 和对应
+[R1–R6 issue](docs/repository-memory-workflows-issues.md)。这是 ADR-028 的有界扩展：
+Skill 识别仓库机制，共用脚本经 CLI 执行，SQLite 保存权威状态；具体文档和外部调度
+属于接入层。先完成 R1 样本与 R2 精确接口 gate，再实施 R3–R5；按单个 issue 范围开工。
+MCP 包装与维护脚本收编留待后续，旧 Lens/HTTP 服务及其他冻结路线不恢复。
+需要真实样本时使用 [只读盘点交接](docs/handoffs/minimax-repository-memory-discovery.md)，
+它只产出接入草案，不构成导入或修改定时配置的授权。
+
 ## 当前默认方向
 
 ADR-027 与 [#273](https://github.com/blackfaced/MemoryNexus/issues/273) 是当前产品

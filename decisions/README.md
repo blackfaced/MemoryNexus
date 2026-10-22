@@ -34,10 +34,17 @@ decisions/
 ├── ADR-025-personal-feedback-dogfood.md ✅ Personal Feedback Dogfood
 ├── ADR-026-loose-coupled-source-adapter-sync.md ✅ Loose-Coupled Source Adapter Synchronization
 ├── ADR-027-sqlite-cli-minimax-feedback-kernel.md ✅ SQLite CLI Personal Experiment Feedback Kernel
-└── ADR-028-shared-task-memory.md ✅ MiniMax / Codex shared task memory (current priority)
+├── ADR-028-shared-task-memory.md ✅ MiniMax / Codex shared task memory (current priority)
+└── ADR-029-repository-memory-workflows.md ✅ 仓库记忆接入与可重复工作流（行为方案；待分阶段实现）
 ```
 
 ## 当前默认方向
+
+[ADR-029](ADR-029-repository-memory-workflows.md) 定义由 Skill 识别仓库既有机制，
+复用 bootstrap 和 task CLI 接入记忆，再以共用脚本完成增量、独立 Lens 消费与外部文档
+维护。具体文档及调度入口属于接入配置。行为方案已接受，精确接口由 R2 冻结；
+[R1–R6 issue](../docs/repository-memory-workflows-issues.md) 已发布，功能尚未实现。
+MCP 与维护脚本收编留待后续。
 
 [ADR-028](ADR-028-shared-task-memory.md) 是当前优先交付切片：同一 owner 的目录任务在
 MiniMax 与 Codex 间通过本地 CLI/JSON 和 SQLite 共享任务经验。它明确重开 ADR-027 的部分
