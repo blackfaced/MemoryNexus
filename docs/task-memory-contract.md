@@ -4,6 +4,10 @@ Status: accepted design under [ADR-028](../decisions/ADR-028-shared-task-memory.
 All nine `task` commands below are implemented in the current source; they are
 not available on old baseline `c9b4373` or the existing release packages. The
 [real-client gate](acceptance/task-memory-cross-client.md) remains **NOT RUN**.
+
+The [repository-memory R2 proposal](repository-memory-v1.md) specifies a separately
+gated DB v2 and new workflow actions. It is pending owner acceptance and not
+implemented; the current v1 commands and confirmation rules below remain valid.
 Existing personal-experiment commands in `memorynexus-feedback-cli` must retain
 their behavior and never open a task ledger by accident. GitHub child issues
 carry implementation ownership and dependencies: [parent #296](https://github.com/blackfaced/MemoryNexus/issues/296),

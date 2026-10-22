@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "task_root": "/absolute/MemoryNexus",
+  "binding": {
+    "config": "/absolute/MemoryNexus/.memorynexus.json",
+    "ledger": "/absolute/private-demo/not-created.sqlite",
+    "display_name": "MemoryNexus onboarding demonstration",
+    "automatic_capture": ["execution", "review"]
+  },
+  "sources": [
+    "README.md",
+    "decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md",
+    "decisions/ADR-028-shared-task-memory.md",
+    "integrations/task-memory/PROTOCOL.md"
+  ],
+  "conflicts": [],
+  "gaps": [
+    "Demonstration only: the proposed ledger is intentionally unused, no ledger or config is created, and no approval is implied.",
+    "The README documents real-client acceptance as not run; this discovery has not independently inspected target-machine evidence or live tracker status.",
+    "The selected sources do not establish this checkout's installed CLI, ledger identity, schedules or backup coverage.",
+    "Automatic external-source refresh and independent consumer publication require later implementation; task evidence references do not monitor files."
+  ],
+  "entries": [
+    {
+      "id": "handoff-state",
+      "kind": "checkpoint",
+      "text": "README reports the nine task CLI commands implemented, with the real-client gate still NOT RUN. Next verification work is to distinguish source delivery from actual MiniMax/Codex and scheduled-entry execution. This is a document-based state report; live issue and target-machine status were not independently checked.",
+      "sources": ["README.md"]
+    },
+    {
+      "id": "shared-task-path",
+      "kind": "execution",
+      "text": "ADR-028 records the choice to reuse the local Rust CLI and a separate task SQLite ledger for same-directory cross-client continuity. Config preserves a stable task identity across sessions; copying it means sharing that identity. Installation details and current record/trust rules are in the shared protocol. This is a report of the accepted design, not evidence that any particular machine is configured.",
+      "sources": [
+        "decisions/ADR-028-shared-task-memory.md",
+        "integrations/task-memory/PROTOCOL.md"
+      ]
+    },
+    {
+      "id": "delivery-observation",
+      "kind": "execution",
+      "text": "ADR-027 reports that the #274 MiniMax tracer persisted state in one session and read it in an independent scheduled session, but the cron result lacked channel context and did not provide reliable proactive delivery. The adopted interaction is owner-initiated querying of the existing conversation. This observation applies to that reported entry; it does not prove delivery or catch-up behavior for another scheduler. Original runtime evidence was not inspected in this discovery.",
+      "sources": [
+        "decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md"
+      ]
+    },
+    {
+      "id": "delivery-lesson",
+      "kind": "lesson",
+      "text": "Candidate: validate shared persistence, scheduled invocation and notification delivery as separate capabilities. A successful scheduled read supports continuity but does not establish proactive delivery. For this documented entry, retain an owner-queryable result path until a separate delivery check supports a stronger promise. The inference rests on the reported #274 observation, not a new runtime test.",
+      "source_entries": ["delivery-observation"]
+    }
+  ]
+}

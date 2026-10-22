@@ -11,6 +11,10 @@ For an existing directory's first seed, use the shared
 [bootstrap Skill](memorynexus-task-bootstrap/SKILL.md): prepare a source-backed
 preview, obtain exact owner approval, then apply/resume with the existing CLI.
 Drafting does not initialize memory. Continue with this protocol after seeding.
+When a repository's existing sources and capture/review mechanisms first need
+mapping, use the [repository onboarding Skill](memorynexus-repo-onboard/SKILL.md).
+It produces a profile and new-task seed preview or existing-task incremental
+proposal; it does not install a collector, change schedules or open a ledger.
 
 ## Bind the entry explicitly
 

@@ -7,6 +7,11 @@
 本次接受的是职责、流程和验收边界。精确 CLI/JSON/schema 仍由 R2 交付并审阅；本 ADR
 不表示增量、独立采纳或脚本已经实现，也不授权迁移生产账本或启用真实定时任务。
 
+R1 接入 Skill 已有源码交付。[R2 精确合同草案](../docs/repository-memory-v1.md) 已明确
+draft/source_reported、完整证据依赖、稳定消费槽位、发布回执以及显式 schema v2 迁移；
+**owner acceptance 仍为 PENDING**。需接受固定合同 commit 并更新 #310/#311 验收后
+才实现，不改变本 ADR 的行为边界与部署限制。
+
 根据 owner 的补充，本稿取代本分支尚未发布的“固定 PROGRESS.md / WORKFLOW.md”方案。
 首个验收仍是一个仓库、一份条目草稿箱、两个 Lens、两份外部文档；具体文件、规则和
 调度入口由接入 Skill 识别并建议。内核保存通用记忆与消费关系，脚本执行已定义的流程。
@@ -101,8 +106,10 @@ PROGRESS.md / WORKFLOW.md 可以作为演示，换成别的文件无需修改 Ru
 
 ### 5. 独立采纳、重试和纠正是通用合同
 
-消费唯一性按 `(task, consumer, lens_version, source_entry, source_revision)` 约束，
-不设来源级全局 processed。两个 Lens 可以分别采用、跳过或暂缓，同源可采用不同措辞。
+R2 将消费唯一性精确化为 `(task, workflow, consumer, root_record)` 稳定槽位与
+不可变 generation；每代固定来源与所有关联证据、Lens/profile 版本，避免将可变的
+record.revision 误当正文身份。不设来源级全局 processed。两个 Lens 可以分别采用、
+跳过或暂缓，同源可采用不同措辞。只改变关联纠正也会选择性地使依赖它的决定失效。
 新 run/client/key 不产生第二份业务结果；相同来源下改变措辞需要显式重新评审。
 
 每个决定分别记录决定、来源有效性和发布状态。来源变化后，旧批准失效，新版本重新
