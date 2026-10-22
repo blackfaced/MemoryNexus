@@ -79,13 +79,17 @@ actual checkout; the preview route below requires that it is absent.
 First inspect the current checkout and read the four seed sources again. If a
 root `.memorynexus.json` exists, take the existing-task route below instead. In a
 new external private directory, copy `current-repository-seed.json` to an authored
-`draft.json` and replace **only** the following placeholder bindings with the
-canonical absolute paths of the inspected checkout and a proposed external path:
+`draft.json`. Revalidate every entry, source association, conflict and gap against
+the just-inspected snapshot. Re-author claims whose support or status changed;
+omit unsupported claims and record a gap rather than attaching fresh source hashes
+to stale assertions. The helper binds bytes, not the truth of the authored text.
+Keep the original template unchanged. Replace the following placeholder bindings
+in the copied draft with canonical absolute paths:
 
 - `task_root` and `binding.config` (root `.memorynexus.json`);
 - `binding.ledger` (external, explicitly not created by this demonstration).
 
-The existing bootstrap schema is otherwise unchanged: no `source_id`, `trust`,
+The existing bootstrap schema stays unchanged: no `source_id`, `trust`,
 `consumer`, `policy` or profile fields are appended. Keep complete text, evidence
 and uncertainty in the existing supported fields. Run from the bootstrap bundle:
 
@@ -101,6 +105,8 @@ privately. Independently count entry kinds and Unicode text lengths from
 prose totals. Compute final sizes/hashes/modes after the last write. Confirm no
 task config or proposed ledger was created. **Do not invoke apply, even with
 this demonstration's digest.** No fixture UUID or approval receipt is published.
+Every regenerated preview is a new unapproved proposal; changed text or source
+snapshots cannot inherit an earlier human approval.
 
 ## Existing-task route (static walkthrough)
 
