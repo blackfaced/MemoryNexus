@@ -1,6 +1,6 @@
 # Repository memory v1 — profile, runner and file protocol
 
-Normative R2 proposal; **not implemented, owner acceptance pending**. See
+Normative R2 contract, owner-accepted at `83d85c6` on 2026-10-23; implementation tracked in #311. See
 [kernel](kernel-v1.md) for shared types and CLI authority. No scheduler or model
 SDK runs inside the script. Agent supplies bounded extraction/decision text.
 Exact producer/consumer files and typed schemas are in [artifacts](artifacts-v1.md);

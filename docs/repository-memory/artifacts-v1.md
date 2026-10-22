@@ -1,6 +1,6 @@
 # Repository memory v1 — operation artifact schemas
 
-Normative R2 proposal; not runtime. Completes [runner](runner-v1.md) JSON grammar.
+Normative R2 contract, owner-accepted at `83d85c6`; not runtime. Completes [runner](runner-v1.md) JSON grammar.
 All objects reject unknown/duplicate keys/null. Optional means omitted. Shared
 types/limits are in [kernel](kernel-v1.md). This file is schema documentation,
 not a second tracker or an implementation.

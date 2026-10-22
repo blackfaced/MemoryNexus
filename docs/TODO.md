@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Updated: 2026-10-22 (R1 source delivery; R2 exact contract pending owner review)
+> Updated: 2026-10-23 (R1 merged; R2 exact contract accepted; R3 then R4 implementation)
 > Executable tracker source of truth: [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues).
 > The shared-task-memory issues below are published. The older reconciliation
 > section remains a historical recommendation, not a claim that its issues were closed.
@@ -18,9 +18,9 @@ MCP and maintenance-script packaging remain deferred, without new tickets.
 Issues #308 → #309 → #310 → #311 → #312 → #313 are published. R1's
 [onboarding Skill](../integrations/task-memory/memorynexus-repo-onboard/SKILL.md)
 and synthetic pilot walkthrough are in source. The [R2 exact contract](repository-memory-v1.md)
-is pending owner acceptance at a fixed commit; its incremental CLI/runner are
-not implemented. Complete that gate and update #310/#311's command-level
-acceptance before dependent implementation. Production deployment requires
+was accepted at `83d85c6c0216b6ae4089c83db03dd0a473235851` on 2026-10-23;
+#315 merged and #310/#311's command-level acceptance is recorded. Implement
+the incremental CLI in #310, then the runner in #311. Production deployment requires
 its own explicit scope. Existing #301/#283 gates retain their own status.
 For a real sample now, use the [MiniMax read-only discovery handoff](handoffs/minimax-repository-memory-discovery.md).
 
