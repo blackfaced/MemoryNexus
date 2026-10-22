@@ -9,6 +9,11 @@ Use this Skill when an owner first connects an existing task/repository to share
 MiniMax/Codex task memory. The output is a small reviewable seed, with explicit
 sources and gaps. Use the existing task-memory protocol for ongoing sessions.
 
+If the repository's sources, authority or capture/review workflow are not yet
+understood, start with [repository onboarding](../memorynexus-repo-onboard/SKILL.md)
+to propose an eight-section profile. Return here for an agreed **new-task** seed.
+An already initialized task needs an incremental proposal, not another bootstrap.
+
 Read [the manifest reference](references/manifest.md) when preparing or applying
 a draft. Also read the common `integrations/task-memory/PROTOCOL.md` shipped with
 the source checkout; its trust, confirmation and pending-write rules still apply.
@@ -57,6 +62,11 @@ with the same explicit config and ledger and a verified compiled CLI. This flag
 is an operator guard, not authentication. If content, sources, Git state or
 binding changed, produce a new preview and obtain new confirmation. Never update
 an already pending import to evade a conflict.
+
+**A refreshed digest is not an approval.** Even when proposed entry text is
+byte-identical, changed evidence hashes or Git state require the human to approve
+the new exact manifest. An Agent must not supply the new digest on the owner's
+behalf. Keep the old approval artifacts unchanged and stop at the new preview.
 
 Ensure the approved ledger parent exists with owner-only permissions; the helper
 will not create parent directories or select an alternate ledger. Keep other
