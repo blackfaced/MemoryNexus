@@ -1,9 +1,25 @@
 # MemoryNexus Roadmap
 
-> Updated: 2026-10-21
+> Updated: 2026-10-22 (ADR-029 accepted behavior plan; R1–R6 published)
 > Executable tracker source of truth: [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues).
 > The shared-task-memory issues below are published. The older reconciliation
 > section remains a historical recommendation, not a claim that its issues were closed.
+
+## Accepted plan: repository onboarding and repeatable memory workflows
+
+[ADR-029](../decisions/ADR-029-repository-memory-workflows.md), the
+[behavior contract](repository-memory-workflows-contract.md), and
+[R1–R6 issue index](repository-memory-workflows-issues.md) define the accepted
+behavior plan. Skill-led discovery and bootstrap lead to incremental
+scripts, independent Lens consumption and external document updates. The existing
+SQLite/CLI stays authoritative; document names and scheduler bindings live in the
+integration profile. R2 freezes exact interfaces before kernel implementation;
+MCP and maintenance-script packaging remain deferred, without new tickets.
+Issues #308 → #309 → #310 → #311 → #312 → #313 are published; the functionality
+is not implemented. Start R1 after the plan merges, and complete R2's exact
+contract gate before dependent implementation. Production deployment requires
+its own explicit scope. Existing #301/#283 gates retain their own status.
+For a real sample now, use the [MiniMax read-only discovery handoff](handoffs/minimax-repository-memory-discovery.md).
 
 ## Current direction
 
