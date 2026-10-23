@@ -33,7 +33,31 @@ history. It cannot approve the old substantive output or resume the old file pla
 
 ## Runner (#311)
 
-Implementation and acceptance are in progress. No runner completion is claimed.
+Reviewed implementation commit: `bcdd5b6d7eeec315b0b8f9972c3bb998c49b8112`.
+Independent review has no unresolved findings. The exact final commit passed all
+35 runner tests, with no skips, using the real compiled CLI. Existing bootstrap
+regression tests passed 22 cases with no skips.
+
+```text
+MEMORYNEXUS_TEST_BINARY=ABS_TO_COMPILED_CLI python3 -m unittest discover -s integrations/task-memory/tests -p 'test_workflow*.py'
+MEMORYNEXUS_TEST_BINARY=ABS_TO_COMPILED_CLI python3 scripts/test_task_memory_bootstrap.py
+```
+
+The tested CLI SHA-256 is
+`d437b93d12ea775e0ac61da56662a64df3757df760ca3994bee91f253c92f322`.
+Tests use synthetic private repositories and real init/backup/migrate/bind calls.
+
+Coverage includes all five commands, two independent Lens/document publications,
+no duplicate publication, selective auxiliary-evidence invalidation, JSONL 20+2
+batching/prefix/blocked/partial-tail/EOF refresh, source-unavailable review gates,
+immutable plan approval and exact request replay, crash recovery, permanent stop
+after baseline conflict, preservation of human text, result files per attempt,
+and independent branch/report-write failures.
+
+Trigger metadata is bounded, validated and retained privately. Unsupported or
+unverifiable scheduler proof remains manual with a visible pending gap. No real
+scheduler-provider execution is claimed. Python bytecode creation is disabled
+before imports so ordinary execution preserves the pinned package inventory.
 
 ## Separate deployment gates
 

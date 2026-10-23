@@ -1,14 +1,12 @@
 # Repository memory v1: exact contract for owner review
 
-**R2 (#309): ACCEPTED on 2026-10-23. Runtime implementation: #310 then #311.**
+**R2 (#309): ACCEPTED on 2026-10-23. Runtime implementation: #310 and #311 in PR #316.**
 The owner accepted fixed contract commit
 `83d85c6c0216b6ae4089c83db03dd0a473235851`; #315 merged as
 `a16aa41a97ee35941b57d9fee420a78ac35afc80`. Command-level acceptance is recorded
-in #310/#311 before implementation. Acceptance does not make the new commands
-available or authorize production deployment. [ADR-029](../decisions/ADR-029-repository-memory-workflows.md)
+in #310/#311 before implementation. The new commands are available when built from PR #316; [implementation acceptance](acceptance/repository-memory-workflows.md) records their checks. This does not authorize production deployment. [ADR-029](../decisions/ADR-029-repository-memory-workflows.md)
 and the [behavior contract](repository-memory-workflows-contract.md) remain the
-scope authority. Current runnable commands remain the nine in the
-[task v1 contract](task-memory-contract.md).
+scope authority. The existing nine [task v1 commands](task-memory-contract.md) retain their inputs alongside the new workflow commands.
 
 The R1 [Skill](../integrations/task-memory/memorynexus-repo-onboard/SKILL.md) and
 [pilot walkthrough](../integrations/task-memory/memorynexus-repo-onboard/references/pilot-walkthrough.md)
