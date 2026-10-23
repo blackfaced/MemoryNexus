@@ -163,3 +163,12 @@ only preflight; #301 requires a real scheduled run. Results remain queryable in
 ledger context; proactive App/IM delivery is not promised. Disabling this
 integration removes its entry/read/write steps, while the original task and
 schedule can continue independently.
+
+## Repository-source increments
+
+For an approved repository profile, use the shared
+[repository review Skill](memorynexus-repository-review/SKILL.md) and pinned
+`workflow.py` package. Its source drafts and independent consumer decisions extend
+this protocol; ordinary session context/record/review keeps the existing contract.
+Initial task seeding remains the separate bootstrap path. Automatic retention
+preserves attributed trust and never supplies publication or tool authorization.
