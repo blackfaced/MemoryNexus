@@ -88,7 +88,8 @@ def prepare(a, ctx):
     s['scans'] = ss
     remaining.extend(pending)
     (run / 'evidence').mkdir(mode=448)
-    changed_sources=set()
+    unavailable_collections={scan['collection_id'] for scan in ss if scan['availability']=='unavailable'}
+    changed_sources={source['source_id'] for source in sources if source['collection_id'] in unavailable_collections}
     for (c, sid, rev, digest, data, old) in units:
         if a.workflow=='review' and (old is None or old['source_revision']!=rev or old['sha256']!=digest or old['availability']!='available'):
             changed_sources.add(sid)

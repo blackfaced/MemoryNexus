@@ -56,4 +56,16 @@ class Unsynchronized(unittest.TestCase):
         self.assertEqual(value['snapshot']['dependencies'],[])
         self.assertIn('awaiting_extraction',[x['reason'] for x in value['remaining']])
 
+    def test_missing_source_requires_invalidation_before_review(self):
+        f=Fixture();self.addCleanup(f.close)
+        code,result,_=f.capture('seed');self.assertEqual(code,0,result)
+        (f.root/'incident.md').unlink()
+        code,result,path=f.prepare('review','missing-review');self.assertEqual(code,3,result)
+        value=json.loads(path.read_text());self.assertEqual(value['items'],[])
+        self.assertEqual(value['evidence'],[])
+        self.assertEqual(value['snapshot']['dependencies'],[])
+        self.assertIn('source_unavailable',[x['reason'] for x in value['remaining']])
+        self.assertEqual(len(status_all(f.ctx,'inputs')),1)
+        self.assertEqual(status_all(f.ctx,'inputs')[0]['state'],'current')
+
 if __name__=='__main__':unittest.main()
