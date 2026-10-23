@@ -53,8 +53,23 @@ fn help_identifies_available_task_commands_without_a_ledger() {
     assert_eq!(
         response["result"]["commands"],
         json!([
-            "init", "record", "context", "review", "correct", "retract", "export", "backup",
-            "restore"
+            "init",
+            "record",
+            "context",
+            "review",
+            "correct",
+            "retract",
+            "export",
+            "backup",
+            "restore",
+            "migrate",
+            "workflow-bind",
+            "source-sync",
+            "source-capture",
+            "consumer-review",
+            "consumer-approve",
+            "publication-result",
+            "workflow-status"
         ])
     );
 }

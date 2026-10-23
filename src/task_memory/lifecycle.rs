@@ -32,7 +32,7 @@ fn validate_sources(ids: &[String]) -> Result<(), Error> {
     Ok(())
 }
 
-async fn scoped_record(
+pub(super) async fn scoped_record(
     conn: &mut SqliteConnection,
     task_id: &str,
     id: &str,
@@ -160,7 +160,7 @@ pub(super) async fn save_receipt(
     id: &str,
     revision: i64,
 ) -> Result<(), Error> {
-    sqlx::query("INSERT INTO task_receipts VALUES (?,?,?,?,?,?)")
+    sqlx::query("INSERT INTO task_receipts (task_id,idempotency_key,action,digest,record_id,revision) VALUES (?,?,?,?,?,?)")
         .bind(task_id)
         .bind(key)
         .bind(action)
@@ -256,6 +256,7 @@ pub(super) async fn invalidate_dependents(
     source: &str,
     revision: i64,
 ) -> Result<(), Error> {
+    workflow::invalidate_record(conn, task_id, source, revision).await?;
     sqlx::query("UPDATE task_records SET state='stale', revision=? WHERE task_id=? AND state='current' AND id IN (SELECT record_id FROM task_record_sources WHERE source_id=?)")
         .bind(revision).bind(task_id).bind(source).execute(conn).await.map_err(Error::storage)?;
     Ok(())
@@ -397,6 +398,7 @@ pub(super) async fn retract(path: &Path, input: RetractInput) -> Result<Value, E
     let chain: Vec<String> = sqlx::query_scalar("WITH RECURSIVE chain(id) AS (SELECT id FROM task_records WHERE task_id=? AND id=? UNION SELECT CASE WHEN r.record_id=c.id THEN r.supersedes_id ELSE r.record_id END FROM task_record_revisions r JOIN chain c ON r.record_id=c.id OR r.supersedes_id=c.id) SELECT id FROM chain")
         .bind(&config.task_id).bind(&input.target_id).fetch_all(&mut *tx).await.map_err(Error::storage)?;
     let revision = previous_revision + 1;
+    workflow::retract_records(&mut tx, &config.task_id, &chain, revision).await?;
     for id in chain {
         invalidate_dependents(&mut tx, &config.task_id, &id, revision).await?;
         sqlx::query("UPDATE task_records SET state='retracted',text='',evidence_refs='[]',revision=? WHERE task_id=? AND id=?")
