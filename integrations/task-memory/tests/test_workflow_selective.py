@@ -45,4 +45,15 @@ class Selective(unittest.TestCase):
         primary_work=[x for x in new['items'] if x['root_record_id']==primary['root_record_id']]
         self.assertEqual([x['consumer_id'] for x in primary_work],[b])
 
+class Unsynchronized(unittest.TestCase):
+    def test_changed_source_requires_capture_before_review_evidence(self):
+        f=Fixture();self.addCleanup(f.close)
+        code,result,_=f.capture('seed');self.assertEqual(code,0,result)
+        (f.root/'incident.md').write_text('New and not-yet-synchronized evidence.\n')
+        code,result,path=f.prepare('review','changed-review');self.assertEqual(code,3,result)
+        value=json.loads(path.read_text());self.assertEqual(value['items'],[])
+        self.assertEqual(value['evidence'],[])
+        self.assertEqual(value['snapshot']['dependencies'],[])
+        self.assertIn('awaiting_extraction',[x['reason'] for x in value['remaining']])
+
 if __name__=='__main__':unittest.main()

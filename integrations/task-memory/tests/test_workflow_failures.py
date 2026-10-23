@@ -175,4 +175,6 @@ e.call=drop_failed
         second=json.loads((run/'receipts'/'publication-result-0-1.json').read_text())['response']['result']
         self.assertEqual(first['outcome'],'failed')
         self.assertEqual(second['outcome'],'applied')
+        self.assertTrue((run/('result-'+item['id']+'-0.json')).exists())
+        self.assertEqual(json.loads((run/('result-'+item['id']+'-1.json')).read_text())['status'],'ok')
         self.assertEqual(Path(f.binding['targets'][0]['path']).read_bytes(),(run/item['rendered']['path']).read_bytes())

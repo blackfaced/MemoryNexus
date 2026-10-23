@@ -1,5 +1,6 @@
 """Bounded source scans. Offsets and full-prefix proofs, never event timestamps."""
 import json
+import re
 import uuid
 from pathlib import Path
 from workflow_io import read_regular, WorkflowError
@@ -7,7 +8,7 @@ from workflow import sha, now, canonical
 
 def selected(raw, selector):
     text = raw.decode('utf-8')
-    if any((ord(c) < 32 and c not in '\t\r\n' for c in text)) or 'data:' in text.lower():
+    if any((ord(c) < 32 and c not in '\t\r\n' for c in text)) or re.search(r'data:[a-z0-9.+-]+/[a-z0-9.+-]+[;,]',text,re.I):
         raise WorkflowError('blocked_unit')
     if selector['kind'] == 'marked':
         lines = raw.splitlines(keepends=True)

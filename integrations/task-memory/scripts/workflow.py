@@ -51,13 +51,22 @@ def exact(v, required, optional=()):
         raise WorkflowError('invalid_input')
 
 def report(workflow, run_id, items, status=None):
+    from workflow_trigger import metadata
+    gap,_ = metadata()
+    if gap:
+        items=list(items)+[dict(id='trigger',status='needs_review',code='unverified_trigger',receipt_ids=[])]
+        if status in ('ok','noop'):
+            status=None
     good = any((i['status'] == 'ok' for i in items))
     bad = any((i['status'] in ('failed', 'pending', 'needs_review') for i in items))
-    status = status or ('partial' if good and bad else 'needs_review' if bad else 'ok' if good else 'noop')
+    failed = any(i['status']=='failed' for i in items)
+    status = status or ('partial' if good and bad else 'failed' if failed else 'needs_review' if bad else 'ok' if good else 'noop')
     return dict(schema_version=1, status=status, run_id=run_id, workflow=workflow, trigger={'kind': 'manual'}, items=items, pending=[i['id'] for i in items if i['status'] in ('pending', 'needs_review', 'failed')], report_errors=[])
 
 def save_report(run, r, initial=True):
     try:
+        from workflow_trigger import retain
+        retain(run)
         write_new(run / 'summary.json', encode(r))
         files = []
         for p in sorted(run.rglob('*')):

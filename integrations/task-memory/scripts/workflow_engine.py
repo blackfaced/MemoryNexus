@@ -88,7 +88,12 @@ def prepare(a, ctx):
     s['scans'] = ss
     remaining.extend(pending)
     (run / 'evidence').mkdir(mode=448)
+    changed_sources=set()
     for (c, sid, rev, digest, data, old) in units:
+        if a.workflow=='review' and (old is None or old['source_revision']!=rev or old['sha256']!=digest or old['availability']!='available'):
+            changed_sources.add(sid)
+            remaining.append(dict(id=sid,reason='awaiting_extraction'))
+            continue
         if a.workflow not in ('capture','review'):
             continue
         captured = next((x for x in inputs if x.get('origin', {}).get('source_id') == sid and x['origin']['source_revision'] == rev and (x['origin']['extractor_version'] == c['extractor_version']) and (x['state'] == 'current')), None)
@@ -108,6 +113,8 @@ def prepare(a, ctx):
             if source['availability'] == 'available' and (not source['blocked']) and (source['source_id'] in {e['source_id'] for e in evidence}):
                 s['dependencies'].append(dict(type='source', id=source['source_id'], revision=source['source_revision'], sha256=source['sha256']))
         for rec in inputs:
+            if rec.get('origin',{}).get('source_id') in changed_sources:
+                continue
             if rec['state'] != 'current':
                 continue
             for consumer in ctx['profile']['consumers']:
@@ -357,7 +364,9 @@ def apply(a, ctx):
                 result.update(status='needs_review' if getattr(e, 'code', '') in ('stale_snapshot', 'approval_required', 'recovery_required', 'plan_missing') else 'failed', code=getattr(e, 'code', 'io_error'))
             results.append(result)
             try:
-                rp = run / f"result-{item['id']}-0.json"
+                attempts=[int(path.stem.rsplit('-',1)[1]) for path in (run/'receipts').glob(f'publication-result-{i}-*.json')] if item['kind']=='publish' else []
+                result_attempt=max(attempts,default=0)
+                rp=run/f"result-{item['id']}-{result_attempt}.json"
                 if not rp.exists():
                     write_new(rp, encode(result))
             except (WorkflowError, OSError):
@@ -385,6 +394,11 @@ def apply(a, ctx):
         while (run / f'summary-{attempt}.json').exists():
             attempt += 1
         errors = list(report_errors)
+        try:
+            from workflow_trigger import retain
+            retain(run)
+        except (WorkflowError,OSError):
+            errors.append(dict(artifact='trigger',code='io_error'))
         for (name, raw) in [(f'summary-{attempt}.json', encode(summary))]:
             try:
                 write_new(run / name, raw)
