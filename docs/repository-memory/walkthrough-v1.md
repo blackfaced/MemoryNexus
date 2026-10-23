@@ -160,8 +160,8 @@ status exposes that lag, and old backups/source originals are not claimed erased
 
 ## 5. R3 (#310) command-level acceptance handoff
 
-Coordinator copies these references into the GitHub issue after owner accepts the
-fixed R2 commit; this is an acceptance map, not a second implementation tracker.
+Owner accepted fixed R2 commit `83d85c6` on 2026-10-23. These references are now
+copied into the GitHub issue; this is an acceptance map, not a second implementation tracker.
 
 - **Format/compatibility:** exact supported v1→new-v2 migrate with verified backup;
   all old IDs/digests/order remain. Wrong backup, future schema, overwrite/sidecars

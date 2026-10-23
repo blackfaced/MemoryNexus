@@ -1,6 +1,6 @@
 # Repository memory v1 — kernel, schema and recovery
 
-Normative R2 proposal; **owner acceptance pending, not implemented**. Entry:
+Normative R2 contract, owner-accepted at `83d85c6` on 2026-10-23; implementation tracked in #310. Entry:
 [contract](../repository-memory-v1.md). Runtime transport is the existing CLI.
 
 ## 1. Common types, requests and results

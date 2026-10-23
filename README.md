@@ -16,8 +16,9 @@ For an existing repository, the [onboarding Skill](integrations/task-memory/memo
 maps its current memory mechanisms and prepares a reviewed integration proposal.
 The [R2 exact contract](docs/repository-memory-v1.md) tracks bounded experience,
 source freshness, independent Lens adoption and memory replacement/withdrawal.
-It is **pending owner acceptance**; the proposed incremental commands and runner
-are not implemented. [R3–R6](docs/repository-memory-workflows-issues.md) remain gated.
+The owner accepted contract `83d85c6` on 2026-10-23. Incremental CLI commands and the shared [workflow runner](integrations/task-memory/scripts/workflow.py)
+are implemented in PR #316; see [implementation acceptance](docs/acceptance/repository-memory-workflows.md). Installation and real acceptance
+remain separate [R5–R6](docs/repository-memory-workflows-issues.md) gates.
 
 The existing personal-experiment path helps one owner keep a confirmed record of
 what they observed, which advice they chose, what reversible adjustment they tried,

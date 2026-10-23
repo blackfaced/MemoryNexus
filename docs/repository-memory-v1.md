@@ -1,12 +1,12 @@
 # Repository memory v1: exact contract for owner review
 
-**R2 (#309), 2026-10-22. Owner acceptance: PENDING. Runtime: NOT IMPLEMENTED.**
-This fixes the proposed interfaces for R3/R4; it does not enable them. The owner
-must accept a fixed commit, and the coordinator must copy the command-level
-acceptance into #310/#311 before implementation. [ADR-029](../decisions/ADR-029-repository-memory-workflows.md)
+**R2 (#309): ACCEPTED on 2026-10-23. Runtime implementation: #310 and #311 in PR #316.**
+The owner accepted fixed contract commit
+`83d85c6c0216b6ae4089c83db03dd0a473235851`; #315 merged as
+`a16aa41a97ee35941b57d9fee420a78ac35afc80`. Command-level acceptance is recorded
+in #310/#311 before implementation. The new commands are available when built from PR #316; [implementation acceptance](acceptance/repository-memory-workflows.md) records their checks. This does not authorize production deployment. [ADR-029](../decisions/ADR-029-repository-memory-workflows.md)
 and the [behavior contract](repository-memory-workflows-contract.md) remain the
-scope authority. Current runnable commands remain the nine in the
-[task v1 contract](task-memory-contract.md).
+scope authority. The existing nine [task v1 commands](task-memory-contract.md) retain their inputs alongside the new workflow commands.
 
 The R1 [Skill](../integrations/task-memory/memorynexus-repo-onboard/SKILL.md) and
 [pilot walkthrough](../integrations/task-memory/memorynexus-repo-onboard/references/pilot-walkthrough.md)
@@ -89,8 +89,8 @@ proposal under an old approval.
 
 - R1 is a discovery/proposal Skill, not production ingestion. Existing bootstrap
   is still new-task-only; existing tasks use the future incremental path.
-- This contract is ready for owner review only. No source-sync/consumer command
-  is available merely because its name appears here.
+- The fixed contract is owner-accepted. No source-sync/consumer command is
+  available merely because its name appears here; implementation evidence is separate.
 - #310 implements the kernel cases in walkthrough §5. #311 implements the
   runner/file cases in §6 after #310; both reference the accepted fixed commit.
 - #312 owns installation/deployment and #313 real workflow acceptance. #301 and

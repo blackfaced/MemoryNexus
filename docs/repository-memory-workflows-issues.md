@@ -5,7 +5,7 @@ owner 于 2026-10-22 接受行为方案并授权发布 R1–R6。GitHub Issues �
 
 - 架构：[ADR-029](../decisions/ADR-029-repository-memory-workflows.md)。
 - 行为与 A1–A12 验收：[行为合同](repository-memory-workflows-contract.md)。
-- R2 精确接口与 memory 生命周期：[合同草案](repository-memory-v1.md)，owner acceptance PENDING。
+- R2 精确接口与 memory 生命周期：[已接受合同](repository-memory-v1.md)，固定 commit `83d85c6`，2026-10-23。
 - 真实样本：[MiniMax 只读盘点 prompt](handoffs/minimax-repository-memory-discovery.md)。
 
 ## 执行顺序
@@ -24,9 +24,9 @@ issue 正文中。最新状态以 GitHub 为准。R1 在方案合入后可执行
 R3–R5 在精确合同及各自前置未通过前不能标为 ready-for-agent。R6 需要真实机器与
 owner 参与；模拟结果不能关闭该 gate。#301/#283 继续保留各自标准与状态。
 
-当前源码含 R1 Skill 和脱敏 walkthrough；R2 草案含完整字段/序列及
+当前源码含 R1 Skill 和脱敏 walkthrough；已接受的 R2 合同含完整字段/序列及
 [R3/R4 命令级验收交接](repository-memory/walkthrough-v1.md#5-r3-310-command-level-acceptance-handoff)。
-先由 owner 接受固定 R2 commit，再将验收写回 GitHub issue；本索引不替代该 gate。
+owner 已接受固定 R2 commit `83d85c6`，验收已写回 GitHub issue；先实现 #310，再实现 #311。
 
 方案合入不等于功能实现，也不授权生产部署。每个实现 issue 使用独立分支/worktree，
 引用所依据的合同 commit；需要改变行为边界时先更新合同并接受审阅。

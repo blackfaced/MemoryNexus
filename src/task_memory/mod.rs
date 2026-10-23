@@ -13,6 +13,8 @@ use uuid::Uuid;
 
 mod lifecycle;
 mod recovery;
+mod strict_json;
+mod workflow;
 
 const APPLICATION_ID: i64 = 0x4d4e5453;
 const SCHEMA_VERSION: i64 = 1;
@@ -33,9 +35,19 @@ const SCHEMA: &[&str] = &[
 ];
 
 pub async fn run(args: &[String]) -> Result<Value, Error> {
+    let result = run_inner(args).await;
+    result.map_err(|mut error| {
+        error.workflow = args
+            .last()
+            .is_some_and(|a| workflow::ACTIONS.contains(&a.as_str()) || a == "migrate");
+        error
+    })
+}
+
+async fn run_inner(args: &[String]) -> Result<Value, Error> {
     if args == ["--help"] {
         return Ok(
-            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","commands":["init","record","context","review","correct","retract","export","backup","restore"]}}),
+            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
         );
     }
     let [flag, path, action] = args else {
@@ -49,11 +61,20 @@ pub async fn run(args: &[String]) -> Result<Value, Error> {
             "export" => recovery::export(Path::new(path), read_input(true)?).await,
             "backup" => recovery::backup(Path::new(path), read_input(false)?).await,
             "restore" => recovery::restore(Path::new(path), read_input(false)?).await,
+            "migrate" => recovery::migrate(Path::new(path), read_input(false)?).await,
             _ => Err(Error::invalid()),
         };
     }
     if flag != "--config" {
         return Err(Error::invalid());
+    }
+    if workflow::ACTIONS.contains(&action.as_str()) {
+        return workflow::run(
+            Path::new(path),
+            action,
+            read_input(action == "workflow-status")?,
+        )
+        .await;
     }
     match action.as_str() {
         "init" => init(Path::new(path), read_input(false)?).await,
@@ -78,7 +99,8 @@ fn read_input<T: DeserializeOwned>(optional: bool) -> Result<T, Error> {
     if optional && input.iter().all(u8::is_ascii_whitespace) {
         input = b"{}".to_vec();
     }
-    let value: Value = serde_json::from_slice(&input).map_err(|_| Error::invalid())?;
+    let strict_json::StrictValue(value) =
+        serde_json::from_slice(&input).map_err(|_| Error::invalid())?;
     if !value.is_object() || contains_null(&value) {
         return Err(Error::invalid());
     }
@@ -270,8 +292,11 @@ async fn validate_format(conn: &mut SqliteConnection) -> Result<(), Error> {
         .fetch_one(&mut *conn)
         .await
         .map_err(Error::storage)?;
-    if version != SCHEMA_VERSION {
+    if version != 1 && version != 2 {
         return Err(Error::version());
+    }
+    if version == 2 {
+        workflow::validate_schema(conn).await?;
     }
     Ok(())
 }
@@ -400,6 +425,13 @@ async fn init(path: &Path, mut input: InitInput) -> Result<Value, Error> {
             "replayed",
         )
     } else {
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(Error::storage)?;
+        if version != 1 {
+            return Err(Error::version());
+        }
         if existing_config.is_some() {
             return Err(Error::conflict());
         }
@@ -663,11 +695,13 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
             }
         }
     } else {
-        rows = sqlx::query("SELECT * FROM task_records WHERE task_id=? AND state='current'")
-            .bind(&config.task_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(Error::storage)?;
+        rows = sqlx::query(
+            "SELECT * FROM task_records WHERE task_id=? AND state='current' AND kind!='draft'",
+        )
+        .bind(&config.task_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(Error::storage)?;
     }
     rows.sort_by(|a, b| {
         fn priority(row: &sqlx::sqlite::SqliteRow) -> u8 {
@@ -743,13 +777,19 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     )
 }
 
+#[derive(Debug)]
 pub struct Error {
+    workflow: bool,
     code: &'static str,
     message: &'static str,
 }
 impl Error {
     fn new(code: &'static str, message: &'static str) -> Self {
-        Self { code, message }
+        Self {
+            code,
+            message,
+            workflow: false,
+        }
     }
     fn invalid() -> Self {
         Self::new(
@@ -782,6 +822,11 @@ impl Error {
         )
     }
     pub fn response(self) -> Value {
-        json!({"schema_version":1,"status":"error","code":self.code,"message":self.message})
+        let mut result =
+            json!({"schema_version":1,"status":"error","code":self.code,"message":self.message});
+        if self.workflow {
+            result["workflow_contract"] = json!(1);
+        }
+        result
     }
 }

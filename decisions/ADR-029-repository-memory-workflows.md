@@ -4,13 +4,13 @@
 
 **行为方案已获 owner 接受，2026-10-22；实现按 R1–R6 分阶段推进。**
 
-本次接受的是职责、流程和验收边界。精确 CLI/JSON/schema 仍由 R2 交付并审阅；本 ADR
+最初接受的是职责、流程和验收边界；精确 CLI/JSON/schema 已由 R2 交付并接受。本 ADR
 不表示增量、独立采纳或脚本已经实现，也不授权迁移生产账本或启用真实定时任务。
 
-R1 接入 Skill 已有源码交付。[R2 精确合同草案](../docs/repository-memory-v1.md) 已明确
+R1 接入 Skill 已合入。[R2 精确合同](../docs/repository-memory-v1.md) 已明确
 draft/source_reported、完整证据依赖、稳定消费槽位、发布回执以及显式 schema v2 迁移；
-**owner acceptance 仍为 PENDING**。需接受固定合同 commit 并更新 #310/#311 验收后
-才实现，不改变本 ADR 的行为边界与部署限制。
+owner 于 2026-10-23 接受固定合同 `83d85c6c0216b6ae4089c83db03dd0a473235851`；
+#315 已合入，#310/#311 命令级验收已补齐，按顺序实现。不改变本 ADR 的行为边界与部署限制。
 
 根据 owner 的补充，本稿取代本分支尚未发布的“固定 PROGRESS.md / WORKFLOW.md”方案。
 首个验收仍是一个仓库、一份条目草稿箱、两个 Lens、两份外部文档；具体文件、规则和

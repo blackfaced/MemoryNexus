@@ -1,0 +1,3 @@
+# Example rule material
+
+Use two independently named consumers from the owner-approved profile. A mechanism view may retain where the current method is documented, what observation supports it and the limits of coverage. An experience view may retain the symptom, attributed cause, attempted fix, applicable conditions and remaining uncertainty. These are suggestions for external Agent judgment, not fixed filenames or kernel categories. Each conclusion must declare all actual supporting dependencies; navigation pointers do not stand in for evidence. Do not publish a recommendation merely because another consumer accepted the same source.
