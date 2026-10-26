@@ -495,7 +495,7 @@ class NeutralizationLifecycle(unittest.TestCase):
             self.assertEqual(hashlib.sha256(before[target]).hexdigest(), item['base_sha256'])
         code, report = f.run('apply', '--binding', f.binding_path, '--plan', run / 'plan.json')
         self.assertNotEqual(code, 0, report)
-        self.assertTrue(all(i.get('code') == 'stale_snapshot' for i in report['items']), report)
+        self.assertTrue(all(i.get('code') in ('stale_snapshot', 'approval_required') for i in report['items']), report)
         for path, raw in before.items():
             self.assertEqual(Path(path).read_bytes(), raw)
 

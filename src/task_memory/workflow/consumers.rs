@@ -523,6 +523,35 @@ async fn approve(
         if !published {
             return Err(approval());
         }
+        // A neutralisation writes over the block region, so it may only be
+        // approved while this decision still owns that block.  A newer
+        // generation of the same block that is current, publishable and
+        // already published has taken the block over; neutralising now would
+        // replace that newer generation's body with the review-required text.
+        //
+        // The stale validity of this decision does not protect the block: it
+        // says the decision is outdated, not that it still owns the region.
+        let superseded: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM task_consumer_decisions n
+             JOIN task_publications p ON p.decision_id=n.decision_id AND p.task_id=n.task_id
+             JOIN task_publication_attempts a ON a.approval_id=p.approval_id AND a.task_id=p.task_id
+             WHERE n.task_id=? AND n.workflow_id=?
+             AND json_extract(n.data,'$.block_id')=? AND n.generation>?
+             AND json_extract(n.data,'$.validity')='current'
+             AND json_extract(n.data,'$.proposed_decision')='proposed'
+             AND json_extract(a.data,'$.outcome')='applied'
+             AND json_extract(p.data,'$.maintenance') IS NULL)",
+        )
+        .bind(task)
+        .bind(string(&d, "workflow_id")?)
+        .bind(string(&d, "block_id")?)
+        .bind(d["generation"].as_i64().ok_or_else(Error::invalid)?)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(Error::storage)?;
+        if superseded {
+            return Err(approval());
+        }
     } else {
         if d["validity"] != "current"
             || d["proposed_decision"] != "proposed"
