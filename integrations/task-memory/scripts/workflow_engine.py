@@ -130,6 +130,19 @@ def prepare(a, ctx):
                 items.append(w)
     if a.workflow == 'publish':
         queued = set()
+        # A newer generation of the same block that is current and publishable
+        # replaces the published block in place: workflow_io.render rewrites the
+        # block region and the publication path accepts a current proposed
+        # decision without a prior neutralisation.  Such a generation supersedes
+        # the published one, so the published one must not neutralise its own
+        # block and must not consume the per-target queue slot.
+        successors = {}
+        for other in decisions:
+            if other['validity'] != 'current' or other['proposed_decision'] != 'proposed':
+                continue
+            best = successors.get(other['block_id'])
+            if best is None or other['generation'] > best['generation']:
+                successors[other['block_id']] = other
         for d in decisions:
             pubs = [p for p in publications if p['decision_id'] == d['decision_id']]
             if any((p['publication'] == 'applied' and p['validity'] == 'current' for p in pubs)):
@@ -140,6 +153,10 @@ def prepare(a, ctx):
             c = next((c for c in ctx['profile']['consumers'] if c['consumer_id'] == d['consumer_id']), None)
             if not c or (purpose == 'neutralize' and (not c['neutralize_stale'])):
                 continue
+            if purpose == 'neutralize':
+                successor = successors.get(d['block_id'])
+                if successor is not None and successor['generation'] > d['generation'] and retained_output(ctx, successor):
+                    continue
             target = c['target_id']
             if target in queued:
                 remaining.append(dict(id=d['decision_id'], reason='target_queued'))
@@ -148,7 +165,6 @@ def prepare(a, ctx):
             if purpose == 'publish' and (not output):
                 remaining.append(dict(id=d['decision_id'], reason='plan_missing'))
                 continue
-            queued.add(target)
             path = next((t['path'] for t in b['targets'] if t['target_id'] == target))
             t = target_snapshot(path, d['block_id'])
             t['target_id'] = target
@@ -163,6 +179,9 @@ def prepare(a, ctx):
                 n = 'evidence/neutral-' + d['decision_id'] + '.txt'
                 write_new(run / n, text)
                 output = {'run_dir': str(run), 'artifact': artifact_ref(run, n)}
+            # The slot is claimed only by a candidate that can actually run, so a
+            # rejected neutralisation never blocks the target for later rounds.
+            queued.add(target)
             w = dict(kind='publish', consumer_id=d['consumer_id'], decision_id=d['decision_id'], decision_sha256=d['decision_sha256'], target_id=target, block_id=d['block_id'], output=output, output_sha256=sha(ref_bytes(ctx, output)), purpose=purpose)
             if purpose == 'neutralize':
                 w['previous_approval_id'] = next((p['approval_id'] for p in pubs if p['publication'] == 'applied' and (not p.get('maintenance'))))
