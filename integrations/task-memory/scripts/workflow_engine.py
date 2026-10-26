@@ -72,6 +72,57 @@ def retained_output(ctx, decision):
             return {'run_dir': str(output.parent.parent), 'artifact': artifact_ref(output.parent.parent, str(output.relative_to(output.parent.parent)))}
     return None
 
+def neutralised_already(pubs, target):
+    """Did this runner already replace the block with the neutral text?
+
+    A completed neutralisation leaves an applied maintenance publication and
+    puts the fixed review-required text in the block region.  Recognising that
+    state keeps a repeated prepare from asking for the same approval again
+    and from growing another receipt for work that is already done.
+
+    A human edit after the neutralisation leaves the region holding neither
+    the published body nor the fixed text, so it is still reported as needing
+    a human.
+    """
+    maintenance = [p for p in pubs if p['publication'] == 'applied' and p.get('maintenance')]
+    if not maintenance:
+        return False
+    current = target.get('prior_block_sha256')
+    if not current:
+        return False
+    for p in maintenance:
+        if p['proposal']['output_sha256'] == current:
+            return True
+    return False
+
+def authoritative_successor(ctx, block_id, generation):
+    """The generation that currently owns a block, according to the ledger.
+
+    The successor slot is authoritative state, not a property of a prepared
+    plan: a plan prepared before a newer generation existed still describes
+    the world as it was.  Re-reading the ledger here is what stops an old
+    neutralisation plan from erasing a newer generation's body.
+
+    A generation owns its block when it is current, publishable, and carries
+    a publication that the ledger recorded as applied.  The publication check
+    is what separates "the newer generation was reviewed" from "the newer
+    generation is the one whose body is in the file".
+    """
+    decisions = status_all(ctx, 'decisions')
+    publications = status_all(ctx, 'publications')
+    owner = None
+    for other in decisions:
+        if other['block_id'] != block_id:
+            continue
+        if other['validity'] != 'current' or other['proposed_decision'] != 'proposed':
+            continue
+        if other['generation'] <= generation:
+            continue
+        published = any((p['decision_id'] == other['decision_id'] and p['publication'] == 'applied' and (not p.get('maintenance'))) for p in publications)
+        if published and (owner is None or other['generation'] > owner['generation']):
+            owner = other
+    return owner
+
 def prepare(a, ctx):
     header(ctx, allow_recovery=a.workflow == 'recovery')
     b = ctx['binding']
@@ -177,6 +228,16 @@ def prepare(a, ctx):
                 # block, because publishing a later block changes the file digest
                 # without touching this block.
                 if not t['exists'] or t.get('prior_block_sha256') != prior['proposal']['output_sha256']:
+                    # A completed neutralisation replaced the block with the
+                    # fixed review-required text, so the region no longer holds
+                    # the published body either.  That is this runner's own
+                    # earlier work, not a human edit: the maintenance
+                    # publication and the current block content together say
+                    # the block is already neutralised.  It must not ask for the
+                    # same approval again, and it must not be reported as
+                    # "the block changed and needs a human".
+                    if neutralised_already(pubs, t):
+                        continue
                     remaining.append(dict(id=d['decision_id'], reason='awaiting_approval'))
                     s['targets'].pop()
                     continue
@@ -460,6 +521,22 @@ def publication(ctx, run, plan, item, i, result):
                 return
     target = next((t['path'] for t in ctx['binding']['targets'] if t['target_id'] == item['target_id']))
     rendered = resolve_ref(run, item['rendered'], ctx['binding']['state_root'])
+    if item['purpose'] == 'neutralize':
+        # A neutralisation writes over the block region, so it may only run
+        # while the decision it neutralises still owns that block.  The plan
+        # was prepared earlier and cannot know about a generation that
+        # appeared afterwards, so the successor slot is re-read here, from
+        # the ledger, immediately before the write.
+        #
+        # The whole-file baseline cannot stand in for this check: a newer
+        # generation that publishes the same body leaves the file bytes
+        # unchanged, and a neutralisation would then silently replace the
+        # newer generation's body.
+        generation = next((d['generation'] for d in status_all(ctx, 'decisions') if d['decision_id'] == item['decision_id']), None)
+        if generation is None:
+            fail('stale_snapshot')
+        if authoritative_successor(ctx, item['block_id'], generation) is not None:
+            fail('stale_snapshot')
     ph = sha(canonical(plan))
     proposal = {k: item[k] for k in ('target_id', 'block_id', 'base_exists', 'base_sha256', 'after_sha256', 'output_sha256')}
     proposal['plan_sha256'] = ph
