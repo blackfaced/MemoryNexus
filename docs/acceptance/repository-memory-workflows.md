@@ -59,6 +59,67 @@ unverifiable scheduler proof remains manual with a visible pending gap. No real
 scheduler-provider execution is claimed. Python bytecode creation is disabled
 before imports so ordinary execution preserves the pinned package inventory.
 
+## CI integration (#319)
+
+The existing `Test` job now runs the complete `test_workflow*.py` discovery
+against the absolute `MEMORYNEXUS_TEST_BINARY` built from the checkout. A missing
+executable, zero discovered cases, any skipped case, or test failure fails the
+job. Counts are reported by unittest, not pinned to the historical 35-case count.
+The bootstrap step and other required checks remain in place.
+
+The two process fixtures use `Path(tempfile.gettempdir()).resolve()` instead of
+`/private/tmp`. Resolving the system temporary root accommodates macOS aliases
+and Linux paths without changing production no-symlink or private-mode checks.
+
+Local macOS verification, 2026-10-26, against the #319 patch on
+`955f1c53ea1f5fb14cad03fb1e6c31aa8005662c`:
+
+```text
+CARGO_TARGET_DIR=/private/tmp/memorynexus-319-target cargo build --locked --offline --bin memorynexus-feedback-cli
+MEMORYNEXUS_TEST_BINARY=/private/tmp/memorynexus-319-target/debug/memorynexus-feedback-cli PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s integrations/task-memory/tests -p 'test_workflow*.py' -v
+MEMORYNEXUS_TEST_BINARY=/private/tmp/memorynexus-319-target/debug/memorynexus-feedback-cli PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_task_memory_bootstrap.py
+git diff --check
+```
+
+Results: build passed; 35 workflow cases passed in 43.612s with no skips;
+22 bootstrap cases passed in 16.229s with no skips; whitespace check passed.
+Compiled CLI SHA-256:
+`747358b6b29ed3be3ab79d74eac797c7cf7e59fe64651af69045f96e595e5d57`.
+The exact CI shell body was also checked with a missing binary, an empty
+synthetic test directory and a skipped synthetic case; all exited nonzero.
+No Rust source changed, so the local checks target the modified process suite;
+the existing full Rust checks still run in CI.
+
+The first Ubuntu run at `a247f0e6df9f5a50faf485ccb0f64cabf98090a3` discovered all
+35 cases but failed fixture initialization because Linux debug sections made the
+CLI exceed the runner's 128 MiB file-read limit. CI now strips only debug sections
+from its checkout-built executable before workflow tests; production limits and
+runner behavior remain unchanged. The fixture pins the resulting binary hash.
+
+The corrected Ubuntu run at `8b91e54a53137fa98119ea3cc864220a279f315f`
+passed: [Actions run 40317011253](https://github.com/blackfaced/MemoryNexus/actions/runs/40317011253),
+[Test job](https://github.com/blackfaced/MemoryNexus/actions/runs/40317011253/job/121552029855).
+All 35 workflow cases passed in 23.656s and all 22 bootstrap cases in 9.710s,
+with no skips. Full Rust Test, Format, Clippy, Build and PostgreSQL integration
+also passed; optional Acceptance was skipped by its existing condition.
+This evidence is tied to that exact commit, not an assertion about future PR heads.
+These runs use isolated synthetic repositories
+and ledgers, with no model, scheduler or private installation access.
+
+## PR #323 reconciliation with #320 (2026-10-26)
+
+After merging main `b823f46`, the Test job keeps one workflow acceptance step.
+It copies the checkout-built CLI to `runner.temp` and strips that copy, preserving
+the original build artifact, then rejects empty discovery, skipped cases and
+failures. The platform fixture changes are already supplied by #320.
+
+Local macOS recheck: the exact Python guard extracted from CI ran 35 workflow
+cases in 41.957s, zero skips; bootstrap ran 22 cases in 16.526s, zero skips.
+Negative probes for empty discovery, skips and failures exited nonzero, and a
+successful probe exited zero. The existing compiled CLI was reused after verifying
+that its Rust sources match this checkout; no Rust behavior changed. The updated
+PR head still requires its own GitHub CI run.
+
 ## Separate deployment gates
 
 Production installation/migration and all pinned callers remain #312 work.
