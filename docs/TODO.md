@@ -1,9 +1,32 @@
 # MemoryNexus Roadmap
 
-> Updated: 2026-10-23 (R1 merged; R2 exact contract accepted; R3 and R4 implemented; deployment gates separate)
+> Updated: 2026-10-26 (current-knowledge direction accepted; precise entry contract pending; deployment gates separate)
 > Executable tracker source of truth: [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues).
 > The shared-task-memory issues below are published. The older reconciliation
 > section remains a historical recommendation, not a claim that its issues were closed.
+
+## Accepted direction: current knowledge maintenance
+
+[ADR-030](../decisions/ADR-030-current-knowledge-maintenance.md) and
+[the implementation plan](current-knowledge-plan.md) record the owner-accepted
+sequence: correction through actual client use, then cross-record governance,
+then a lifecycle/reading-preview page. [#317](https://github.com/blackfaced/MemoryNexus/issues/317)
+remains the parent tracker; acceptance of the direction is not acceptance of new
+CLI fields, automatic truth promotion or production deployment.
+
+- [#318](https://github.com/blackfaced/MemoryNexus/issues/318): freeze the first
+  integration contract and public-process acceptance before creating its runtime ticket.
+- [#319](https://github.com/blackfaced/MemoryNexus/issues/319): independently put
+  the existing workflow suite into CI, retaining safe portable test directories.
+- Reuse #312 installation, #301 real-client handoff and #313 repository/scheduler
+  acceptance. Preserve their prior evidence and remaining cases; no duplicate gate.
+- Keep later semantic relations and page implementation inside #317 until the
+  first slice has real-use feedback. #283 and #284–#286 remain unchanged.
+
+The [cross-client record](acceptance/task-memory-cross-client.md) already reports
+partial real MiniMax and scheduled-run evidence. The complete Codex path and
+owner decision remain unfinished; those results do not establish deployment of
+the new reading integration.
 
 ## Accepted plan: repository onboarding and repeatable memory workflows
 

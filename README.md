@@ -10,7 +10,8 @@ continue in another client. See the [contract](docs/task-memory-contract.md),
 [other-machine onboarding](docs/task-memory-onboarding.md) and [issues](docs/TODO.md).
 The source implements `task` init/record/context/review/correct/retract/export/backup/restore
 and a simulated CLI preflight. The [real-client gate](docs/acceptance/task-memory-cross-client.md)
-has **not run**; #301 and parent #296 remain open.
+is **partial**: real MiniMax sessions and scheduled runs are documented; the
+complete Codex path and owner decision remain unfinished. #301 and parent #296 stay open.
 
 For an existing repository, the [onboarding Skill](integrations/task-memory/memorynexus-repo-onboard/SKILL.md)
 maps its current memory mechanisms and prepares a reviewed integration proposal.
@@ -19,6 +20,12 @@ source freshness, independent Lens adoption and memory replacement/withdrawal.
 The owner accepted contract `83d85c6` on 2026-10-23. Incremental CLI commands and the shared [workflow runner](integrations/task-memory/scripts/workflow.py)
 are implemented in PR #316; see [implementation acceptance](docs/acceptance/repository-memory-workflows.md). Installation and real acceptance
 remain separate [R5–R6](docs/repository-memory-workflows-issues.md) gates.
+
+The next accepted capability plan is [current knowledge maintenance, ADR-030](decisions/ADR-030-current-knowledge-maintenance.md):
+make an explicit correction change what a later session actually uses, then
+address cross-record relationships and a lifecycle view. [#317](https://github.com/blackfaced/MemoryNexus/issues/317)
+tracks this staged plan; [the gap analysis](docs/current-knowledge-plan.md) separates
+existing lifecycle code from the client integration contract still to be defined.
 
 The existing personal-experiment path helps one owner keep a confirmed record of
 what they observed, which advice they chose, what reversible adjustment they tried,
