@@ -59,6 +59,42 @@ unverifiable scheduler proof remains manual with a visible pending gap. No real
 scheduler-provider execution is claimed. Python bytecode creation is disabled
 before imports so ordinary execution preserves the pinned package inventory.
 
+## CI integration (#319)
+
+The existing `Test` job now runs the complete `test_workflow*.py` discovery
+against the absolute `MEMORYNEXUS_TEST_BINARY` built from the checkout. A missing
+executable, zero discovered cases, any skipped case, or test failure fails the
+job. Counts are reported by unittest, not pinned to the historical 35-case count.
+The bootstrap step and other required checks remain in place.
+
+The two process fixtures use `Path(tempfile.gettempdir()).resolve()` instead of
+`/private/tmp`. Resolving the system temporary root accommodates macOS aliases
+and Linux paths without changing production no-symlink or private-mode checks.
+
+Local macOS verification, 2026-10-26, against the #319 patch on
+`955f1c53ea1f5fb14cad03fb1e6c31aa8005662c`:
+
+```text
+CARGO_TARGET_DIR=/private/tmp/memorynexus-319-target cargo build --locked --offline --bin memorynexus-feedback-cli
+MEMORYNEXUS_TEST_BINARY=/private/tmp/memorynexus-319-target/debug/memorynexus-feedback-cli PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s integrations/task-memory/tests -p 'test_workflow*.py' -v
+MEMORYNEXUS_TEST_BINARY=/private/tmp/memorynexus-319-target/debug/memorynexus-feedback-cli PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_task_memory_bootstrap.py
+git diff --check
+```
+
+Results: build passed; 35 workflow cases passed in 43.612s with no skips;
+22 bootstrap cases passed in 16.229s with no skips; whitespace check passed.
+Compiled CLI SHA-256:
+`747358b6b29ed3be3ab79d74eac797c7cf7e59fe64651af69045f96e595e5d57`.
+The exact CI shell body was also checked with a missing binary, an empty
+synthetic test directory and a skipped synthetic case; all exited nonzero.
+No Rust source changed, so the local checks target the modified process suite;
+the existing full Rust checks still run in CI.
+
+Ubuntu evidence must be read from the #319 PR's Actions run for its exact head
+commit. At the time of this local record it is pending; macOS results alone do
+not establish Ubuntu success. These runs use isolated synthetic repositories
+and ledgers, with no model, scheduler or private installation access.
+
 ## Separate deployment gates
 
 Production installation/migration and all pinned callers remain #312 work.

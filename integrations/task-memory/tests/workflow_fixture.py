@@ -16,7 +16,7 @@ BINARY=Path(os.environ.get('MEMORYNEXUS_TEST_BINARY',str(Path(os.environ.get('CA
 
 class Fixture:
     def __init__(self):
-        self.temp=tempfile.TemporaryDirectory(prefix='mn-runner-',dir='/private/tmp')
+        self.temp=tempfile.TemporaryDirectory(prefix='mn-runner-',dir=Path(tempfile.gettempdir()).resolve())
         self.base=Path(self.temp.name); os.chmod(self.base,0o700)
         self.root=self.base/'repo'; self.root.mkdir(mode=0o700)
         self.private=self.base/'private'; self.private.mkdir(mode=0o700)

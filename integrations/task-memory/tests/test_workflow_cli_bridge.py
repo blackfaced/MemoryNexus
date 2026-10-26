@@ -24,7 +24,7 @@ class Bridge(unittest.TestCase):
 
     def test_real_migration_status_bind_and_scope(self):
         self.assertTrue(BIN.is_file(),'compiled test binary required')
-        with tempfile.TemporaryDirectory(prefix='wf-bridge-',dir='/private/tmp') as tmp:
+        with tempfile.TemporaryDirectory(prefix='wf-bridge-',dir=Path(tempfile.gettempdir()).resolve()) as tmp:
             root=Path(tmp); config=root/'.memorynexus.json'; old=root/'v1.sqlite'; new=root/'v2.sqlite'; backup=root/'backup.sqlite'
             def invoke(args,body,ledger=None):
                 env=dict(os.environ)
