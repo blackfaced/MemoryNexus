@@ -96,9 +96,13 @@ CLI exceed the runner's 128 MiB file-read limit. CI now strips only debug sectio
 from its checkout-built executable before workflow tests; production limits and
 runner behavior remain unchanged. The fixture pins the resulting binary hash.
 
-Ubuntu evidence must be read from [PR #323](https://github.com/blackfaced/MemoryNexus/pull/323)'s
-Actions run for its exact head commit. The corrected run is pending at the time
-of this record; macOS results alone do not establish Ubuntu success.
+The corrected Ubuntu run at `8b91e54a53137fa98119ea3cc864220a279f315f`
+passed: [Actions run 40317011253](https://github.com/blackfaced/MemoryNexus/actions/runs/40317011253),
+[Test job](https://github.com/blackfaced/MemoryNexus/actions/runs/40317011253/job/121552029855).
+All 35 workflow cases passed in 23.656s and all 22 bootstrap cases in 9.710s,
+with no skips. Full Rust Test, Format, Clippy, Build and PostgreSQL integration
+also passed; optional Acceptance was skipped by its existing condition.
+This evidence is tied to that exact commit, not an assertion about future PR heads.
 These runs use isolated synthetic repositories
 and ledgers, with no model, scheduler or private installation access.
 
