@@ -1,6 +1,7 @@
 # 当前有效知识维护：实施规划
 
-状态：2026-10-26，owner 接受方向与阶段顺序；精确接入合同待 #318 交付。
+状态：2026-10-26，owner 接受方向与阶段顺序；#318 的
+[精确接入合同](current-knowledge-contract.md) 已形成提案，待固定版本审阅。
 长期决策见 [ADR-030](../decisions/ADR-030-current-knowledge-maintenance.md)，执行真源为
 [#317](https://github.com/blackfaced/MemoryNexus/issues/317)。本文记录差距与顺序，不镜像
 全部 issue 验收条件，不表示生产接入已获授权或已经完成。
@@ -32,7 +33,9 @@
 | 跨记录整理 | #317 第二阶段 | 第一阶段价值复盘后，再冻结关系身份、范围、提案/批准/撤销与下游影响合同 |
 | 管理页面 | #317 第三阶段 | 在读取及关系合同之上展示时间线、局部关系和预览；首版运行方式另定 |
 
-#318 是 ready 的设计任务，不表示它将产出的接口已经被接受。#319 可独立推进。
+#318 交付合同、[合成验收矩阵](acceptance/current-knowledge.md) 与
+[最小实施 handoff](current-knowledge/runtime-handoff.md)；新 adapter 接口仍是提案，
+尚未实现或安装。审阅完成前不将对应 runtime ticket 标成 ready。#319 可独立推进。
 本规划没有新建另一套真实客户端或调度验收，没有关闭或改写 #301/#313 的既有 gate。
 
 ## 3. 第一阶段的核心验收场景

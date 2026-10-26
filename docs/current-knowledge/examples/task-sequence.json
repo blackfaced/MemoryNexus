@@ -1,0 +1,28 @@
+{
+  "note": "Supported core stdin examples. Send each request only, never this wrapper. Replace target/source/history IDs from preceding CLI responses, and backup paths with isolated absolute paths.",
+  "init": {"idempotency_key":"g1-init","display_name":"Synthetic current knowledge","confirmation":"confirmed","automatic_capture":["execution","review"]},
+  "record": {
+    "idempotency_key":"g1-record-a","run_id":"60000000-0000-4000-8000-000000000001","client":"synthetic",
+    "kind":"instruction","text":"The synthetic working directory is workspace-a.",
+    "occurred_at":"2026-10-26T00:00:00Z","confirmation":"confirmed"
+  },
+  "review": {
+    "idempotency_key":"g1-review-a","run_id":"60000000-0000-4000-8000-000000000001","client":"synthetic",
+    "text":"Candidate: inspect workspace-a before continuing.",
+    "source_ids":["30000000-0000-4000-8000-000000000001"],"occurred_at":"2026-10-26T00:01:00Z"
+  },
+  "correct": {
+    "idempotency_key":"g1-correct-b","run_id":"60000000-0000-4000-8000-000000000002","client":"synthetic",
+    "target_id":"30000000-0000-4000-8000-000000000001","text":"The synthetic working directory is workspace-b.",
+    "occurred_at":"2026-10-26T00:02:00Z","confirmation":"confirmed"
+  },
+  "context":{"limit":20},
+  "history":{"limit":20,"record_ids":["30000000-0000-4000-8000-000000000001","30000000-0000-4000-8000-000000000002"]},
+  "retract": {
+    "idempotency_key":"g1-retract-chain","run_id":"60000000-0000-4000-8000-000000000003","client":"synthetic",
+    "target_id":"30000000-0000-4000-8000-000000000002","reason":"Remove the synthetic directory instruction.","confirmation":"confirmed"
+  },
+  "export":{},
+  "backup":{"path":"/srv/synthetic/private/post-withdrawal.sqlite"},
+  "restore":{"path":"/srv/synthetic/private/post-withdrawal.sqlite"}
+}
