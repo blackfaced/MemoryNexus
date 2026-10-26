@@ -7,7 +7,9 @@
 本决策将 [#317](https://github.com/blackfaced/MemoryNexus/issues/317) 纳入
 MemoryNexus 的核心能力规划：先验证订正能影响后续实际工作，再推进跨记录整理与管理页面。
 它不是整项功能已实现、接口已接受或生产部署已完成的声明。首个合同任务为
-[#318](https://github.com/blackfaced/MemoryNexus/issues/318)。
+[#318](https://github.com/blackfaced/MemoryNexus/issues/318)，其
+[精确合同提案](../docs/current-knowledge-contract.md) 与
+[验收矩阵](../docs/acceptance/current-knowledge.md) 已形成待审阅交付。
 
 ## 背景
 
