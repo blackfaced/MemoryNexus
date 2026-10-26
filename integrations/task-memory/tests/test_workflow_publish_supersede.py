@@ -63,6 +63,26 @@ def phase(f, workflow, items_builder, label):
     return plan, result
 
 
+def publish_prepared(f, prepared, label):
+    """Preview and apply an already prepared publish plan."""
+    submission = f.state / (label + '-submission.json')
+    f.write(submission, {'schema_version': 1,
+                          'prepared_sha256': hashlib.sha256(prepared.read_bytes()).hexdigest(),
+                          'items': []})
+    directory = f.state / (label + '-preview')
+    code, result = f.run('preview', '--binding', f.binding_path, '--prepared', prepared,
+                         '--submission', submission, '--run-dir', directory)
+    if code not in (0, 3):
+        raise AssertionError(result)
+    plan_path = directory / 'plan.json'
+    plan = json.loads(plan_path.read_text())
+    argv = ['apply', '--binding', f.binding_path, '--plan', plan_path]
+    if plan['authorization']['mode'] == 'owner':
+        argv += ['--approve', digest(plan)]
+    code, result = f.run(*argv)
+    return plan, code, result
+
+
 def decision_id_of(report, item_id):
     """The decision id the apply step created for one review item."""
     for item in report['items']:
@@ -333,6 +353,104 @@ class SupersededPublish(unittest.TestCase):
         item = next(x for x in publish_plan['items'] if x['target_id'] == 'mechanism_doc')
         body = managed_body(published_text(f, 'mechanism_doc'), item['block_id'])
         self.assertEqual(body, 'Trailing newline probe.\n')
+
+
+    def test_neutralisation_applies_and_replaces_the_published_body(self):
+        """A neutralisation plan must be executable, not only preparable.
+
+        The maintenance approval records the validity of the decision it
+        neutralises, so it is stale by construction.  The publish path required a
+        current approval, which made every neutralisation fail with
+        `stale_snapshot` and left the old body in place.
+        """
+        f = Fixture()
+        self.addCleanup(f.close)
+        phase(f, 'capture', lambda p: [{'unit_id': x['id'],
+                                         'text': 'Source-reported failure; verification pending.',
+                                         'occurred_at': '2026-10-23T00:00:00Z'} for x in p['items']], 'capture')
+        review, review_report = phase(f, 'review', reviews, 'review')
+        plan, _ = phase(f, 'publish', lambda p: [], 'publish')
+        item = next(x for x in plan['items'] if x['target_id'] == 'mechanism_doc')
+        self.assertIn('Source pointer: incident.md; verification pending.',
+                      managed_body(published_text(f, 'mechanism_doc'), item['block_id']))
+        # A rebind invalidates every decision, so the published generation becomes a
+        # neutralisation candidate with no newer generation to supersede it.
+        f.rebind(lambda profile: profile.update({'purpose': 'changed purpose'}))
+
+        code, result, prepared = f.prepare('publish', 'neutralize-prepare')
+        self.assertIn(code, (0, 3), result)
+        data = json.loads(prepared.read_text())
+        neutralize = [x for x in data['items']
+                      if x['purpose'] == 'neutralize' and x['target_id'] == 'mechanism_doc']
+        self.assertEqual(len(neutralize), 1, data)
+
+        plan, code, result = publish_prepared(f, prepared, 'neutralize-publish')
+        self.assertIn(code, (0, 3, 4), result)
+        self.assertEqual(managed_body(published_text(f, 'mechanism_doc'), item['block_id']),
+                         'MemoryNexus: source evidence changed; review required.\n')
+
+    def test_earlier_block_of_a_multi_block_target_can_still_be_neutralised(self):
+        """The neutralisation precondition must compare the block, not the whole file.
+
+        The precondition compared the whole-file digest with the digest recorded
+        when that block was published, so in a file holding more than one block
+        every block except the last one could never be neutralised.
+        """
+        f = Fixture(collections=2)
+        self.addCleanup(f.close)
+        phase(f, 'capture', lambda p: [{'unit_id': x['id'],
+                                         'text': 'Source-reported failure; verification pending.',
+                                         'occurred_at': '2026-10-23T00:00:00Z'} for x in p['items']], 'capture')
+        phase(f, 'review', reviews, 'review')
+        plan1, _ = phase(f, 'publish', lambda p: [], 'publish-one')
+        plan2, _ = phase(f, 'publish', lambda p: [], 'publish-two')
+        first = next(x for x in plan1['items'] if x['target_id'] == 'mechanism_doc')
+        second = next(x for x in plan2['items'] if x['target_id'] == 'mechanism_doc')
+        self.assertNotEqual(first['block_id'], second['block_id'])
+
+        f.rebind(lambda profile: profile.update({'purpose': 'changed purpose'}))
+        code, result, prepared = f.prepare('publish', 'multi-prepare')
+        self.assertIn(code, (0, 3), result)
+        data = json.loads(prepared.read_text())
+        neutralize = [x for x in data['items']
+                      if x['purpose'] == 'neutralize' and x['target_id'] == 'mechanism_doc']
+        self.assertEqual(len(neutralize), 1, data)
+        self.assertEqual(neutralize[0]['block_id'], first['block_id'])
+
+        plan, code, result = publish_prepared(f, prepared, 'multi-publish')
+        self.assertIn(code, (0, 3, 4), result)
+        text = published_text(f, 'mechanism_doc')
+        self.assertEqual(managed_body(text, first['block_id']),
+                         'MemoryNexus: source evidence changed; review required.\n')
+        self.assertIn('Source pointer: incident.md; verification pending.',
+                      managed_body(text, second['block_id']))
+
+    def test_superseded_generation_leaves_the_queue_without_its_local_output(self):
+        """Supersession must not depend on a local artifact that can be lost.
+
+        The corrected generation had already been published, so the published
+        generation must stay out of the neutralisation queue even after the
+        local output artifact of the corrected generation disappears.
+        """
+        f = Fixture()
+        self.addCleanup(f.close)
+        phase(f, 'capture', lambda p: [{'unit_id': x['id'],
+                                         'text': 'Source-reported failure; verification pending.',
+                                         'occurred_at': '2026-10-23T00:00:00Z'} for x in p['items']], 'capture')
+        review, review_report = phase(f, 'review', reviews, 'review')
+        phase(f, 'publish', lambda p: [], 'publish')
+        item = next(x for x in review['items'] if x['consumer_id'] == 'mechanism')
+        item = dict(item, decision_id=decision_id_of(review_report, item['id']))
+        corrected = reconsider(f, item, 'Corrected entry: source pointer; verification pending.\n')
+        phase(f, 'publish', lambda p: [], 'corrected-publish')
+        for artifact in f.state.glob('*/outputs/' + corrected + '.txt'):
+            artifact.unlink()
+
+        code, result, prepared = f.prepare('publish', 'lost-output-prepare')
+        self.assertIn(code, (0, 3), result)
+        data = json.loads(prepared.read_text())
+        self.assertNotIn('neutralize', [x['purpose'] for x in data['items']])
+        self.assertNotIn(item['decision_id'], [x['id'] for x in data['remaining']])
 
 
 if __name__ == '__main__':

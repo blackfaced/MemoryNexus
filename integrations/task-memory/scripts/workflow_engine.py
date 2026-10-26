@@ -155,7 +155,7 @@ def prepare(a, ctx):
                 continue
             if purpose == 'neutralize':
                 successor = successors.get(d['block_id'])
-                if successor is not None and successor['generation'] > d['generation'] and retained_output(ctx, successor):
+                if successor is not None and successor['generation'] > d['generation']:
                     continue
             target = c['target_id']
             if target in queued:
@@ -171,7 +171,12 @@ def prepare(a, ctx):
             s['targets'].append(t)
             if purpose == 'neutralize':
                 prior = next((p for p in pubs if p['publication'] == 'applied' and (not p.get('maintenance'))))
-                if not t['exists'] or t['sha256'] != prior['proposal']['after_sha256']:
+                # The block region must still hold exactly the body that was
+                # published.  Comparing the whole file digest instead would refuse
+                # every block but the last one in a file that holds more than one
+                # block, because publishing a later block changes the file digest
+                # without touching this block.
+                if not t['exists'] or t.get('prior_block_sha256') != prior['proposal']['output_sha256']:
                     remaining.append(dict(id=d['decision_id'], reason='awaiting_approval'))
                     s['targets'].pop()
                     continue
@@ -477,7 +482,11 @@ def publication(ctx, run, plan, item, i, result):
     elif not after:
         bounded = {**plan['snapshot'], 'targets': [t for t in plan['snapshot']['targets'] if t['target_id'] == item['target_id']]}
         check_snap(ctx, bounded)
-        if approval['validity'] != 'current':
+        # A maintenance approval records the validity of the decision it
+        # neutralises, so it is stale by construction; only a substantive
+        # publication requires a current approval.
+        allowed = ('stale', 'retracted') if item['purpose'] == 'neutralize' else ('current',)
+        if approval['validity'] not in allowed:
             fail('stale_snapshot')
         try:
             publish(target, item['base_exists'], item['base_sha256'], rendered, item['after_sha256'])
