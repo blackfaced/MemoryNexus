@@ -714,3 +714,54 @@ fn auxiliary_record_dependencies_expand_existing_base_links() {
         "stale"
     );
 }
+
+#[test]
+fn maintenance_approval_rejects_a_newer_block_owner_but_preserves_exact_replay() {
+    let h = Harness::new();
+    let text = "Unchanged source report.";
+    let id = h.record("record", text);
+    let d = h.call(
+        "consumer-review",
+        h.review("first", &id, text, "mechanism", "proposed"),
+    );
+    let a = h.call("consumer-approve", h.approval("approve-first", &d));
+    assert_eq!(
+        h.call(
+            "publication-result",
+            h.publish("publish-first", &a, "applied")
+        )["status"],
+        "accepted"
+    );
+    let mut next = h.review("second", &id, text, "mechanism", "proposed");
+    next["previous_decision_id"] = d["result"]["decision_id"].clone();
+    next["reconsider"] = json!(true);
+    next["reason"] = json!("Reassess the same source without changing the published body.");
+    let successor = h.call("consumer-review", next);
+    assert_eq!(successor["status"], "accepted", "{successor}");
+    let a2 = h.call("consumer-approve", h.approval("approve-second", &successor));
+    assert_eq!(a2["status"], "accepted", "{a2}");
+    assert_eq!(
+        h.call(
+            "publication-result",
+            h.publish("publish-second", &a2, "applied")
+        )["status"],
+        "accepted"
+    );
+    let mut n = h.approval("old-neutral", &d);
+    n.as_object_mut().unwrap().remove("confirmation");
+    n["maintenance"] = json!("neutralize");
+    n["proposal"]["base_exists"] = json!(true);
+    n["proposal"]["output_sha256"] = json!(sha(
+        "MemoryNexus: source evidence changed; review required.\n"
+    ));
+    n["proposal"]["after_sha256"] = json!(sha("neutralized file"));
+    let before = h.status("publications");
+    let rejected = h.call("consumer-approve", n);
+    assert_eq!(rejected["code"], "approval_required", "{rejected}");
+    assert_eq!(h.status("publications"), before);
+    // Historical approval replay must not be confused with new write authority.
+    assert_eq!(
+        h.call("consumer-approve", h.approval("approve-first", &d))["status"],
+        "replayed"
+    );
+}

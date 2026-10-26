@@ -72,6 +72,16 @@ def retained_output(ctx, decision):
             return {'run_dir': str(output.parent.parent), 'artifact': artifact_ref(output.parent.parent, str(output.relative_to(output.parent.parent)))}
     return None
 
+def block_generations(decisions, publications):
+    """Current proposals or later published generations retire older block owners."""
+    published = {p['decision_id'] for p in publications
+                 if p['publication'] == 'applied' and not p.get('maintenance')}
+    generations = {}
+    for d in decisions:
+        if (d['validity'] == 'current' and d['proposed_decision'] == 'proposed') or d['decision_id'] in published:
+            generations[d['block_id']] = max(generations.get(d['block_id'], 0), d['generation'])
+    return generations
+
 def prepare(a, ctx):
     header(ctx, allow_recovery=a.workflow == 'recovery')
     b = ctx['binding']
@@ -100,7 +110,9 @@ def prepare(a, ctx):
         captured = next((x for x in inputs if x.get('origin', {}).get('source_id') == sid and x['origin']['source_revision'] == rev and (x['origin']['extractor_version'] == c['extractor_version']) and (x['state'] == 'current')), None)
         if a.workflow == 'capture' and (captured or (old and old['blocked'])):
             continue
-        if len(evidence) >= 20:
+        # Work submissions remain capped at 20. Review may reference the full
+        # bounded evidence cache, including registered sync-only auxiliaries.
+        if len(evidence) >= (600 if a.workflow == 'review' else 20):
             remaining.append(dict(id=sid, reason='awaiting_extraction' if a.workflow == 'capture' else 'awaiting_review'))
             continue
         name = 'evidence/' + sid + '.txt'
@@ -130,6 +142,7 @@ def prepare(a, ctx):
                 items.append(w)
     if a.workflow == 'publish':
         queued = set()
+        generations = block_generations(decisions, publications)
         for d in decisions:
             pubs = [p for p in publications if p['decision_id'] == d['decision_id']]
             if any((p['publication'] == 'applied' and p['validity'] == 'current' for p in pubs)):
@@ -140,29 +153,43 @@ def prepare(a, ctx):
             c = next((c for c in ctx['profile']['consumers'] if c['consumer_id'] == d['consumer_id']), None)
             if not c or (purpose == 'neutralize' and (not c['neutralize_stale'])):
                 continue
+            if purpose == 'neutralize':
+                if generations.get(d['block_id'], 0) > d['generation']:
+                    continue
             target = c['target_id']
-            if target in queued:
-                remaining.append(dict(id=d['decision_id'], reason='target_queued'))
-                continue
             output = retained_output(ctx, d) if purpose == 'publish' else None
             if purpose == 'publish' and (not output):
                 remaining.append(dict(id=d['decision_id'], reason='plan_missing'))
                 continue
-            queued.add(target)
             path = next((t['path'] for t in b['targets'] if t['target_id'] == target))
             t = target_snapshot(path, d['block_id'])
             t['target_id'] = target
-            s['targets'].append(t)
             if purpose == 'neutralize':
+                # An applied maintenance publication is historical (stale), but
+                # its exact block body proves the file already needs no write.
+                if any(p.get('maintenance') == 'neutralize' and p['publication'] == 'applied'
+                       and t.get('prior_block_sha256') == p['proposal']['output_sha256'] for p in pubs):
+                    continue
                 prior = next((p for p in pubs if p['publication'] == 'applied' and (not p.get('maintenance'))))
-                if not t['exists'] or t['sha256'] != prior['proposal']['after_sha256']:
+                # The block region must still hold exactly the body that was
+                # published.  Comparing the whole file digest instead would refuse
+                # every block but the last one in a file that holds more than one
+                # block, because publishing a later block changes the file digest
+                # without touching this block.
+                if not t['exists'] or t.get('prior_block_sha256') != prior['proposal']['output_sha256']:
                     remaining.append(dict(id=d['decision_id'], reason='awaiting_approval'))
-                    s['targets'].pop()
                     continue
                 text = b'MemoryNexus: source evidence changed; review required.\n'
                 n = 'evidence/neutral-' + d['decision_id'] + '.txt'
                 write_new(run / n, text)
                 output = {'run_dir': str(run), 'artifact': artifact_ref(run, n)}
+            # The slot is claimed only by a candidate that can actually run, so a
+            # rejected neutralisation never blocks the target for later rounds.
+            if target in queued:
+                remaining.append(dict(id=d['decision_id'], reason='target_queued'))
+                continue
+            queued.add(target)
+            s['targets'].append(t)
             w = dict(kind='publish', consumer_id=d['consumer_id'], decision_id=d['decision_id'], decision_sha256=d['decision_sha256'], target_id=target, block_id=d['block_id'], output=output, output_sha256=sha(ref_bytes(ctx, output)), purpose=purpose)
             if purpose == 'neutralize':
                 w['previous_approval_id'] = next((p['approval_id'] for p in pubs if p['publication'] == 'applied' and (not p.get('maintenance'))))
@@ -448,6 +475,17 @@ def publication(ctx, run, plan, item, i, result):
     approval = staged(ctx, run, plan, 'consumer-approve', i, body)['result']
     aid = approval['approval_id']
     result['receipt_ids'] = [aid]
+    # Replayed approval responses preserve their original validity. Consult the
+    # ledger before any new file effect, including when local receipts survived.
+    publications = status_all(ctx, 'publications')
+    live = next((p for p in publications if p['approval_id'] == aid), None)
+    if live is None:
+        fail('stale_snapshot')
+    if live['publication'] == 'applied':
+        result.update(status='ok', receipt_ids=[aid] + [a['attempt_id'] for a in live['attempts']])
+        return
+    if live['publication'] == 'conflict':
+        fail('stale_snapshot')
     current = target_snapshot(target, item['block_id'])
     after = current['exists'] and current['sha256'] == item['after_sha256']
     outcome = 'applied'
@@ -458,7 +496,20 @@ def publication(ctx, run, plan, item, i, result):
     elif not after:
         bounded = {**plan['snapshot'], 'targets': [t for t in plan['snapshot']['targets'] if t['target_id'] == item['target_id']]}
         check_snap(ctx, bounded)
-        if approval['validity'] != 'current':
+        # A maintenance approval records the validity of the decision it
+        # neutralises, so it is stale by construction; only a substantive
+        # publication requires a current approval.
+        allowed = ('stale', 'retracted') if item['purpose'] == 'neutralize' else ('current',)
+        decisions = status_all(ctx, 'decisions')
+        decision = next((d for d in decisions if d['decision_id'] == item['decision_id']), None)
+        if (live['validity'] not in allowed or decision is None
+                or decision['validity'] not in allowed
+                or decision['decision_sha256'] != item['decision_sha256']):
+            fail('stale_snapshot')
+        if item['purpose'] == 'neutralize':
+            if block_generations(decisions, publications).get(item['block_id'], 0) > decision['generation']:
+                fail('stale_snapshot')
+        elif decision['proposed_decision'] != 'proposed':
             fail('stale_snapshot')
         try:
             publish(target, item['base_exists'], item['base_sha256'], rendered, item['after_sha256'])

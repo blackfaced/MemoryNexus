@@ -15,7 +15,7 @@ SCRIPTS=REPO/'integrations/task-memory/scripts'
 BINARY=Path(os.environ.get('MEMORYNEXUS_TEST_BINARY',str(Path(os.environ.get('CARGO_TARGET_DIR',str(REPO/'target')))/'debug/memorynexus-feedback-cli')))
 
 class Fixture:
-    def __init__(self):
+    def __init__(self, collections=1):
         self.temp=tempfile.TemporaryDirectory(prefix='mn-runner-',dir=Path(tempfile.gettempdir()).resolve())
         self.base=Path(self.temp.name); os.chmod(self.base,0o700)
         self.root=self.base/'repo'; self.root.mkdir(mode=0o700)
@@ -30,9 +30,15 @@ class Fixture:
         migrated=self.cli(['--ledger',v1,'migrate'],{'path':str(self.ledger),'backup_path':str(backup),'backup_sha256':hashlib.sha256(backup.read_bytes()).hexdigest(),'expected_version':1,'target_version':2,'confirmation':'confirmed'})
         self.incarnation=migrated['result']['incarnation']
         self.profile=json.loads((REPO/'docs/repository-memory/examples/sequence-v1.json').read_text())['profile']
-        self.profile['collections']=self.profile['collections'][:1]
+        self.profile['collections']=self.profile['collections'][:collections]
         collection=self.profile['collections'][0]; collection['path']='incident.md'; collection['selector']={'kind':'full'}
         (self.root/'incident.md').write_text('A source report with attributed uncertainty.\n')
+        # Extra collections give a second root record, so one target file can hold
+        # more than one published block.
+        for extra in self.profile['collections'][1:]:
+            extra['path']='incident-%s.md' % extra['collection_id'][-4:]
+            extra['selector']={'kind':'full'}
+            (self.root/extra['path']).write_text('A second source report with attributed uncertainty.\n')
         self.rule=b'Use source pointers and preserve uncertainty.\n'
         for consumer in self.profile['consumers']: consumer['rules_sha256']=hashlib.sha256(self.rule).hexdigest()
         self.profile_path=self.private/'profile.json'; self.write(self.profile_path,self.profile)
