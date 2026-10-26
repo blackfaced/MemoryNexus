@@ -79,7 +79,19 @@ jobs:
           install -m 700 target/debug/memorynexus-feedback-cli "$MEMORYNEXUS_TEST_BINARY"
           strip --strip-debug "$MEMORYNEXUS_TEST_BINARY"
           test -x "$MEMORYNEXUS_TEST_BINARY"
-          python3 -m unittest discover -s integrations/task-memory/tests -p 'test_workflow*.py' -v
+          python3 - <<'PY'
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover(
+              "integrations/task-memory/tests", pattern="test_workflow*.py"
+          )
+          if suite.countTestCases() == 0:
+              raise SystemExit("No repository workflow tests discovered")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit("Repository workflow tests must not be skipped")
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
         timeout-minutes: 5
 
   surface-postgres:
