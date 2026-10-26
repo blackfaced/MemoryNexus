@@ -76,6 +76,9 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           test -x "$MEMORYNEXUS_TEST_BINARY"
+          # Linux debug sections exceed the runner's pinned-binary size bound.
+          # Keep the production bound; only remove this CI artifact's debug data.
+          strip --strip-debug "$MEMORYNEXUS_TEST_BINARY"
           python3 - <<'PY'
           import unittest
 

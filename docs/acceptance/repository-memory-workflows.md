@@ -90,9 +90,16 @@ synthetic test directory and a skipped synthetic case; all exited nonzero.
 No Rust source changed, so the local checks target the modified process suite;
 the existing full Rust checks still run in CI.
 
-Ubuntu evidence must be read from the #319 PR's Actions run for its exact head
-commit. At the time of this local record it is pending; macOS results alone do
-not establish Ubuntu success. These runs use isolated synthetic repositories
+The first Ubuntu run at `a247f0e6df9f5a50faf485ccb0f64cabf98090a3` discovered all
+35 cases but failed fixture initialization because Linux debug sections made the
+CLI exceed the runner's 128 MiB file-read limit. CI now strips only debug sections
+from its checkout-built executable before workflow tests; production limits and
+runner behavior remain unchanged. The fixture pins the resulting binary hash.
+
+Ubuntu evidence must be read from [PR #323](https://github.com/blackfaced/MemoryNexus/pull/323)'s
+Actions run for its exact head commit. The corrected run is pending at the time
+of this record; macOS results alone do not establish Ubuntu success.
+These runs use isolated synthetic repositories
 and ledgers, with no model, scheduler or private installation access.
 
 ## Separate deployment gates
