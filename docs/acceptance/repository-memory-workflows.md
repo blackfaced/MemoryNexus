@@ -106,6 +106,20 @@ This evidence is tied to that exact commit, not an assertion about future PR hea
 These runs use isolated synthetic repositories
 and ledgers, with no model, scheduler or private installation access.
 
+## PR #323 reconciliation with #320 (2026-10-26)
+
+After merging main `b823f46`, the Test job keeps one workflow acceptance step.
+It copies the checkout-built CLI to `runner.temp` and strips that copy, preserving
+the original build artifact, then rejects empty discovery, skipped cases and
+failures. The platform fixture changes are already supplied by #320.
+
+Local macOS recheck: the exact Python guard extracted from CI ran 35 workflow
+cases in 41.957s, zero skips; bootstrap ran 22 cases in 16.526s, zero skips.
+Negative probes for empty discovery, skips and failures exited nonzero, and a
+successful probe exited zero. The existing compiled CLI was reused after verifying
+that its Rust sources match this checkout; no Rust behavior changed. The updated
+PR head still requires its own GitHub CI run.
+
 ## Separate deployment gates
 
 Production installation/migration and all pinned callers remain #312 work.

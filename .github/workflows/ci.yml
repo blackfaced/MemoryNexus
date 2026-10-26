@@ -70,15 +70,15 @@ jobs:
           test -x "$MEMORYNEXUS_TEST_BINARY"
           python3 scripts/test_task_memory_bootstrap.py
         timeout-minutes: 3
-      - name: Repository workflow public-process acceptance
+      - name: Repository memory workflow public-process acceptance
         env:
-          MEMORYNEXUS_TEST_BINARY: ${{ github.workspace }}/target/debug/memorynexus-feedback-cli
+          MEMORYNEXUS_TEST_BINARY: ${{ runner.temp }}/memorynexus-feedback-cli
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
-          test -x "$MEMORYNEXUS_TEST_BINARY"
-          # Linux debug sections exceed the runner's pinned-binary size bound.
-          # Keep the production bound; only remove this CI artifact's debug data.
+          # Keep the workflow's 128 MiB binary limit without changing the debug build.
+          install -m 700 target/debug/memorynexus-feedback-cli "$MEMORYNEXUS_TEST_BINARY"
           strip --strip-debug "$MEMORYNEXUS_TEST_BINARY"
+          test -x "$MEMORYNEXUS_TEST_BINARY"
           python3 - <<'PY'
           import unittest
 
