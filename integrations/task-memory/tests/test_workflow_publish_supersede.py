@@ -453,5 +453,165 @@ class SupersededPublish(unittest.TestCase):
         self.assertNotIn(item['decision_id'], [x['id'] for x in data['remaining']])
 
 
+class NeutralizationLifecycle(unittest.TestCase):
+    def fixture(self, collections=1):
+        f = Fixture(collections=collections)
+        self.addCleanup(f.close)
+        phase(f, 'capture', lambda p: [dict(unit_id=x['id'], text='Attributed report.',
+              occurred_at='2026-10-23T00:00:00Z') for x in p['items']], 'capture')
+        phase(f, 'review', reviews, 'review')
+        for i in range(collections):
+            phase(f, 'publish', lambda p: [], 'publish-' + str(i))
+        f.rebind(lambda p: p.update(purpose='Reassess the existing source reports.'))
+        return f
+
+    def preview(self, f, label):
+        code, report, prepared = f.prepare('publish', label + '-prepare')
+        self.assertIn(code, (0, 3), report)
+        submission = f.state / (label + '-submission.json')
+        f.write(submission, dict(schema_version=1,
+              prepared_sha256=hashlib.sha256(prepared.read_bytes()).hexdigest(), items=[]))
+        run = f.state / (label + '-preview')
+        code, report = f.run('preview', '--binding', f.binding_path, '--prepared', prepared,
+                             '--submission', submission, '--run-dir', run)
+        self.assertIn(code, (0, 3), report)
+        return run, json.loads((run / 'plan.json').read_text())
+
+    def new_reviews(self, p, consumer=None):
+        items = reviews(p)
+        for item, work in zip(items, p['items']):
+            if 'previous_decision_id' in work:
+                item['previous_decision_id'] = work['previous_decision_id']
+        return [i for i in items if consumer is None or i['consumer_id'] == consumer]
+
+    def test_old_neutral_plan_cannot_erase_same_bytes_new_generation(self):
+        f = self.fixture()
+        run, old = self.preview(f, 'old-neutral')
+        phase(f, 'review', self.new_reviews, 'new-review')
+        phase(f, 'publish', lambda p: [], 'new-publish')
+        before = {t['path']: Path(t['path']).read_bytes() for t in f.binding['targets']}
+        for item in old['items']:
+            target = next(t['path'] for t in f.binding['targets'] if t['target_id'] == item['target_id'])
+            self.assertEqual(hashlib.sha256(before[target]).hexdigest(), item['base_sha256'])
+        code, report = f.run('apply', '--binding', f.binding_path, '--plan', run / 'plan.json')
+        self.assertNotEqual(code, 0, report)
+        self.assertTrue(all(i.get('code') == 'stale_snapshot' for i in report['items']), report)
+        for path, raw in before.items():
+            self.assertEqual(Path(path).read_bytes(), raw)
+
+    def test_lost_intent_response_does_not_authorize_neutralizing_successor(self):
+        from workflow_cli import load_context
+        from workflow_engine import envelope, header, staged
+        f = self.fixture()
+        run, old = self.preview(f, 'old-neutral')
+        for n in ('requests', 'receipts', 'outputs'):
+            (run / n).mkdir(mode=0o700)
+        ctx = load_context(f.binding_path); header(ctx)
+        item = old['items'][0]
+        proposal = {k: item[k] for k in ('target_id', 'block_id', 'base_exists',
+                    'base_sha256', 'after_sha256', 'output_sha256')}
+        proposal['plan_sha256'] = digest(old)
+        request = envelope(old, 'consumer-approve', 0)
+        request.update(decision_id=item['decision_id'], decision_sha256=item['decision_sha256'],
+                       proposal=proposal, maintenance='neutralize')
+        staged(ctx, run, old, 'consumer-approve', 0, request)
+        request_path = run / 'requests/consumer-approve-0-0.json'
+        retained = request_path.read_bytes()
+        (run / 'receipts/consumer-approve-0-0.json').unlink()
+        phase(f, 'review', lambda p: self.new_reviews(p, item['consumer_id']), 'new-review')
+        target = next(t['path'] for t in f.binding['targets'] if t['target_id'] == item['target_id'])
+        before = Path(target).read_bytes()
+        code, report = f.run('apply', '--binding', f.binding_path, '--plan', run / 'plan.json')
+        self.assertNotEqual(code, 0, report)
+        self.assertEqual(report['items'][0].get('code'), 'stale_snapshot', report)
+        self.assertEqual(report['items'][1]['status'], 'ok', report)
+        self.assertEqual(Path(target).read_bytes(), before)
+        self.assertEqual(request_path.read_bytes(), retained)
+
+    def test_applied_neutral_replay_never_rewrites_new_generation(self):
+        f = self.fixture()
+        run, old = self.preview(f, 'neutral')
+        code, report = f.run('apply', '--binding', f.binding_path, '--plan', run / 'plan.json')
+        self.assertEqual(code, 0, report)
+        phase(f, 'review', self.new_reviews, 'new-review')
+        phase(f, 'publish', lambda p: [], 'new-publish')
+        before = {t['path']: Path(t['path']).read_bytes() for t in f.binding['targets']}
+        code, report = f.run('apply', '--binding', f.binding_path, '--plan', run / 'plan.json')
+        self.assertEqual(code, 0, report)
+        for path, raw in before.items():
+            self.assertEqual(Path(path).read_bytes(), raw)
+        self.assertFalse((run / 'requests/publication-result-0-1.json').exists())
+
+    def test_lost_result_replay_completes_without_rewriting_new_generation(self):
+        from test_workflow_failures import FailureTests
+        f = self.fixture()
+        run, old = self.preview(f, 'neutral')
+        patch = """original=e.call
+lost=[False]
+def drop(ctx,action,body):
+    response=original(ctx,action,body)
+    if action=='publication-result' and not lost[0]:
+        lost[0]=True
+        raise OSError('lost actual response')
+    return response
+e.call=drop
+"""
+        process, report = FailureTests.driver(self, f, run, old, patch)
+        self.assertNotEqual(process.returncode, 0, report)
+        request = run / 'requests/publication-result-0-0.json'
+        retained = request.read_bytes()
+        phase(f, 'review', self.new_reviews, 'new-review')
+        phase(f, 'publish', lambda p: [], 'new-publish')
+        before = {t['path']: Path(t['path']).read_bytes() for t in f.binding['targets']}
+        code, report = f.run('apply', '--binding', f.binding_path, '--plan', run / 'plan.json')
+        self.assertEqual(code, 0, report)
+        self.assertEqual(request.read_bytes(), retained)
+        for path, raw in before.items():
+            self.assertEqual(Path(path).read_bytes(), raw)
+
+    def test_completed_neutralization_is_quiet_and_preserves_human_edits(self):
+        f = self.fixture()
+        phase(f, 'publish', lambda p: [], 'neutral')
+        target = Path(f.binding['targets'][0]['path'])
+        target.write_text('Owner introduction.\n' + target.read_text())
+        code, report, prepared = f.prepare('publish', 'repeat')
+        data = json.loads(prepared.read_text())
+        self.assertEqual(code, 0, report)
+        self.assertEqual(data['items'], [])
+        self.assertEqual(data['remaining'], [])
+        # Quiet publication does not resolve the outstanding review decision.
+        _, _, review = f.prepare('review', 'review-still-needed')
+        self.assertEqual(len(json.loads(review.read_text())['items']), 2)
+        target.write_text(target.read_text().replace('review required.', 'Owner edited the block.'))
+        before = target.read_bytes()
+        _, _, prepared = f.prepare('publish', 'edited-neutral')
+        data = json.loads(prepared.read_text())
+        self.assertEqual(data['items'], [])
+        self.assertIn('awaiting_approval', [r['reason'] for r in data['remaining']])
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_multiblock_neutralization_advances_and_then_is_quiet(self):
+        f = self.fixture(collections=2)
+        first, _ = phase(f, 'publish', lambda p: [], 'neutral-first')
+        second, _ = phase(f, 'publish', lambda p: [], 'neutral-second')
+        self.assertTrue(set(i['block_id'] for i in first['items']).isdisjoint(
+                        i['block_id'] for i in second['items']))
+        code, report, prepared = f.prepare('publish', 'neutral-done')
+        self.assertEqual(code, 0, report)
+        self.assertEqual(json.loads(prepared.read_text())['remaining'], [])
+
+    def test_stale_successor_publication_keeps_older_generation_out_of_queue(self):
+        f = self.fixture()
+        phase(f, 'review', self.new_reviews, 'new-review')
+        new, _ = phase(f, 'publish', lambda p: [], 'new-publish')
+        f.rebind(lambda p: p.update(purpose='Reassess again.'))
+        code, report, prepared = f.prepare('publish', 'latest-only')
+        self.assertIn(code, (0, 3), report)
+        data = json.loads(prepared.read_text())
+        self.assertEqual({x['decision_id'] for x in data['items']},
+                         {x['decision_id'] for x in new['items']})
+        self.assertEqual(data['remaining'], [])
+
+
 if __name__ == '__main__':
     unittest.main()
