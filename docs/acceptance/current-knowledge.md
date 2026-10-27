@@ -1,6 +1,7 @@
 # Current knowledge G1 acceptance
 
-Status: **CONTRACT v1 FROZEN (2026-10-27); new adapter/runtime acceptance NOT RUN.**
+Status: **CONTRACT v1 FROZEN (2026-10-27); G2 task read/check implemented and
+locally tested. Repository read/check, bridge delivery and real clients remain pending.**
 Issue [#318](https://github.com/blackfaced/MemoryNexus/issues/318) delivers the
 [contract](../current-knowledge-contract.md), examples and implementation handoff.
 It does not install a bridge or complete real-client acceptance.
@@ -29,7 +30,7 @@ ledger, model, private repository, hook or scheduler is modified.
 supported stdin examples, with target/source IDs explicitly replaced from CLI
 responses. [read-request.json](../current-knowledge/examples/read-request.json)
 and [material.json](../current-knowledge/examples/material.json) use the frozen
-adapter contract. The test runs separate CLI, adapter and child bridge processes;
+adapter contract. The complete G4 test will run separate CLI, adapter and child bridge processes;
 no direct database mutation, fake CLI response, or model label stands in for one.
 
 | Case | Setup/action through public interfaces | Required assertions |
@@ -58,8 +59,8 @@ of the post-withdrawal restore assertion and must not be silently deleted.
 Expected future test location:
 `integrations/task-memory/tests/test_workflow_current_knowledge.py`.
 Exact build/discovery commands and ownership are in the
-[runtime handoff](../current-knowledge/runtime-handoff.md). All C01–C12 remain
-NOT RUN for the frozen adapter until that implementation exists.
+[runtime handoff](../current-knowledge/runtime-handoff.md). G2 task-only coverage is recorded below. C01–C12 are not marked complete end-to-end;
+repository coverage belongs to #328 and bridge/action coverage to #329.
 
 ## Separate execution columns
 
@@ -104,3 +105,54 @@ JSON examples, the material byte digest, relative links and `git diff --check`
 are documentation checks. No Rust source changed, so no new Rust test suite is
 required here. These checks do not execute the proposed adapter or establish any
 of C01–C12 as a completed end-to-end client case.
+
+
+## G2 task read/check implementation (2026-10-27)
+
+Implementation source: `f1f13dd555a4c42ce1f89e6d0435b0a596d1db1d` (#327), based on
+frozen contract `c09a6120f4601befaaa290eab8a41fe334d34afa` (#318 / PR #326).
+New files are `scripts/current_knowledge.py`, `current_knowledge_task.py`,
+`current_knowledge_artifacts.py`, `tests/current_knowledge_fixture.py` and
+`test_workflow_current_knowledge.py` under `integrations/task-memory/`.
+No Rust, workflow runner behavior, installer or private client configuration changed.
+
+The real CLI was built offline on macOS from unchanged Rust source at
+`46434b06a7304ce421aa8d020657675066f8249e`; tests use a separate stripped copy with
+SHA-256 `3ff8ad8c4ae9d398ccde82e82bdff10f86010d408376e6ec9a639d883a275b23`.
+The original build artifact was retained. Every fixture copies and hashes the
+actual adapter package, initializes two synthetic tasks before migration, and
+invokes separate CLI/adapter processes with explicit ledger/config paths.
+
+| Scope | Evidence | Remaining |
+| --- | --- | --- |
+| C01/C02 task correction | Current B excludes A; exact replay, stale-target conflict and concurrent competing corrections; old read check fails | Repository outputs and child marker action |
+| C03/C04 | Metadata-only candidates; candidate-only current read empty; corrected draft stays out; superseded history/tombstones and history check refusal | Repository trust attribution |
+| C05/C09 | Missing/v1 ledger, wrong task/config, strict/oversize input, empty/count/character/material-byte limits, bounded process pipes/timeout | Repository paging |
+| C06 | Real CLI barrier produces deterministic revision races: one retry succeeds, a second drift stops; check refuses changed revision and actual restored incarnation at unchanged revision | External source/publication races |
+| C08/C12 | Unknown/missing external copies; symlink/private-mode refusal; package/material/result tampering; original evidence identity, expiry, bounded private cleanup; unrelated contradictory records remain current | Real harness coverage, repository copies and launch |
+| C10 | Retraction removes new current/history/export chain body; public post-withdrawal backup/restore changes incarnation; failed check removes original material | Repository and delivery combinations |
+
+The barrier forwards real CLI responses; it adds a controlled pause at context
+for concurrent writes. Separate fault modes deliberately time out or overflow a
+pipe to prove refusal; no fabricated successful CLI response is used. Restore
+checks use a publicly restored SQLite file in disposable paths, not direct SQL.
+
+Validation at the implementation commit:
+
+- 17 new public-process task tests passed with no skips.
+- 22 task bootstrap tests passed with no skips.
+- Full workflow regression and remote PR checks are tracked on #327/its PR.
+- Python source compilation, `cargo fmt --all -- --check` and `git diff --check` passed.
+
+Commands use `MEMORYNEXUS_TEST_BINARY=ABS_TO_STRIPPED_TEST_COPY` and
+`PYTHONDONTWRITEBYTECODE=1`, then the unittest discovery/bootstrap commands in the
+handoff. No new Rust behavior tests were added because Rust did not change;
+required Clippy/Build/Test gates still apply to the PR.
+
+Repository mode, repository_binding (whose profile/kernel cannot yet be verified),
+and launch deliberately return `unsupported_version` in G2;
+#328 and #329 implement them in dependency order. No bridge was installed, no
+actual client received material, and the real-client/scheduler table above stays
+NOT RUN for this adapter. Existing #301 PARTIAL evidence retains its own scope.
+This is a partial implementation of frozen v1, with no change to authority or
+confirmed-content rules and no claim to cover #317's second or third phase.
