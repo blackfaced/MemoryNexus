@@ -109,8 +109,8 @@ of C01–C12 as a completed end-to-end client case.
 
 ## G2 task read/check implementation (2026-10-27)
 
-Implementation source: `8a4a1d60f8c8bd2c00ebbd9f79806e742f471450` (#327), based on
-frozen contract `acbe606503f70d4448b994e14eabce234fa77ce6` (#318 / PR #326).
+Implementation source: `f1f13dd555a4c42ce1f89e6d0435b0a596d1db1d` (#327), based on
+frozen contract `c09a6120f4601befaaa290eab8a41fe334d34afa` (#318 / PR #326).
 New files are `scripts/current_knowledge.py`, `current_knowledge_task.py`,
 `current_knowledge_artifacts.py`, `tests/current_knowledge_fixture.py` and
 `test_workflow_current_knowledge.py` under `integrations/task-memory/`.
