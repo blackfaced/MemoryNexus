@@ -69,7 +69,10 @@ def load_binding(path):
         elif c['role'] == 'external': fields(c, ('id', 'path', 'role'))
         else: fail()
     unique([c['id'] for c in b['copies']]); unique([c['path'] for c in b['copies']])
-    if 'repository_binding' in b: safe_path(b['repository_binding'], True)
+    if 'repository_binding' in b:
+        safe_path(b['repository_binding'], True)
+        # G2 cannot attest the profile/kernel agreement owned by G3.
+        fail('unsupported_version')
     if 'bridge' in b:
         fields(b['bridge'], ('executable', 'sha256'))
         safe_path(b['bridge']['executable']); hash_value(b['bridge']['sha256'])

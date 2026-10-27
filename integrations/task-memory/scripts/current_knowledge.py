@@ -87,7 +87,7 @@ class Parser(argparse.ArgumentParser):
 
 
 def arguments(argv):
-    parser = Parser(add_help=False)
+    parser = Parser(add_help=False, allow_abbrev=False)
     parser.add_argument('command', choices=('read', 'check', 'launch'))
     for flag in ('binding', 'request', 'evidence', 'run-dir'): parser.add_argument('--' + flag)
     args = parser.parse_args(argv)

@@ -150,6 +150,9 @@ class CurrentKnowledge(unittest.TestCase):
         self.failure(f.run('launch', evidence=f.private / 'absent'), 'unsupported_version')
         f.write(f.request_path, {'schema_version': 1, 'mode': 'repository', 'purpose': 'current', 'consumer_ids': ['lessons']})
         self.failure(f.run(), 'unsupported_version')
+        f.write_request()
+        f.binding['repository_binding'] = str(f.private / 'repository.json'); f.save_binding()
+        self.failure(f.run(), 'unsupported_version')
 
     def test_tampered_material_result_and_install(self):
         f = self.f; f.record(); run = self.ok(f.run())
