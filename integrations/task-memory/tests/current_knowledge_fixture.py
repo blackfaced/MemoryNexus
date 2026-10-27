@@ -127,3 +127,65 @@ sys.stdout.buffer.write(p.stdout);sys.stderr.buffer.write(p.stderr);sys.exit(p.r
         wrapper.write_text(script); os.chmod(wrapper, 0o700)
         self.binding.update(binary=str(wrapper), binary_sha256=hashlib.sha256(wrapper.read_bytes()).hexdigest())
         self.save_binding()
+
+
+class RepositoryFixture(CurrentFixture):
+    """Existing public workflow fixture plus a distinct read-only binding/state."""
+    def __init__(self, collections=1, jsonl=False):
+        from workflow_fixture import Fixture
+        self.workflow = w = Fixture(collections)
+        self.temp = w.temp; self.base = w.base; self.root = w.root; self.config = w.config
+        self.private = w.private; self.ledger = w.ledger; self.package = w.package; self.task_id = w.task_id
+        self.state = self.base / 'reads'; self.state.mkdir(mode=0o700)
+        self.binding = {k: w.binding[k] for k in ('schema_version', 'task_id', 'task_root', 'config', 'ledger',
+                       'binary', 'binary_sha256', 'python', 'package', 'package_sha256', 'timeout_seconds')}
+        self.binding.update(state_root=str(self.state), client='synthetic', copies=[], repository_binding=str(w.binding_path))
+        self.binding_path = self.private / 'current-binding.json'; self.save_binding()
+        self.request = dict(schema_version=1, mode='repository', purpose='current',
+                            consumer_ids=[c['consumer_id'] for c in w.profile['consumers']])
+        self.request_path = self.private / 'current-request.json'; self.write(self.request_path, self.request)
+        self.entry = self.package / 'current_knowledge.py'
+        if jsonl:
+            def change(p):
+                c = p['collections'][0]; c.update(collection_id='50000000-0000-4000-8000-000000000099', format='append_jsonl', path='stream.jsonl', selector={'kind': 'fields', 'keys': ['text']})
+            w.rebind(change)
+            (self.root / 'stream.jsonl').write_text('{"text":"first source row"}\n')
+
+    def seed(self):
+        from test_workflow_publish_supersede import phase, reviews
+        w = self.workflow
+        w.capture('capture')
+        self.review, self.review_report = phase(w, 'review', reviews, 'review')
+        self.plan, _ = phase(w, 'publish', lambda p: [], 'publish')
+        if len(w.profile['collections']) > 1:
+            phase(w, 'publish', lambda p: [], 'publish-more')
+
+    def status(self, view='summary'):
+        return self.cli('workflow-status', {'workflow_id': self.workflow.profile['workflow_id'], 'view': view})
+
+    def page_barrier(self):
+        """Pause a real pinned CLI before a selected status page; never fake data."""
+        wrapper = self.private / 'page-cli'
+        script = f'''#!{self.binding['python']}
+import sys,json,subprocess,time
+from pathlib import Path
+base=Path({str(self.private)!r})
+raw=sys.stdin.buffer.read()
+body=json.loads(raw) if raw else {{}}
+if (base/'armed').exists() and sys.argv[-1]=='workflow-status':
+ with (base/'calls.jsonl').open('a') as out: out.write(json.dumps(body)+'\\n')
+ if body.get('view')=='inputs' and body.get('after'):
+  count=base/'page-count'; n=int(count.read_text())+1 if count.exists() else 1
+  count.write_text(str(n)); (base/('page-ready-'+str(n))).touch()
+  until=time.monotonic()+10
+  while not (base/('page-release-'+str(n))).exists():
+   if time.monotonic()>until: sys.exit(2)
+   time.sleep(.005)
+p=subprocess.run([{str(BINARY)!r},*sys.argv[1:]],input=raw,capture_output=True)
+sys.stdout.buffer.write(p.stdout);sys.stderr.buffer.write(p.stderr);sys.exit(p.returncode)
+'''
+        wrapper.write_text(script); os.chmod(wrapper, 0o700)
+        for b in (self.binding, self.workflow.binding):
+            b.update(binary=str(wrapper), binary_sha256=hashlib.sha256(wrapper.read_bytes()).hexdigest())
+        self.save_binding(); self.workflow.write(self.workflow.binding_path, self.workflow.binding)
+        self.workflow.rebind(lambda p: None)

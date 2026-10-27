@@ -71,8 +71,8 @@ def load_binding(path):
     unique([c['id'] for c in b['copies']]); unique([c['path'] for c in b['copies']])
     if 'repository_binding' in b:
         safe_path(b['repository_binding'], True)
-        # G2 cannot attest the profile/kernel agreement owned by G3.
-        fail('unsupported_version')
+        from current_knowledge_repository import repository_binding
+        repository_binding(b)
     if 'bridge' in b:
         fields(b['bridge'], ('executable', 'sha256'))
         safe_path(b['bridge']['executable']); hash_value(b['bridge']['sha256'])
@@ -87,7 +87,7 @@ def request(value):
         fields(value, ('schema_version', 'mode', 'purpose', 'consumer_ids'))
         if value['purpose'] != 'current': fail()
         for x in array(value['consumer_ids'], 2, 1): name(x)
-        unique(value['consumer_ids']); fail('unsupported_version')
+        unique(value['consumer_ids']); return value
     if value.get('mode') != 'task' or value.get('purpose') not in ('current', 'history'): fail()
     fields(value, ('schema_version', 'mode', 'purpose', 'limit') + (('record_ids',) if value['purpose'] == 'history' else ()))
     number(value['limit'], 1, 20)
@@ -141,11 +141,14 @@ def transport(argv, body, env, cwd, timeout):
         for stream in (child.stdin, child.stdout, child.stderr): stream.close()
 
 
-def call(b, action, body):
+def call(b, action, body, budget=None):
     if action not in ('context', 'workflow-status'): fail()
     env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'MEMORYNEXUS_TASK_LEDGER': b['ledger']}
     code, raw = transport([b['binary'], 'task', '--config', b['config'], action],
                           body, env, b['task_root'], b['timeout_seconds'])
+    if budget is not None:
+        budget[0] += len(raw)
+        if budget[0] > 16*1024*1024: fail('incomplete')
     try: value = strict_loads(raw)
     except WorkflowError: fail('io_error')
     if not isinstance(value, dict) or type(value.get('schema_version')) is not int or value['schema_version'] != 1: fail('io_error')

@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 
 from workflow_io import WorkflowError, read_regular, safe_path
-from workflow_types import array, fields, hash_value, number, strict_loads, uuid, digest
+from workflow_types import array, fields, hash_value, number, strict_loads, uuid, digest, name, string
 from current_knowledge_task import JSON_LIMIT, MATERIAL_LIMIT, request, sha
 
 
@@ -35,7 +35,7 @@ def read_origin(path, state):
     fields(e, ('schema_version', 'read_id', 'created_at', 'checked_at', 'task_id', 'revision', 'incarnation',
                'binding_sha256', 'config_sha256', 'binary_sha256', 'package_sha256', 'request',
                'selected', 'sources', 'outputs', 'copies', 'coverage', 'omitted_count', 'candidate_count',
-               'truncated', 'gaps', 'material'))
+               'truncated', 'gaps', 'material'), ('workflow',))
     if type(e['schema_version']) is not int or e['schema_version'] != 1: raise WorkflowError('unsupported_version')
     for key in ('read_id', 'task_id', 'incarnation'): uuid(e[key])
     for key in ('binding_sha256', 'config_sha256', 'binary_sha256', 'package_sha256'): hash_value(e[key])
@@ -47,8 +47,28 @@ def read_origin(path, state):
         if row['kind'] not in ('instruction', 'execution', 'checkpoint', 'lesson', 'draft'): raise WorkflowError('invalid_input')
         if row['trust'] not in ('owner_confirmed', 'execution_reported', 'review_candidate', 'source_reported'): raise WorkflowError('invalid_input')
         if row['state'] not in ('current', 'superseded', 'stale', 'retracted'): raise WorkflowError('invalid_input')
-    if any(e[k] != [] for k in ('sources', 'outputs', 'copies', 'gaps')) or e['coverage'] != 'declared_files':
-        raise WorkflowError('invalid_input')
+    if e['request']['mode'] == 'task':
+        if 'workflow' in e or any(e[k] != [] for k in ('sources', 'outputs', 'copies')):
+            raise WorkflowError('invalid_input')
+    else:
+        workflow = e.get('workflow')
+        fields(workflow, ('workflow_id', 'profile_revision', 'profile_sha256', 'binding_sha256'))
+        uuid(workflow['workflow_id']); number(workflow['profile_revision'], 1)
+        hash_value(workflow['profile_sha256']); hash_value(workflow['binding_sha256'])
+        for row in array(e['sources'], 400):
+            fields(row, ('source_id', 'source_revision', 'sha256', 'availability', 'observed_at', 'checked_at'))
+            uuid(row['source_id']); number(row['source_revision'], 1); hash_value(row['sha256'])
+            string(row['observed_at'], 1, 64); instant(row['checked_at'])
+            if row['availability'] != 'available': raise WorkflowError('invalid_input')
+        for row in array(e['outputs'], 400):
+            fields(row, ('consumer_id', 'decision_id', 'approval_id', 'block_id', 'output_sha256'))
+            name(row['consumer_id']); uuid(row['decision_id']); uuid(row['approval_id'])
+            hash_value(row['block_id']); hash_value(row['output_sha256'])
+        for row in array(e['copies'], 20):
+            fields(row, ('id', 'status', 'sha256', 'checked_at'))
+            name(row['id']); hash_value(row['sha256']); instant(row['checked_at'])
+            if row['status'] != 'verified': raise WorkflowError('invalid_input')
+    if e['gaps'] != [] or e['coverage'] != 'declared_files': raise WorkflowError('invalid_input')
     if e['truncated'] is not False or e['omitted_count'] != 0: raise WorkflowError('invalid_input')
     ref = e['material']
     fields(ref, ('path', 'sha256', 'bytes')); hash_value(ref['sha256']); number(ref['bytes'], 1, MATERIAL_LIMIT)
