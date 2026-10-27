@@ -1,7 +1,7 @@
 # 当前有效知识维护：实施规划
 
-状态：2026-10-26，owner 接受方向与阶段顺序；#318 的
-[精确接入合同](current-knowledge-contract.md) 已形成提案，待固定版本审阅。
+状态：2026-10-27，owner 接受的方向与阶段顺序保持不变；#318 的
+[精确接入合同](current-knowledge-contract.md) 已完成审阅并冻结 v1。
 长期决策见 [ADR-030](../decisions/ADR-030-current-knowledge-maintenance.md)，执行真源为
 [#317](https://github.com/blackfaced/MemoryNexus/issues/317)。本文记录差距与顺序，不镜像
 全部 issue 验收条件，不表示生产接入已获授权或已经完成。
@@ -19,7 +19,7 @@
 | 不同 consumer 独立采纳 | 已有稳定槽位、generation、dependencies、发布回执 | 不等于语义去重；另一 ID 的同义或矛盾事实仍需关系合同 |
 | 来源草稿进入实际工作 | source-capture 保留 draft/source_reported；普通 context 始终排除 draft | 冻结 repository consumer 输出的读取路径，不悄悄提升 trust 或改 context 合同 |
 | 客户端接入 | [共享协议](../integrations/task-memory/PROTOCOL.md)、[Codex 指针](../integrations/codex/task-memory.md) | 区分强制 hook / wrapper / 提示词，核验实际注入而非只看账本 |
-| 回归保护 | #311 有 35 项 runner 测试的验收记录 | CI 尚未执行 test_workflow*.py；两处临时根硬编码 /private/tmp |
+| 回归保护 | #311 有 35 项 runner 测试的验收记录 | 已由 #320/#323 合入 CI；使用临时瘦身 CLI 副本，保留原构建产物 |
 
 ## 2. 执行顺序
 
@@ -27,15 +27,15 @@
 | --- | --- | --- |
 | 第一阶段合同 | [#318](https://github.com/blackfaced/MemoryNexus/issues/318) | 文档任务：冻结订正、两类读取、实际材料证据、并发/失败行为及最小实施 handoff |
 | 独立回归保护 | [#319](https://github.com/blackfaced/MemoryNexus/issues/319) | 既有 workflow suite 接入 Test CI，修复测试临时路径的跨平台问题；不依赖 #318 |
-| 第一阶段实现 | #318 审阅后再拆 ticket | 仅实现冻结后的最小接入；不提前为未知接口发运行时任务 |
+| 第一阶段实现 | 见 [handoff](current-knowledge/runtime-handoff.md) | 顺序完成 task read/check、repository read/check、bridge launch 三个有界切片 |
 | 固定安装 | [#312](https://github.com/blackfaced/MemoryNexus/issues/312) | 复用其安装/接线工作；新接入部署需要其对应版本及绑定核验，不阻断现有 R5 的独立推进 |
 | 真实验证 | [#301](https://github.com/blackfaced/MemoryNexus/issues/301)、[#313](https://github.com/blackfaced/MemoryNexus/issues/313) | 在既有 gate 中补新行为证据；分别保留原标准、结果与 owner 决定 |
 | 跨记录整理 | #317 第二阶段 | 第一阶段价值复盘后，再冻结关系身份、范围、提案/批准/撤销与下游影响合同 |
 | 管理页面 | #317 第三阶段 | 在读取及关系合同之上展示时间线、局部关系和预览；首版运行方式另定 |
 
 #318 交付合同、[合成验收矩阵](acceptance/current-knowledge.md) 与
-[最小实施 handoff](current-knowledge/runtime-handoff.md)；新 adapter 接口仍是提案，
-尚未实现或安装。审阅完成前不将对应 runtime ticket 标成 ready。#319 可独立推进。
+[最小实施 handoff](current-knowledge/runtime-handoff.md)；新 adapter 接口已冻结，
+runtime 与真实安装仍需各自验收。#319 的 CI 工作已合入 #323。
 本规划没有新建另一套真实客户端或调度验收，没有关闭或改写 #301/#313 的既有 gate。
 
 ## 3. 第一阶段的核心验收场景

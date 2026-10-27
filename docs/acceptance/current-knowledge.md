@@ -1,6 +1,6 @@
 # Current knowledge G1 acceptance
 
-Status: **CONTRACT PROPOSED; new adapter/runtime acceptance NOT RUN.**
+Status: **CONTRACT v1 FROZEN (2026-10-27); new adapter/runtime acceptance NOT RUN.**
 Issue [#318](https://github.com/blackfaced/MemoryNexus/issues/318) delivers the
 [contract](../current-knowledge-contract.md), examples and implementation handoff.
 It does not install a bridge or complete real-client acceptance.
@@ -28,7 +28,7 @@ ledger, model, private repository, hook or scheduler is modified.
 [task-sequence.json](../current-knowledge/examples/task-sequence.json) contains
 supported stdin examples, with target/source IDs explicitly replaced from CLI
 responses. [read-request.json](../current-knowledge/examples/read-request.json)
-and [material.json](../current-knowledge/examples/material.json) use the proposed
+and [material.json](../current-knowledge/examples/material.json) use the frozen
 adapter contract. The test runs separate CLI, adapter and child bridge processes;
 no direct database mutation, fake CLI response, or model label stands in for one.
 
@@ -59,7 +59,7 @@ Expected future test location:
 `integrations/task-memory/tests/test_workflow_current_knowledge.py`.
 Exact build/discovery commands and ownership are in the
 [runtime handoff](../current-knowledge/runtime-handoff.md). All C01–C12 remain
-NOT RUN for the proposed adapter until that implementation exists.
+NOT RUN for the frozen adapter until that implementation exists.
 
 ## Separate execution columns
 
