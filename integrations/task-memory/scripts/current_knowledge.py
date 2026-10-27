@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frozen current-knowledge v1 adapter. G2 implements task read/check only."""
+"""Frozen current-knowledge v1 adapter. Task and repository read/check."""
 import argparse
 import copy
 from pathlib import Path
@@ -28,7 +28,17 @@ def code_for(error):
 
 
 def snapshot(binding_path, b, pins, req, read_id, created_at):
+    if req['mode'] == 'repository':
+        from current_knowledge_repository import snapshot as repository_snapshot
+        return repository_snapshot(binding_path, b, pins, req, read_id, created_at)
     header = call(b, 'workflow-status', {})
+    if 'repository_binding' in b:
+        from current_knowledge_repository import repository_binding, Snapshot
+        ctx = repository_binding(b)
+        summary = Snapshot(b, ctx, header).all('summary')
+        expected = dict(workflow_id=ctx['binding']['workflow_id'], profile_revision=ctx['profile']['revision'],
+                        profile_sha256=ctx['profile_sha256'], binding_sha256=ctx['binding_sha256'], state='active')
+        if len(summary) != 1 or any(summary[0].get(k) != v for k, v in expected.items()): fail('stale_snapshot')
     body = {'limit': req['limit']}
     if req['purpose'] == 'history': body['record_ids'] = req['record_ids']
     response = call(b, 'context', body)
@@ -133,7 +143,7 @@ def execute(argv):
             evidence['previous_evidence_sha256'] = previous_digest
             material = None
         if evidence['gaps']: fail(evidence['gaps'][0])
-    except (WorkflowError, OSError, ValueError, TypeError, RecursionError) as exc:
+    except (WorkflowError, OSError, ValueError, TypeError, KeyError, RecursionError) as exc:
         code = code_for(exc); material = None
         if evidence:
             evidence.pop('material', None)
