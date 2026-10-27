@@ -109,7 +109,7 @@ of C01–C12 as a completed end-to-end client case.
 
 ## G2 task read/check implementation (2026-10-27)
 
-Implementation source: `ebe90bc8b991616de77e628364bf20b3dd9df981` (#327), based on
+Implementation source: `8a4a1d60f8c8bd2c00ebbd9f79806e742f471450` (#327), based on
 frozen contract `acbe606503f70d4448b994e14eabce234fa77ce6` (#318 / PR #326).
 New files are `scripts/current_knowledge.py`, `current_knowledge_task.py`,
 `current_knowledge_artifacts.py`, `tests/current_knowledge_fixture.py` and
@@ -149,7 +149,8 @@ Commands use `MEMORYNEXUS_TEST_BINARY=ABS_TO_STRIPPED_TEST_COPY` and
 handoff. No new Rust behavior tests were added because Rust did not change;
 required Clippy/Build/Test gates still apply to the PR.
 
-Repository mode and launch deliberately return `unsupported_version` in G2;
+Repository mode, repository_binding (whose profile/kernel cannot yet be verified),
+and launch deliberately return `unsupported_version` in G2;
 #328 and #329 implement them in dependency order. No bridge was installed, no
 actual client received material, and the real-client/scheduler table above stays
 NOT RUN for this adapter. Existing #301 PARTIAL evidence retains its own scope.
