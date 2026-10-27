@@ -1,9 +1,11 @@
 # 当前知识读取与订正合同 G1
 
-状态：**#318 的精确合同提案，待审阅；adapter 尚未实现。** 方向见
+状态：**#318 合同 v1 于 2026-10-27 完成 Coordinator 审阅并冻结；task read/check 已实现，
+repository read/check 与 launch 分别由 #328/#329 交付。** 方向见
 [ADR-030](../decisions/ADR-030-current-knowledge-maintenance.md)，父任务为
 [#317](https://github.com/blackfaced/MemoryNexus/issues/317)。本文以
-`955f1c53ea1f5fb14cad03fb1e6c31aa8005662c` 为已实现基线。
+`46434b0`（含 #322、#323、#325）为审阅时的已实现基线。
+审阅结论与实现切片见 [review](current-knowledge/contract-review.md)。
 已有 CLI 与新增 adapter 接口分开定义；不得把本文的新字段传给现有 CLI。
 验证矩阵见 [验收记录](acceptance/current-knowledge.md)，实施范围见
 [handoff](current-knowledge/runtime-handoff.md)。
@@ -49,9 +51,9 @@ source drift 后 stale draft 走 source-capture/复核，不用 correct 复活�
 `confirmation:"confirmed"`、client 标签及批准摘要是可信本地调用者声明；CLI 没有认证
 屏幕前的人。OS 单 owner 与既有内容级确认边界不变。读取 adapter 不提交任何权威写入。
 
-## 3. 新 adapter 的精确入口（proposed）
+## 3. adapter 的精确入口（frozen v1，分切片交付）
 
-拟新增 `integrations/task-memory/scripts/current_knowledge.py`，仅标准库与既有 CLI：
+新增接口定义为 `integrations/task-memory/scripts/current_knowledge.py`，仅标准库与既有 CLI：
 
 ```text
 PYTHON current_knowledge.py read --binding ABS --request ABS --run-dir ABS
@@ -61,7 +63,9 @@ PYTHON current_knowledge.py launch --binding ABS --evidence ABS --run-dir ABS
 
 不增加 task CLI 子命令、字段或 SQLite schema。`read` 生成材料；`check` 在每次当前用途
 之前重新检查；`launch` 先执行同样检查，再将材料交给一个固定的外部 client bridge。
-这三个命令**目前不存在**。已有 workflow.py 的 prepare/preview/apply/status 不被改名。
+当前 G2 已支持 task 模式的 read/check；repository 模式、repository_binding 和 launch
+在 G2 返回 unsupported_version，待 #328/#329 实现。已有 workflow.py 的
+prepare/preview/apply/status 不被改名。
 
 ### Binding
 
@@ -83,7 +87,11 @@ schema/UUID/H/name/整数、严格 JSON 与 canonical SHA 规则复用
 
 复用 runner 的绝对路径/no-symlink/私有权限检查、binary/package inventory 哈希算法，
 config 必须是 task_root/.memorynexus.json 且 task_id 相同，ledger 必须已存在且在 task 外。
-state_root/package 在 task 外，run-dir 必须是 state_root 内新目录。仅支持已显式迁移的
+state_root/package 在 task 外，run-dir 必须是 state_root 的直接子目录且独占新建；
+state_root 必须为专用的私有读取目录，不与 workflow run、package 或 ledger 目录重叠。
+binding 位于 task 外，禁止它位于 package 或 state_root 内。当前执行的脚本必须位于
+binding.package/current_knowledge.py，不能校验另一个包后执行未绑定脚本。
+现有 #325 installer 将源码 scripts/ 中的文件平铺到 package 根；读取入口复用该布局。仅支持已显式迁移的
 v2 ledger，以便检查 incarnation；v1 返回 unsupported_version，绝不自动迁移或 init。
 普通旧 v1 context 仍可独立使用，但不提供本合同的恢复一致性保证。
 repository_binding 必须与 task/root/config/ledger/binary/python/package 完全相同；其自身
@@ -95,6 +103,11 @@ managed 必须指向已绑定 target，consumer_id 必填；external 禁止该�
 未能枚举/观察实际注入链时 coverage 必须为 unknown。external 只记录摘要，不将其正文
 混入当前材料、不宣称其中的语义已校正。要把它排除出实际输入，需要 bridge 的运行证据，
 不能因有一个预期文件哈希就判断旧说法消失。
+v1 没有接收外部排除证明的字段：所有 external 项始终 unknown，read/check/launch 均
+返回 injection_unknown 且不产生当前材料。不可读 external 仍是 unknown，不因缺少哈希
+变成 verified。managed 项仅在 repository 模式可验证；task 模式中存在 managed 项也
+返回 injection_unknown。按 id 排序并拒绝重复 id/path；自动加入的 target 与显式项发生
+身份冲突时拒绝。实际入口还有未盘点输入时不能声称 coverage 完整。
 
 ### Request
 
@@ -106,9 +119,11 @@ managed 必须指向已绑定 target，consumer_id 必填；external 禁止该�
   1–2 个已绑定 consumer，禁止 limit/record_ids。按所选 consumer 的全部 current 输出读取。
 
 limit 在 task 两种用途均为 1–20，默认值不存在，显式传入。
-[read-request.json](current-knowledge/examples/read-request.json) 是 proposed 示例。
+[read-request.json](current-knowledge/examples/read-request.json) 是冻结接口示例。
 历史 read 可以返回 superseded 正文，保留状态，材料标记 `current_use:false`；
-stale/retracted 仍不返回正文。历史材料禁止 check/launch 作为当前用途使用。
+stale/retracted 仍不返回正文；review_candidate 在历史用途也只保留候选元数据。
+历史只含 tombstone 仍可成功，历史省略则 incomplete；当前用途无可用正文才返回 empty。
+历史材料禁止 check/launch 作为当前用途使用。
 不得把历史材料与后续新会话当前输入拼接。
 
 ### 环境、返回值与交付
@@ -128,6 +143,9 @@ exit 0 仅 status=ok；needs_review 为 3，error 为 2。Code 是
 ok/invalid_input/unsupported_version/io_error/scope_mismatch/stale_snapshot/
 source_drift/source_unavailable/target_drift/injection_unknown/incomplete/empty/
 history_only/bridge_unavailable/delivery_unknown/delivery_already_attempted。
+invalid_input/unsupported_version/io_error/scope_mismatch 为 error；其他非 ok code 为
+needs_review。CLI conflict/recovery_required 映射 stale_snapshot；CLI not_found/storage/
+超时/无效响应映射 io_error，路径/权限/JSON/超限输入映射 invalid_input。不透传自由错误。
 固定不含正文的诊断；无自由错误文本。
 输出及 evidence 最大 128 KiB，request/binding 32 KiB，material 最大 64 KiB。
 超限不得截掉一部分再称成功。单次 CLI stdout 超过 128 KiB、超时、非零、重复 key、
@@ -136,7 +154,14 @@ history_only/bridge_unavailable/delivery_unknown/delivery_already_attempted。
 `read` 产出 `material.json`、`evidence.json`、`result.json`；失败只产出无正文 result/evidence。
 若绑定/账本不可读导致必填身份未知，则仅产出 result，不捏造 evidence 字段。
 不得留下可交付 material。`check` 只写新的 result/evidence，引用原 read_id 与原 evidence
-摘要，不能修改旧快照。`launch` 同样复查，再以 argv `[bridge.executable]`、cwd=task_root，
+摘要，不能修改旧快照。check evidence 不含 material 字段，不能再次作为 --evidence。
+check/launch 的 --evidence 只接受同一 state_root 直接子目录的原 read evidence.json：
+必须有 material、没有 previous_evidence_sha256；同目录 result.json 必须是成功 read 的
+结果并包含匹配的 evidence 与 material 摘要/长度，read_id 一致。材料可已按生命周期删除；
+check 依据重新读取的字节比对原摘要；仍存在的材料必须同时通过摘要校验，禁止相信被改的副本。
+launch 必须使用重新读回且与原摘要相同的字节，原文件存在时其字节也必须相同，不能从缓存
+跳过复查。失败时删除原 read material，保留无正文证据；不删除无效路径指向的任意文件。
+`launch` 同样复查，再以 argv `[bridge.executable]`、cwd=task_root，
 把 **material.json 的原字节**作为 stdin 发给 bridge；不做 Markdown 二次渲染。
 bridge 可继承客户端所需的认证环境，但 adapter 不记录它；ledger 相关变量由绑定覆盖。
 bridge stdout 限 4 KiB，必须为 `{schema_version:1,read_id:UUID,
@@ -207,6 +232,10 @@ Entry 直接保留 context 返回的字段（id/kind/trust/state/revision/source
 classification:"consumer_output",dependencies,inputs:[{id,kind,trust,state}]}`；
 dependencies 原样保留 kernel typed 形式，inputs 含所有 record dependencies。
 task 模式 outputs=[]；repository entries/candidates=[]；各数组最多20。
+entries/candidates 保持 context 顺序；outputs 按 consumer_id/decision_id 排序，inputs 按 id
+排序；evidence selected 与材料记录次序相同，sources/outputs/copies 分别按 source_id、
+consumer_id/decision_id、id 排序。created_at/checked_at 使用 UTC 秒精度 RFC3339；
+check 保留原 created_at，只刷新 checked_at（包含 sources/copies 的 checked_at）。
 repository 没有新 trust 标签。text 来自上述已验证的原输出，不来自源文件自由拼接。
 
 evidence 正好为：
@@ -250,8 +279,12 @@ read/check/launch 不 sync、不修文件、不 neutralize。发现 source drift
 ack 丢失不能重发 launch；先由安装/客户端证据协调。只读命令不需要占用写入事务锁。
 
 material 是短期交付副本：launch 结束或失败后删除原 read 目录内 material，保留摘要证据；
-read 没有 launch 时由操作者在检查后删除，最长保留24小时。运行新命令时清理过期材料，
-不引入后台 scheduler。check 不依赖缓存正文，重新读取并比对原摘要；历史材料同样短期。
+read 的复用有效期为 created_at 后24小时；未来时间或已过期 evidence 返回 stale_snapshot，
+不能通过 check 刷新 created_at 延期。未 launch 时由操作者在检查后删除材料；每次命令
+清理 state_root 直接子目录中已过期且通过本合同证据/摘要验证的 material，最多检查1000个
+目录，超限 incomplete。损坏的证据或不匹配的材料交由操作者处理，不能按文件名任意删除。
+没有后台进程时不能保证文件恰好在24小时物理消失；24小时是可复用上限，物理删除是命令
+触发及人工清理。check 不依赖缓存正文，重新读取并比对原摘要；历史材料同样短期。
 含可回放正文的 artifacts 不纳入普通 Git、公开验收附件或长期 read 日志。
 
 撤回后的任何新 read/check/launch 均重新检查状态，不能从缓存返回正文；协调撤回时清理

@@ -25,7 +25,7 @@ The next accepted capability plan is [current knowledge maintenance, ADR-030](de
 make an explicit correction change what a later session actually uses, then
 address cross-record relationships and a lifecycle view. [#317](https://github.com/blackfaced/MemoryNexus/issues/317)
 tracks this staged plan; [the gap analysis](docs/current-knowledge-plan.md) separates
-existing lifecycle code from the client integration contract still to be defined.
+existing lifecycle code, the frozen reading contract and its staged implementation.
 
 The existing personal-experiment path helps one owner keep a confirmed record of
 what they observed, which advice they chose, what reversible adjustment they tried,

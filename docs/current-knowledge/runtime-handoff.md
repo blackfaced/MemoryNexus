@@ -1,50 +1,51 @@
-# G1 最小实施 handoff（尚未发出）
+# 当前知识 v1 实施 handoff
 
-状态：等待 [#318 合同](../current-knowledge-contract.md) 的固定 commit 审阅。
-本文件不是已发布的 ready runtime issue。Planner/Coordinator 审阅应确认范围、失败语义、
-schema 和下列验证；把审阅 commit 与结论留在 ticket/PR 后再创建实施 issue。
-如发现当前 CLI 缺能力，先反馈合同，不让 worker 自行增加权威字段。
+状态：#318 于 2026-10-27 完成 [审阅](contract-review.md)，[合同](../current-knowledge-contract.md)
+已冻结。执行真源是 #317 链接的三个实现 issue；每个 issue 固定 #318 冻结 commit，独立
+worktree/branch，按下列依赖顺序实施。本文定义分工，不替代 issue 验收。
 
-## 目标与依赖
+## G2：task read/check
 
-在独立 issue worktree 实现 read/check/launch 接入，使合成 fresh child process 只收到
-符合当前快照的材料；显式 correct 继续复用原 CLI。基于已合入 ADR-030/#318 合同，
-复用 #310/#311 的 v2 workflow 与 #319 的测试入口。生产部署不属于这个 worker。
+实现 task current/history read、同一 R/I 快照、候选元数据、原 read 证据校验与 check、
+安装/配置/hash 检查、严格输入、有界 CLI transport、private artifacts 与生命周期。
+只调用原 context/workflow-status。repository read 与 launch 返回明确 unsupported_version，
+不伪造交付能力。保留 frozen binding/request schema；external 或 task managed copy 为 unknown。
 
-## 文件 ownership
+ownership：新 `scripts/current_knowledge.py`、必要的同目录 `current_knowledge_*.py`，
+新 `tests/current_knowledge_fixture.py`、`tests/test_workflow_current_knowledge.py`，
+及 `docs/acceptance/current-knowledge.md`。脚本与 tests 均相对 `integrations/task-memory/`。
+不改 Rust、已有 workflow*.py 行为、安装器或客户端配置。
 
-- 新 `integrations/task-memory/scripts/current_knowledge.py`：合同 §3 的三个命令、
-  strict request/binding、CLI 读调用、快照与文件检查、短期材料、bridge handoff。
-- 新 `integrations/task-memory/tests/test_workflow_current_knowledge.py`：真实 CLI 和
-  隔离合成仓库的公开进程验收，通过现有 `test_workflow*.py` discovery 自动进入 CI。
-- 新 `integrations/task-memory/tests/current_knowledge_fixture.py`：固定无害 child bridge、
-  同一合成根中的 A/B 两个目录、只读 marker 动作与私有 delivery 证据。
-- `docs/acceptance/current-knowledge.md`：填实测 commit、命令、计数、case 结果和缺口。
-- 如需把读/订正操作写入 `integrations/task-memory/PROTOCOL.md`，只链接已实现入口并明确
-  prompt-only 边界；不修改所有客户端配置。不改 workflow*.py 的已有生产行为。
+公开进程验收覆盖 C01/C02 的 task 订正/重放/冲突、C03 候选和 corrected draft、C04 历史、
+C05 失败/空/截断、C06 task 并发与使用前复查、C08 未知副本、C09 隔离、C10 撤回/恢复、
+C12 严格 schema/包与材料漂移/权限/到期。C01 的 child 动作和 repository 部分留给 G4/G3；
+不得以这些局部通过宣称整条 C01 或 C01–C12 完成。
 
-这是一份候选 ownership，需随实施 issue 冻结。工具拆分只能留在当前目录、相同接口之内；
-要修改 Rust、迁移或既有 runner 合同先回报 Planner/Coordinator。
+## G3：repository read/check（依赖 G2）
 
-## 接口与约束
+扩展同一入口的 repository 模式。所有分页固定 R/I；核验完整 typed dependencies、实际
+source selector/JSONL prefix、profile/binding、原 plan/receipt、当前 applied publication
+与唯一受管区块。自动纳入所有选中 target copies，失败保留人工区块、不 sync 或 neutralize。
+复用既有 runner 规则，不更改其生产行为；必要 helper 拆分仍限 current_knowledge_*。
 
-严格实现合同 §3–§5，示例都需保持机器可校验。支持 v2 ledger；不自动迁移。
-CLI 只能调用原 context/workflow-status 等公开读接口；不直读 SQLite/导出代替 bounded
-status。实际订正由原 correct 完成；该 adapter 不新增写入口或 owner 确认规则。
-read 的未知注入状态可输出诊断，但不能生成可以误用的 current 材料。
-launch 用 pinned bridge，以原 material 字节作 stdin；回执与实际客户端证据分开。
-历史 read 不能 launch。任何漏页、来源/文件变化、恢复 incarnation 变化必须失败。
+ownership：上述 current_knowledge 脚本、fixture 与新增
+`tests/test_workflow_current_knowledge_repository.py`，验收记录。覆盖两 consumer 的
+C01/C03/C06/C07/C08/C09/C10/C12；包括 #322 同块新 generation 与多区块 whole-file 情况。
+实现和验收不能越过 G2 已接受接口；不以 target 文件反推批准。
 
-默认 fixture 的 bridge 是可审计确定性进程：读取 stdin、保留输入摘要、从 current entry
-选择 A/B、只打开相应 marker 文件，写出实际动作证据，返回精确 ack。它只证明模拟交付。
-不得让测试预先把 B 答案写进 bridge、环境、启动参数或 user prompt。
+## G4：pinned bridge launch（依赖 G2、G3）
 
-## 验证矩阵与命令
+实现 launch 使用前完整复查、精确字节 stdin、有界 ack、持久 O_EXCL delivery claim、未知
+交付禁止自动重试、交付后清理。复用 G2/G3；合成 bridge 从材料选择 A/B 并实际打开 marker，
+禁止在 env/argv/prompt 预塞答案。验证 C01–C12 剩余组合与 C11 字节/动作双断言。
 
-必须实现 [C01–C12](../acceptance/current-knowledge.md) 全部合成场景：材料+动作双断言，
-严格 schema、task 隔离、两条读路径、候选/draft、失效/历史/撤回/恢复、并发/TOCTOU、
-失败/丢回执、source/file/profile/approval drift、private/no-symlink、limit/空/截断。
-不能以 `client:"codex"` 或 mocked subprocess 代替真实 CLI 进程。
+ownership：current_knowledge 脚本、fixture、新
+`tests/test_workflow_current_knowledge_delivery.py`、验收记录；必要时 PROTOCOL.md 只链接
+已实现入口并标明 prompt-only 边界。不安装生产 hook，不修改现有 launcher/安装器合同。
+#325 的 workflow launcher 不等于本 client bridge；实际版本 pin/接线由 #312 承接，真实
+MiniMax/Codex/scheduler 由 #301/#313 验收，保留已有 PARTIAL 记录。
+
+## 共用验证与交付
 
 ```text
 cargo build --locked --bin memorynexus-feedback-cli
@@ -53,17 +54,10 @@ MEMORYNEXUS_TEST_BINARY=ABS_TO_BUILT_CLI PYTHONDONTWRITEBYTECODE=1 python3 scrip
 git diff --check
 ```
 
-缺 CLI 或 skipped 必须失败；由 #319 同一 Test job 执行，保留其他 checks。
-不修改 Rust 时不新增 Rust 行为测试；若批准后的范围确需 Rust，再按 AGENTS 运行相关检查。
-记录 Linux CI 与 macOS 合成进程结果。必要时注入可控并发写入验证读快照重试和 check 拒绝，
-不要靠 sleep 猜 race，不改变生产路径安全规则以迁就 fixture。
+已有 Test CI 执行 workflow discovery。缺 binary 或 skipped 必须失败；使用临时 strip 副本，
+保留构建产物。记录 immutable source commit、实际测试计数和每项适用范围。代码 PR 满足
+Format/Clippy/Build/Test 与适用 integration gate；不改 Rust 时不新增 Rust 行为测试。
 
-## 非目标与完成边界
-
-不做语义去重、关系治理、UI、索引/检索、HTTP/MCP、数据库扩展、模型 SDK、调度器、
-私人 ledger 操作、真实客户端账号接入或安装/迁移。不得改变 #283 的 gate。
-真实 bridge/hook 安装与注入盘点交给 #312；实际 MiniMax/Codex/scheduler 证据回填
-#301/#313，保留它们既有部分通过结果。实现 worker 不替 owner 作继续使用决定。
-
-交付：commit/PR、changed files、每条 case 的证据、验证命令/结果、未验证项和合同偏差。
-公开附件只留合成材料；真实私有会话和绝对私人路径留在目标机器。
+均不做语义去重、关系治理、UI、检索、HTTP/MCP、数据库扩展、模型 SDK、新调度器、私人
+ledger 修改或真实部署；不改变 #283。需要新增权威字段、改 runner 或范围外文件时先报告
+合同冲突。交付 changed files、命令/结果、未验证项、合同偏差和 PR。
