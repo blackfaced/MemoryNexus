@@ -1,6 +1,7 @@
 # 当前知识读取与订正合同 G1
 
-状态：**#318 合同 v1 于 2026-10-27 完成 Coordinator 审阅并冻结；adapter 尚未实现。** 方向见
+状态：**#318 合同 v1 于 2026-10-27 完成 Coordinator 审阅并冻结；task read/check 已实现，
+repository read/check 与 launch 分别由 #328/#329 交付。** 方向见
 [ADR-030](../decisions/ADR-030-current-knowledge-maintenance.md)，父任务为
 [#317](https://github.com/blackfaced/MemoryNexus/issues/317)。本文以
 `46434b0`（含 #322、#323、#325）为审阅时的已实现基线。
@@ -50,7 +51,7 @@ source drift 后 stale draft 走 source-capture/复核，不用 correct 复活�
 `confirmation:"confirmed"`、client 标签及批准摘要是可信本地调用者声明；CLI 没有认证
 屏幕前的人。OS 单 owner 与既有内容级确认边界不变。读取 adapter 不提交任何权威写入。
 
-## 3. 新 adapter 的精确入口（frozen v1，待实现）
+## 3. adapter 的精确入口（frozen v1，分切片交付）
 
 新增接口定义为 `integrations/task-memory/scripts/current_knowledge.py`，仅标准库与既有 CLI：
 
@@ -62,7 +63,9 @@ PYTHON current_knowledge.py launch --binding ABS --evidence ABS --run-dir ABS
 
 不增加 task CLI 子命令、字段或 SQLite schema。`read` 生成材料；`check` 在每次当前用途
 之前重新检查；`launch` 先执行同样检查，再将材料交给一个固定的外部 client bridge。
-这三个命令**目前不存在**。已有 workflow.py 的 prepare/preview/apply/status 不被改名。
+当前 G2 已支持 task 模式的 read/check；repository 模式、repository_binding 和 launch
+在 G2 返回 unsupported_version，待 #328/#329 实现。已有 workflow.py 的
+prepare/preview/apply/status 不被改名。
 
 ### Binding
 
