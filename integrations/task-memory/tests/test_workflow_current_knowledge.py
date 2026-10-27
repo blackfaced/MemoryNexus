@@ -147,7 +147,7 @@ class CurrentKnowledge(unittest.TestCase):
         f.binding['copies'][0]['path'] = str(f.root / 'missing-parent/missing.md'); f.save_binding()
         self.failure(f.run(), 'injection_unknown')
         f.binding['copies'] = []; f.save_binding()
-        self.failure(f.run('launch', evidence=f.private / 'absent'), 'unsupported_version')
+        self.failure(f.run('launch', evidence=f.private / 'absent'), 'invalid_input')
         f.write(f.request_path, {'schema_version': 1, 'mode': 'repository', 'purpose': 'current', 'consumer_ids': ['lessons']})
         self.failure(f.run(), 'scope_mismatch')
         f.write_request()
