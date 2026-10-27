@@ -26,11 +26,16 @@
 
 ## #317 关闭核查
 
-GitHub issue 显示 `state_reason=completed`，关闭事件时间为
-`2026-10-26T12:06:47Z`（北京时间 20:06:47），actor 为 `blackfaced`；事件没有
-关联 commit、GitHub App 或理由，issue comments 为 0。只能确认关闭记录，**没有证据
-说明为何判定完成**，不能推断是特定 PR 自动关闭或后续能力已经交付。
+原因已定位为 PR #321 的关闭关联误触发。其原正文末句为
+`This PR does not close #317 or claim deployment.`；虽然自然语言是否定句，GitHub
+仍将其中的关闭关键词识别为 issue 关联。GitHub GraphQL 的
+`pullRequest(number:321).closingIssuesReferences` 返回 #317，#321 合并时间为
+`2026-10-26T12:06:45Z`，#317 关闭事件为 `12:06:47Z`，actor 为 `blackfaced`，
+issue 的 state_reason 为 completed。该关联与时间顺序解释了关闭，不是后续能力已验收。
 
-#317 仍包含第二阶段关系治理、第三阶段页面及真实验收未完成项，因此恢复为开放的父级
-跟踪，更新已合入的 #321/#324/#323 状态并链接实现任务。关闭原因若以后取得新证据，
-在同一跟踪中核实；本记录不猜测操作者动机。
+初查仅看 issue timeline（commit_id 为空且无评论）未能定位；补查 PR 正文与 GraphQL
+关闭关联后得到上述证据。#321 的句子改为不含关闭关键词的 “Parent #317 remains open
+for subsequent phases; deployment is outside this PR.”，避免继续表达错误的关闭关联。
+
+#317 已恢复开放，保留未完成的关系治理、管理页面和真实验收。最新实现按
+#327 → #328 → #329 跟踪，PR #326/#330 的源码交付不能代表父任务整体完成。
