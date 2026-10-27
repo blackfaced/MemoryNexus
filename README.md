@@ -99,6 +99,7 @@ projection from the SQLite ledger.
 
 - [Shared task memory decision](decisions/ADR-028-shared-task-memory.md)
 - [Shared task memory onboarding](docs/task-memory-onboarding.md)
+- [Repository memory versioned installation and scheduling handoff](docs/repository-memory-installation.md)
 - [Shared client protocol](integrations/task-memory/PROTOCOL.md)
 - [Real-client acceptance TODO](docs/acceptance/task-memory-cross-client.md)
 - [Personal-experiment decision](decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md)

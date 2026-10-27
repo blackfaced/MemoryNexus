@@ -172,3 +172,9 @@ For an approved repository profile, use the shared
 this protocol; ordinary session context/record/review keeps the existing contract.
 Initial task seeding remains the separate bootstrap path. Automatic retention
 preserves attributed trust and never supplies publication or tool authorization.
+
+Deploy the [versioned package and restricted launcher](../../docs/repository-memory-installation.md)
+when connecting clients or an external schedule. Both clients and the scheduled
+Agent use `PYTHON -I -S -B VERSION/launch.py` and the same private binding/state.
+Installation itself creates neither task identity nor schedule. Bootstrap,
+increment, consumer review, document publication and backup stay separate steps.
