@@ -7,6 +7,14 @@ Read the approved profile, binding, shared protocol and accepted runner contract
 
 The operator supplies an absolute owner-only binding outside the repository. Never infer it through parent configuration or a similarly named executable. If this repository has no task config, use the existing task-bootstrap Skill, show the complete new-task preview and obtain its exact approval. Initialized tasks use increments only. A changed bootstrap digest needs new confirmation even when text remains unchanged.
 
+For deployment, use the [versioned installer/launcher](../../../docs/repository-memory-installation.md).
+In the steps below, invoke `PYTHON -I -S -B VERSION/launch.py` in place of
+`PYTHON PACKAGE/workflow.py`; the command arguments and approval semantics are
+unchanged. MiniMax, Codex and a separately approved external schedule must use
+the same absolute installation, Python and binding. `verify --binding ABS`
+checks installation/configuration without opening storage; `status --binding ABS`
+checks actual ledger state. Stop on errors instead of switching versions/ledgers.
+
 1. Run `PYTHON PACKAGE/workflow.py prepare --binding ABS --workflow capture --client ACTUAL_LABEL --run-dir NEW_ABS`. Read prepared.json, evidence caches and the approved collection authority. Retain the original row/source digests and occurrence IDs. Partial, invalid, missing or blocked work stays pending. Source timestamps and target hints never determine identity or route.
 2. Supply only bounded text and actual occurrence time for selected capture work. Useful experience states what happened, conditions, result, evidence and uncertainty; do not copy source documents or chat. Upstream verified flags remain attributed reports. Missing details stay explicit. A pointer alone is useful for navigation but does not establish a factual conclusion. Never interpret capture permission as owner-confirmed truth.
 3. Write exact submission `{schema_version:1,prepared_sha256:H,items:[...]}`. Preview with `workflow.py preview --binding ABS --prepared ABS --submission ABS --run-dir NEW_ABS`. Read complete preview.md and plan.json. Profile mode permits only the exact approved automatic retention policy. Owner mode requires the human's fresh confirmation of that exact canonical plan digest before `apply --binding ABS --plan ABS --approve H`. The hash argument is a local assertion and cannot itself prove a human confirmed.

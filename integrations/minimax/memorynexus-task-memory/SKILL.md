@@ -29,3 +29,12 @@ For first-time initialization from existing task material, use the shared
 [bootstrap Skill](../../task-memory/memorynexus-task-bootstrap/SKILL.md). Copy
 its complete bundle and retain the common protocol path. Preview first; exact
 owner approval precedes initialization and writes. Do not reseed existing tasks.
+
+For repository-source workflows, use the shared
+[repository-review Skill](../../task-memory/memorynexus-repository-review/SKILL.md)
+through the [versioned installation entry](../../../docs/repository-memory-installation.md).
+Interactive and scheduled sessions use the identical absolute Python, installation
+and private binding: `PYTHON -I -S -B VERSION/launch.py`. Keep the actual provider's
+schedule/delivery settings unchanged until their specific deployment is approved.
+Use independent schedule readback and provider run evidence; a manual run or
+`client=minimax` label does not prove a real trigger or automatic catch-up.

@@ -25,3 +25,10 @@ For first-time initialization from existing repository material, use the shared
 complete bundle and retain the common protocol path; show the exact draft and
 obtain approval before any initialization/write. Existing tasks require review,
 not automatic reseeding.
+
+For repository-source workflows, use the shared
+[repository-review Skill](../task-memory/memorynexus-repository-review/SKILL.md)
+through the [versioned installation entry](../../docs/repository-memory-installation.md).
+Invoke the pinned `PYTHON -I -S -B VERSION/launch.py` with the same explicit private
+binding used by MiniMax and the scheduled Agent. Installation does not switch
+the ledger, approve a workflow binding, or install Codex hooks.
