@@ -14,7 +14,7 @@
 | 显式订正/撤回/幂等 | `src/task_memory/lifecycle.rs`、task-memory-contract | 复用原 correct；不能追加 record、换目标或重用 key 改正文 |
 | revision/incarnation | `src/task_memory/workflow/reads.rs` | v2 header 可无 workflow 读取；最终 at_revision 与 incarnation 双重检查；不直读 SQLite |
 | 外部输出 | `workflow_engine.py`、`workflow_io.py`，#322 | 验证当前批准与原始 plan/receipt、唯一受管区块；不以每次历史 whole-file after_sha 校验当前多区块文件 |
-| 安装边界 | `integrations/task-memory/install.py`、`launch.py`，#325 | 现有 launcher 调用 workflow；不等于客户端 material bridge；执行包必须与 binding 相同 |
+| 安装边界 | `integrations/task-memory/install.py`、`launch.py`，#325 | 现有 launcher 调用 workflow；不等于客户端 material bridge；执行包必须与 binding 相同，脚本按现有 installer 平铺在 package 根 |
 | 复查证据 | 新 adapter 合同 | 只接收原 read evidence；校验同目录 result 引用；check evidence 不可递归冒充原 read；保留 created_at |
 | 外部副本 | 新 adapter 合同 | v1 没有外部排除证明接口，external 始终 unknown 并阻止当前材料；task 不假验 managed 文件 |
 | 生命周期 | 新 adapter 合同 | 24 小时限制复用；没有后台进程不能承诺届时物理删除；限定可验证材料的命令触发清理 |
@@ -23,6 +23,13 @@
 
 文档审阅不证明 adapter 已运行。既有 22 次公开 CLI 探针保留原版本，不重标为最新源码
 验收。此次仅文档修改，验证 JSON/摘要/相对链接与 diff，不需新增 Rust 测试。
+
+## 冻结版本的路径勘误
+
+对照 #325 installer 的 `destination_path` 映射复核后，修正了原合同把源码目录
+`scripts/` 误带入安装路径的问题：运行入口是 `binding.package/current_knowledge.py`。
+JSON/schema、hash 算法和权威边界不变；实现及 G2–G4 tickets 固定到此修订提交，
+不建立另一套安装布局。
 
 ## #317 关闭核查
 

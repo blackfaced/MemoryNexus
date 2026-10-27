@@ -87,7 +87,8 @@ config 必须是 task_root/.memorynexus.json 且 task_id 相同，ledger 必须�
 state_root/package 在 task 外，run-dir 必须是 state_root 的直接子目录且独占新建；
 state_root 必须为专用的私有读取目录，不与 workflow run、package 或 ledger 目录重叠。
 binding 位于 task 外，禁止它位于 package 或 state_root 内。当前执行的脚本必须位于
-binding.package/scripts/current_knowledge.py，不能校验另一个包后执行未绑定脚本。仅支持已显式迁移的
+binding.package/current_knowledge.py，不能校验另一个包后执行未绑定脚本。
+现有 #325 installer 将源码 scripts/ 中的文件平铺到 package 根；读取入口复用该布局。仅支持已显式迁移的
 v2 ledger，以便检查 incarnation；v1 返回 unsupported_version，绝不自动迁移或 init。
 普通旧 v1 context 仍可独立使用，但不提供本合同的恢复一致性保证。
 repository_binding 必须与 task/root/config/ledger/binary/python/package 完全相同；其自身
