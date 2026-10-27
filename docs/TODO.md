@@ -1,6 +1,6 @@
 # MemoryNexus Roadmap
 
-> Updated: 2026-10-26 (current-knowledge direction accepted; precise entry contract pending; deployment gates separate)
+> Updated: 2026-10-27 (current-knowledge contract frozen; task read/check implemented; deployment gates separate)
 > Executable tracker source of truth: [GitHub Issues](https://github.com/blackfaced/MemoryNexus/issues).
 > The shared-task-memory issues below are published. The older reconciliation
 > section remains a historical recommendation, not a claim that its issues were closed.
@@ -15,9 +15,12 @@ remains the parent tracker; acceptance of the direction is not acceptance of new
 CLI fields, automatic truth promotion or production deployment.
 
 - [#318](https://github.com/blackfaced/MemoryNexus/issues/318): freeze the first
-  integration contract and public-process acceptance before creating its runtime ticket.
-- [#319](https://github.com/blackfaced/MemoryNexus/issues/319): independently put
-  the existing workflow suite into CI, retaining safe portable test directories.
+  integration contract and public-process acceptance; frozen at `c09a612`.
+- [#327](https://github.com/blackfaced/MemoryNexus/issues/327): task read/check is implemented.
+  Continue with [#328](https://github.com/blackfaced/MemoryNexus/issues/328) repository
+  read/check, then [#329](https://github.com/blackfaced/MemoryNexus/issues/329) bridge delivery.
+- [#319](https://github.com/blackfaced/MemoryNexus/issues/319): workflow public-process
+  tests are in CI, with portable private test directories.
 - Reuse #312 installation, #301 real-client handoff and #313 repository/scheduler
   acceptance. Preserve their prior evidence and remaining cases; no duplicate gate.
 - Keep later semantic relations and page implementation inside #317 until the
