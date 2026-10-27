@@ -25,9 +25,9 @@ class CurrentFixture:
         self.other = self.base / 'other/.memorynexus.json'
         self.private = self.base / 'private'; self.state = self.base / 'reads'
         self.ledger = self.base / 'data/v2.sqlite'; self.v1 = self.base / 'data/v1.sqlite'
-        self.package = self.base / 'package'; (self.package / 'scripts').mkdir(mode=0o700)
+        self.package = self.base / 'package'
         for source in SCRIPTS.glob('*.py'):
-            dest = self.package / 'scripts' / source.name
+            dest = self.package / source.name
             shutil.copyfile(source, dest); os.chmod(dest, 0o600)
         self.task_id = self.cli('init', {'idempotency_key': 'a', 'display_name': 'Task A',
                                        'confirmation': 'confirmed', 'automatic_capture': ['execution', 'review']}, ledger=self.v1)['task_id']
@@ -47,7 +47,7 @@ class CurrentFixture:
         self.binding_path = self.private / 'binding.json'; self.save_binding()
         self.request = {'schema_version': 1, 'mode': 'task', 'purpose': 'current', 'limit': 20}
         self.request_path = self.private / 'request.json'; self.write(self.request_path, self.request)
-        self.entry = self.package / 'scripts/current_knowledge.py'
+        self.entry = self.package / 'current_knowledge.py'
 
     def close(self): self.temp.cleanup()
 

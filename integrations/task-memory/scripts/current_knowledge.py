@@ -104,7 +104,7 @@ def execute(argv):
     try:
         args = arguments(argv)
         b, pins = load_binding(args.binding)
-        if Path(sys.argv[0]).resolve() != Path(b['package']) / 'scripts/current_knowledge.py': fail('stale_snapshot')
+        if Path(sys.argv[0]).resolve() != Path(b['package']) / 'current_knowledge.py': fail('stale_snapshot')
         run_path = safe_path(args.run_dir)
         if run_path.parent != Path(b['state_root']): fail()
         run = new_run(run_path, b['state_root'], b['task_root'])

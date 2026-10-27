@@ -50,7 +50,7 @@ def load_binding(path):
     safe_path(paths['ledger'].parent, True)
     if not paths['ledger'].is_file(): fail('io_error')
     if paths['python'] != Path(sys.executable).resolve(): fail('stale_snapshot')
-    if Path(__file__).resolve() != package / 'scripts/current_knowledge_task.py': fail('stale_snapshot')
+    if Path(__file__).resolve() != package / 'current_knowledge_task.py': fail('stale_snapshot')
     if not os.access(paths['binary'], os.X_OK) or not os.access(paths['python'], os.X_OK): fail()
     raw_config = read_regular(paths['config'], 32768, True)
     config = strict_loads(raw_config)
