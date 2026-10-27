@@ -1,7 +1,7 @@
 # Current knowledge G1 acceptance
 
 Status: **CONTRACT v1 FROZEN (2026-10-27); G2 task read/check implemented and
-locally tested. Repository read/check, bridge delivery and real clients remain pending.**
+locally tested. G3 repository read/check is implemented below; bridge delivery and real clients remain pending.**
 Issue [#318](https://github.com/blackfaced/MemoryNexus/issues/318) delivers the
 [contract](../current-knowledge-contract.md), examples and implementation handoff.
 It does not install a bridge or complete real-client acceptance.
@@ -149,10 +149,64 @@ Commands use `MEMORYNEXUS_TEST_BINARY=ABS_TO_STRIPPED_TEST_COPY` and
 handoff. No new Rust behavior tests were added because Rust did not change;
 required Clippy/Build/Test gates still apply to the PR.
 
-Repository mode, repository_binding (whose profile/kernel cannot yet be verified),
-and launch deliberately return `unsupported_version` in G2;
-#328 and #329 implement them in dependency order. No bridge was installed, no
+At the G2 baseline, repository mode, repository_binding and launch returned
+`unsupported_version`. G3 below implements repository read/check and binding
+verification; launch remains the #329 dependency gate. No bridge was installed, no
 actual client received material, and the real-client/scheduler table above stays
 NOT RUN for this adapter. Existing #301 PARTIAL evidence retains its own scope.
 This is a partial implementation of frozen v1, with no change to authority or
 confirmed-content rules and no claim to cover #317's second or third phase.
+
+
+## G3 repository read/check implementation (2026-10-27)
+
+Implementation source: `fafc6e78700cdfc8c17b32d02b636841219b777d` (#328), based on
+accepted G2/main `4dd046d61c36cfc5e973814f07a48ee139754475`. Frozen v1 semantics
+remain `c09a612`; this slice adds no CLI command, schema or authority write.
+
+The reader pins all six workflow views, explicit dependency reads and original
+kernel receipt lookups to one revision/incarnation. It validates the common
+installation, workflow profile/binding, full typed dependency closure, actual
+source selections/JSONL consumed prefixes, original publication plan and exact
+request/receipt identities. It compares each current block with original output
+bytes and records/rechecks whole target hashes, so later blocks in the same file
+and replacement generations work without trusting historical whole-file hashes.
+All selected targets are automatically included as managed copies. External copies
+remain unknown. Read/check never sync, confirm, publish, neutralize or change human
+regions. Missing retained proof prevents delivery; it is never reconstructed.
+
+Files: new `scripts/current_knowledge_repository.py`,
+`current_knowledge_publication.py` and
+`tests/test_workflow_current_knowledge_repository.py`, plus the existing reader,
+evidence/transport helpers and fixture. The only existing G2 test expectation
+changes replace unsupported-repository results with missing/mismatched-binding
+refusals; #328 ownership explicitly records this transition. Existing workflow
+runner behavior, Rust and production installations are unchanged.
+
+| Scope | Public-process evidence | Remaining |
+| --- | --- | --- |
+| C01/C03 | Both consumers, source-reported drafts and complete auxiliary record/source/candidate closure; candidate body excluded and trust retained; correction invalidates old authority | Fresh child action in G4 |
+| C06 | Every page uses R/I; actual writes between input pages exhaust the single allowed retry; check rejects changed fingerprints and incarnation | Finite observation race after final check remains |
+| C07 | Edited/deleted/selected sources, JSONL prefix changes/new complete rows/partial tail, profile changes, edited/unknown/duplicate target blocks; no read-side sync or file repair | Actual repository/client gate |
+| C08/C09 | Automatic target copies, whole-file hashes, exact managed dedup/conflict, external unknown, mismatched task/binding and unknown consumer refusal | Actual injected-input inventory |
+| C10 | Correction/withdrawal prevent stale output; actual backup/restore at unchanged revision invalidates old publication; failed check purges original material | Combined bridge cases in G4 |
+| C12 | Exact retained plan/request/receipt/rendered bytes, kernel receipt digest, source/target symlinks, strict request fields and multi-page inputs | No cross-ID semantic dedup claim |
+
+Validation uses the same isolated stripped CLI and unchanged Rust source/hash
+recorded in G2. The final affected read/check set passes 34 tests (17 task, 17
+repository), including one additional candidate-closure test after the initial
+33-test run. Full workflow regression, bootstrap and exact-head CI results are
+recorded in the #328 PR. Local bootstrap: 22 tests, no skips. Python parsing,
+`cargo fmt --all -- --check` and `git diff --check` pass. Required remote
+Clippy/Build/Test and PostgreSQL integration remain PR gates.
+
+Retained proof lookup examines at most 1,000 direct workflow-state entries and
+1,000 receipt entries per selected publication; exceeding the bound is incomplete,
+not permission to ignore old files. Status paging uses the frozen 128-page/view
+and 16 MiB aggregate limit. These bounds do not establish semantic freshness of
+human regions or unobserved native caches. Material remains subject to the frozen
+24-hour lifecycle and explicit check-before-use limitation.
+
+This is repository adapter acceptance only. No bridge, real MiniMax/Codex session
+or scheduled trigger ran, and the separate real-client columns remain NOT RUN for
+this adapter. #312/#301/#313 and the existing #283 gate retain their own scope.
