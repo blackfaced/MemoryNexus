@@ -34,10 +34,15 @@ def prepare_removals(ctx, run, snapshot, request, decisions, publications):
         string(value['reason'], 1, 240)
         prior, d = validate_owner(value['approval_id'], decisions, publications)
         target = prior['proposal']['target_id']
+        consumer = next((c for c in ctx['profile']['consumers'] if c['consumer_id'] == d['consumer_id']), None)
+        if consumer is None or consumer['target_id'] != target:
+            raise WorkflowError('stale_snapshot')
         if target in targets:
             raise WorkflowError('invalid_input')
         targets.add(target)
-        path = next(t['path'] for t in ctx['binding']['targets'] if t['target_id'] == target)
+        path = next((t['path'] for t in ctx['binding']['targets'] if t['target_id'] == target), None)
+        if path is None:
+            raise WorkflowError('stale_snapshot')
         snap = target_snapshot(path, d['block_id'])
         if not snap['exists'] or snap.get('prior_block_sha256') != prior['proposal']['output_sha256']:
             raise WorkflowError('target_conflict')
