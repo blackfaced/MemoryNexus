@@ -98,9 +98,13 @@ def request(value):
 
 
 def transport(argv, body, env, cwd, timeout):
-    """Bound both pipes during execution, including descendants holding pipes open."""
     raw = canonical(body)
     if len(raw) > 32768: fail()
+    return transport_bytes(argv, raw, env, cwd, timeout)
+
+
+def transport_bytes(argv, raw, env, cwd, timeout, stdout_limit=JSON_LIMIT):
+    """Bound both pipes during execution, including descendants holding pipes open."""
     try:
         child = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, cwd=cwd, env=env, start_new_session=True)
@@ -126,7 +130,7 @@ def transport(argv, body, env, cwd, timeout):
                     if not data: selector.unregister(stream); stream.close()
                     elif stream is child.stdout:
                         output.extend(data)
-                        if len(output) > JSON_LIMIT: fail('io_error')
+                        if len(output) > stdout_limit: fail('io_error')
                     else:
                         stderr_size += len(data)
                         if stderr_size > 4096: fail('io_error')

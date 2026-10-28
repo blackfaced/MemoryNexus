@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frozen current-knowledge v1 adapter. Task and repository read/check."""
+"""Frozen current-knowledge v1 adapter. Task and repository read/check/launch."""
 import argparse
 import copy
 from pathlib import Path
@@ -110,7 +110,7 @@ def arguments(argv):
 
 def execute(argv):
     read_id = str(uuid_module.uuid4()); run = None; origin = None; evidence = None; material = None
-    code = 'ok'; previous_digest = None; args = None
+    code = 'ok'; previous_digest = None; args = None; delivery = None
     try:
         args = arguments(argv)
         b, pins = load_binding(args.binding)
@@ -119,7 +119,6 @@ def execute(argv):
         if run_path.parent != Path(b['state_root']): fail()
         run = new_run(run_path, b['state_root'], b['task_root'])
         cleanup(b['state_root'])
-        if args.command == 'launch': fail('unsupported_version')
         created_at = now()
         if args.command == 'read':
             req = request(strict_loads(read_regular(args.request, 32768, True)))
@@ -137,19 +136,25 @@ def execute(argv):
                 break
             except WorkflowError as exc:
                 if exc.code != 'stale_snapshot' or args.command != 'read' or attempt == 1: raise
-        if args.command == 'check':
+        if args.command != 'read':
             if stable(evidence) != stable(old): fail('stale_snapshot')
             evidence.pop('material', None)
             evidence['previous_evidence_sha256'] = previous_digest
-            material = None
+            if args.command == 'check': material = None
         if evidence['gaps']: fail(evidence['gaps'][0])
+        if args.command == 'launch':
+            from current_knowledge_delivery import deliver
+            delivery = deliver(b, origin, run, read_id, material)
+            material = None
+            purge(origin)
+            if delivery['status'] != 'acknowledged': fail('delivery_unknown')
     except (WorkflowError, OSError, ValueError, TypeError, KeyError, RecursionError) as exc:
         code = code_for(exc); material = None
         if evidence:
             evidence.pop('material', None)
             evidence['gaps'] = list(dict.fromkeys([code, *evidence['gaps']]))
             if previous_digest: evidence['previous_evidence_sha256'] = previous_digest
-        if args and args.command == 'check': purge_failed_check(args.binding, args.evidence)
+        if args and args.command != 'read': purge_failed_check(args.binding, args.evidence)
         if origin:
             try: purge(origin)
             except (WorkflowError, OSError): pass
@@ -165,6 +170,10 @@ def execute(argv):
                 if len(raw) > JSON_LIMIT: fail('incomplete')
                 write_new(run / 'evidence.json', raw)
                 result['artifacts'].append({'path': 'evidence.json', 'sha256': sha(raw), 'bytes': len(raw)})
+            if delivery:
+                raw = canonical(delivery) + b'\n'
+                write_new(run / 'delivery.json', raw)
+                result['artifacts'].append({'path': 'delivery.json', 'sha256': sha(raw), 'bytes': len(raw)})
             write_new(run / 'result.json', canonical(result) + b'\n')
     except (WorkflowError, OSError) as exc:
         if run:

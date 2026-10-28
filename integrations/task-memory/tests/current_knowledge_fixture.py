@@ -189,3 +189,84 @@ sys.stdout.buffer.write(p.stdout);sys.stderr.buffer.write(p.stderr);sys.exit(p.r
             b.update(binary=str(wrapper), binary_sha256=hashlib.sha256(wrapper.read_bytes()).hexdigest())
         self.save_binding(); self.workflow.write(self.workflow.binding_path, self.workflow.binding)
         self.workflow.rebind(lambda p: None)
+
+
+def install_bridge(f, mode='ack'):
+    """Fresh synthetic client: derive a marker path solely from material stdin."""
+    bridge = f.private / 'synthetic-bridge'
+    script = f'''#!{f.binding['python']}
+import hashlib,json,os,re,sys,time,uuid
+from pathlib import Path
+raw=sys.stdin.buffer.read(65537)
+if len(raw)>65536: sys.exit(2)
+material=json.loads(raw)
+if not material['current_use']: sys.exit(2)
+texts=[r['text'] for r in material['entries'] if 'text' in r]+[o['text'] for o in material['outputs']]
+paths=set(re.findall(r'workspace-[a-z]+/marker.txt','\\n'.join(texts)))
+if len(paths)!=1: sys.exit(2)
+chosen=next(iter(paths)); value=Path(chosen).read_bytes()
+trace=Path({str(f.private / 'bridge-trace.jsonl')!r})
+row=dict(pid=os.getpid(),read_id=material['read_id'],sha256=hashlib.sha256(raw).hexdigest(),bytes=len(raw),
+         opened=chosen,marker_sha256=hashlib.sha256(value).hexdigest(),argc=len(sys.argv),cwd=os.getcwd(),
+         ledger_matches=os.environ.get('MEMORYNEXUS_TASK_LEDGER')=={str(f.ledger)!r},
+         inherited_auth=os.environ.get('MN_SYNTHETIC_AUTH')=='synthetic-secret')
+with trace.open('a') as out:
+ out.write(json.dumps(row)+'\\n');out.flush();os.fsync(out.fileno())
+mode={mode!r}
+if mode=='timeout': time.sleep(30)
+if mode=='barrier':
+ release=Path({str(f.private / 'bridge-release')!r})
+ until=time.monotonic()+15
+ while not release.exists():
+  if time.monotonic()>until: sys.exit(2)
+  time.sleep(.005)
+ack=dict(schema_version=1,read_id=material['read_id'],material_sha256=hashlib.sha256(raw).hexdigest(),session_ref=str(uuid.uuid4()))
+if mode=='wrong_hash': ack['material_sha256']='a'*64
+if mode=='wrong_id': ack['read_id']=str(uuid.uuid4())
+if mode=='extra': ack['unapproved']='field'
+if mode=='long_session': ack['session_ref']='x'*129
+if mode=='no_ack': sys.exit(0)
+if mode=='nonzero': print(json.dumps(ack));sys.exit(2)
+if mode=='duplicate': print('{{"schema_version":1,"schema_version":1}}');sys.exit(0)
+if mode=='overflow': print('x'*4097);sys.exit(0)
+if mode=='stderr': sys.stderr.write('synthetic-secret'*400);sys.stderr.flush();sys.exit(2)
+print(json.dumps(ack))
+'''
+    bridge.write_text(script); os.chmod(bridge, 0o700)
+    f.binding['bridge'] = dict(executable=str(bridge), sha256=hashlib.sha256(bridge.read_bytes()).hexdigest())
+    f.save_binding()
+    for name in ('workspace-a', 'workspace-b'):
+        directory = f.root / name; directory.mkdir(exist_ok=True)
+        (directory / 'marker.txt').write_text('Harmless marker: ' + name)
+    return bridge
+
+
+def attach_workflow(f):
+    """Bind a real workflow to CurrentFixture's pre-migrated two-task ledger."""
+    from workflow_fixture import Fixture
+    w = Fixture.__new__(Fixture)
+    for key in ('temp', 'base', 'root', 'private', 'package', 'config', 'ledger', 'task_id'):
+        setattr(w, key, getattr(f, key))
+    w.state = f.base / 'workflow-runs'; w.state.mkdir(mode=0o700)
+    w.incarnation = f.cli('workflow-status', {})['incarnation']
+    w.profile = json.loads((REPO / 'docs/repository-memory/examples/sequence-v1.json').read_text())['profile']
+    w.profile['collections'] = w.profile['collections'][:1]
+    w.profile['collections'][0].update(path='incident.md', selector={'kind': 'full'})
+    (w.root / 'incident.md').write_text('A synthetic source report.\n')
+    w.rule = b'Preserve provenance and uncertainty.\n'
+    for c in w.profile['consumers']: c['rules_sha256'] = hashlib.sha256(w.rule).hexdigest()
+    w.profile_path = f.private / 'workflow-profile.json'; w.write(w.profile_path, w.profile)
+    w.binding_path = f.private / 'workflow-binding.json'
+    w.binding = {k: f.binding[k] for k in ('schema_version', 'task_id', 'task_root', 'config', 'ledger', 'binary',
+                                           'binary_sha256', 'python', 'package', 'package_sha256', 'timeout_seconds')}
+    w.binding.update(workflow_id=w.profile['workflow_id'], profile=str(w.profile_path), state_root=str(w.state),
+                     targets=[dict(target_id=c['target_id'], path=str(f.private / (c['target_id'] + '.md'))) for c in w.profile['consumers']])
+    w.refresh_package()
+    from workflow_cli import load_context
+    w.ctx = load_context(w.binding_path)
+    f.cli('workflow-bind', dict(idempotency_key='workflow-bind', run_id=str(uuid.uuid4()), client='synthetic',
+          workflow_id=w.profile['workflow_id'], profile_revision=1, incarnation=w.incarnation,
+          expected_profile_revision=0, profile=w.profile, profile_sha256=digest(w.profile), binding_sha256=digest(w.binding),
+          confirmation='confirmed'))
+    f.binding.update(package_sha256=w.binding['package_sha256'], repository_binding=str(w.binding_path)); f.save_binding()
+    return w
