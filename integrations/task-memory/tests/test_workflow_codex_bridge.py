@@ -121,6 +121,16 @@ sys.exit(2 if mode=='nonzero' else 0)
         self.assertEqual(self.generate()[0], 2)
         self.assertFalse(self.out.exists())
 
+    def test_declared_symlink_resolution_drift_refuses_even_same_bytes(self):
+        original = self.f.private/'native-v1'; original.write_text('same bytes'); original.chmod(0o600)
+        other = self.f.private/'native-v2'; other.write_bytes(original.read_bytes()); other.chmod(0o600)
+        alias = self.f.private/'native'; alias.symlink_to(original)
+        self.spec['files'].append({'path':str(alias),'resolved':str(original),'sha256':pin(original)['sha256']})
+        self.generated()
+        alias.unlink(); alias.symlink_to(other)
+        self.assertEqual(self.invoke().returncode,2)
+        self.assertFalse(self.trace.exists())
+
     def test_spec_and_source_validation(self):
         original = dict(self.spec)
         for change in ({'extra': True}, {'timeout_seconds': True}, {'files': []}, {'client_version':'future'}):

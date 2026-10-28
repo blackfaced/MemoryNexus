@@ -36,11 +36,12 @@ Explicitly inventory any wrapper registry/payload, actual native executable,
 project/layered configuration, rules, and configuration references involved in
 the selected entry. Include those files before approving the spec; the generator
 does not discover a wrapper's dependency closure or judge completeness. Paths
-must be absolute, without symlinks, owned by the caller/root and not writable by
+must be absolute, owned by the caller/root and not writable by
 other users (sticky temporary ancestors are allowed only for isolated tests).
-For a symlinked dependency, recording only its resolved bytes does not pin the
-symlink's selection: document and resolve that installation limitation before
-production activation. Do not bypass an existing startup policy to make a test pass.
+By default symlinks are rejected. For a reviewed symlinked client/dependency, add
+`resolved: ABS_REAL_PATH` to that pin: both the resolved selection and target bytes
+are checked before/after execution. This also detects a link retargeted to a
+different file with identical bytes. Python/home/task paths remain symlink-free. Do not bypass an existing startup policy to make a test pass.
 
 `home` and `codex_home` select existing authentication/configuration locations;
 no authentication files are copied or changed by the generator. Runtime retains
@@ -101,9 +102,9 @@ Review enabled client capabilities as part of activation.
 
 Client stdout is bounded to 1 MiB, stderr to 64 KiB, each version probe to 10 s,
 and the model call to the spec's 1–240 s. Choose an adapter timeout with room for
-preflight (normally 300 s); a smaller outer timeout can interrupt first. Client
-children inherit the adapter's process group, so its cleanup covers the bridge
-and descendants. There are no internal attempts/retries.
+preflight (normally 300 s); a smaller outer timeout can interrupt first. The client starts in the adapter's process group, so cleanup covers the bridge,
+client and descendants that remain in that group. Client-created detached processes
+are outside this guarantee. There are no internal attempts/retries.
 
 Ack requires exit0, exactly one fresh UUID thread, one ordered started/completed
 turn, valid supported JSON events and matching post-run pins. Error/failed/aborted

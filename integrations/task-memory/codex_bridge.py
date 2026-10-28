@@ -45,14 +45,17 @@ def parse(raw):
     return json.loads(raw, object_pairs_hook=unique, parse_constant=lambda _: require(False))
 
 
-def path(value, private=False):
+def path(value, private=False, links=False):
     require(isinstance(value, str) and '\x00' not in value)
     p = Path(value)
     require(p.is_absolute() and '..' not in p.parts)
     for part in [*reversed(p.parents), p]:
         info = part.lstat()
-        require(not stat.S_ISLNK(info.st_mode) and info.st_uid in (0, os.getuid()))
-        require(not info.st_mode & 0o022 or (stat.S_ISDIR(info.st_mode) and info.st_mode & stat.S_ISVTX))
+        require(info.st_uid in (0, os.getuid()))
+        if stat.S_ISLNK(info.st_mode):
+            require(links)
+        else:
+            require(not info.st_mode & 0o022 or (stat.S_ISDIR(info.st_mode) and info.st_mode & stat.S_ISVTX))
     if private:
         require(info.st_uid == os.getuid() and not info.st_mode & 0o077)
     return p
@@ -69,9 +72,13 @@ def read(value, limit=128*1024*1024):
 
 
 def check_pin(pin):
-    require(isinstance(pin, dict) and set(pin) == {'path', 'sha256'})
+    require(isinstance(pin, dict) and set(pin) in ({'path', 'sha256'}, {'path', 'sha256', 'resolved'}))
     require(isinstance(pin['sha256'], str) and re.fullmatch('[0-9a-f]{64}', pin['sha256']))
-    require(hashlib.sha256(read(pin['path'])).hexdigest() == pin['sha256'])
+    target = pin['path']
+    if 'resolved' in pin:
+        require(str(path(target, links=True).resolve(strict=True)) == pin['resolved'])
+        target = pin['resolved']
+    require(hashlib.sha256(read(target)).hexdigest() == pin['sha256'])
 
 
 def validate(spec):
