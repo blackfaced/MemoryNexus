@@ -25,8 +25,8 @@ def destination(path):
 def selected(path):
     if path.startswith(INTEGRATION + 'scripts/'):
         return 'package/' + path[len(INTEGRATION + 'scripts/'):]
-    if path == INTEGRATION + 'launch.py':
-        return 'launch.py'
+    if path in (INTEGRATION + name for name in ('launch.py', 'codex_bridge.py', 'install_codex_bridge.py')):
+        return path[len(INTEGRATION):]
     if (path == INTEGRATION + 'PROTOCOL.md'
             or path.startswith(INTEGRATION + 'memorynexus-')
             or path.startswith('integrations/minimax/memorynexus-task-memory/')
