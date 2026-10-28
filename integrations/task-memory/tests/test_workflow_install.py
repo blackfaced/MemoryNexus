@@ -30,12 +30,17 @@ class Installation(unittest.TestCase):
             shutil.copytree(original / name, integration / name, ignore=shutil.ignore_patterns('__pycache__'))
         for name in ('PROTOCOL.md', 'launch.py'):
             shutil.copyfile(original / name, integration / name)
-        for name in ('integrations/minimax/memorynexus-task-memory', 'integrations/codex', 'docs/repository-memory'):
+        for name in ('integrations/minimax/memorynexus-task-memory', 'integrations/codex', 'docs/repository-memory', 'docs/current-knowledge'):
             shutil.copytree(REPO / name, cls.source / name)
+        for name in ('docs/current-knowledge-contract.md', 'docs/acceptance/current-knowledge.md',
+                     'decisions/ADR-030-current-knowledge-maintenance.md'):
+            target = cls.source / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / name, target)
         template = cls.source / 'empty-template'
         template.mkdir()
         cls.git('init', '--quiet', '--template=' + str(template))
-        cls.git('add', 'integrations', 'docs')
+        cls.git('add', 'integrations', 'docs', 'decisions')
         cls.git('-c', 'user.name=Synthetic install test', '-c', 'user.email=synthetic@example.invalid',
                 '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Synthetic install fixture')
         cls.revision = cls.git('rev-parse', 'HEAD').decode().strip()
@@ -100,8 +105,13 @@ class Installation(unittest.TestCase):
         manifest = json.loads((self.version / 'manifest.json').read_text())
         self.assertEqual(manifest['source_revision'], self.revision)
         paths = [entry['path'] for entry in manifest['files']]
-        self.assertEqual(paths, sorted(paths))
+        self.assertEqual(paths, sorted(paths, key=Path))
         self.assertIn('package/workflow.py', paths)
+        self.assertIn('package/current_knowledge.py', paths)
+        self.assertIn('package/docs/current-knowledge-contract.md', paths)
+        self.assertIn('package/docs/current-knowledge/examples/read-request.json', paths)
+        self.assertIn('package/docs/acceptance/current-knowledge.md', paths)
+        self.assertIn('package/decisions/ADR-030-current-knowledge-maintenance.md', paths)
         self.assertIn('package/integrations/task-memory/memorynexus-task-bootstrap/references/manifest.md', paths)
         self.assertIn('package/integrations/minimax/memorynexus-task-memory/SKILL.md', paths)
         self.assertIn('package/rules/lens-1.txt', paths)
@@ -120,6 +130,63 @@ class Installation(unittest.TestCase):
         code, result = self.install()
         self.assertEqual((code, result['code']), (2, 'new_directory_required'))
         self.assertEqual((self.version / 'manifest.json').read_bytes(), old_manifest)
+
+    def current_fixture(self):
+        from current_knowledge_fixture import CurrentFixture, install_bridge
+        code, installed = self.install()
+        self.assertEqual(code, 0, installed)
+        f = CurrentFixture()
+        self.addCleanup(f.close)
+        install_bridge(f)
+        for key in ('binary', 'binary_sha256', 'package', 'package_sha256', 'python'):
+            f.binding[key] = installed[key]
+        f.save_binding()
+        f.record('Read workspace-b/marker.txt')
+        return f
+
+    def test_installed_current_read_check_launch_and_no_retry(self):
+        f = self.current_fixture()
+        read = f.state / 'read'
+        code, result = self.run_launcher('current', 'read', '--binding', f.binding_path,
+                                        '--request', f.request_path, '--run-dir', read)
+        self.assertEqual(code, 0, result)
+        raw = (read / 'material.json').read_bytes()
+        for action in ('check', 'launch'):
+            code, result = self.run_launcher('current', action, '--binding', f.binding_path,
+                '--evidence', read / 'evidence.json', '--run-dir', f.state / action,
+                extra_env={'MN_SYNTHETIC_AUTH': 'synthetic-secret'})
+            self.assertEqual(code, 0, result)
+        trace = json.loads((f.private / 'bridge-trace.jsonl').read_text())
+        self.assertEqual(trace['sha256'], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(trace['opened'], 'workspace-b/marker.txt')
+        self.assertTrue(trace['inherited_auth'])
+        self.assertTrue(trace['ledger_matches'])
+        self.assertFalse((read / 'material.json').exists())
+        code, result = self.run_launcher('current', 'launch', '--binding', f.binding_path,
+            '--evidence', read / 'evidence.json', '--run-dir', f.state / 'retry')
+        self.assertEqual((code, result['code']), (3, 'delivery_already_attempted'))
+        self.assertFalse(list(self.version.rglob('__pycache__')))
+        self.assertEqual(self.run_launcher('verify')[0], 0)
+
+    def test_current_preflight_blocks_other_install_and_tampering(self):
+        f = self.current_fixture()
+        second = self.f.private / 'version-2'
+        self.assertEqual(self.install(second)[0], 0)
+        run = f.state / 'blocked'
+        args = ('current', 'read', '--binding', f.binding_path,
+                '--request', f.request_path, '--run-dir', run)
+        code, result = self.run_launcher(*args, version=second)
+        self.assertEqual((code, result['code']), (2, 'installation_binding_mismatch'))
+        self.assertFalse(run.exists())
+        self.assertEqual(self.run_launcher(*args, '--binding', f.binding_path)[1]['code'],
+                         'explicit_binding_required')
+        self.assertEqual(self.run_launcher('current', 'apply')[1]['code'], 'invalid_command')
+        self.assertEqual(self.run_launcher(*args, '--approve', 'unused')[1]['code'], 'invalid_command')
+        path = self.version / 'package/current_knowledge.py'
+        path.write_text('raise RuntimeError("must never import")')
+        code, result = self.run_launcher(*args)
+        self.assertEqual((code, result['code']), (2, 'installation_changed'))
+        self.assertFalse(run.exists())
 
     def test_bad_binary_hash_and_non_task_executable_fail_before_creation(self):
         code, result = self.install(**{'binary-sha256': '0' * 64})

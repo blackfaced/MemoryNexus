@@ -14,6 +14,8 @@ authorize installation, bind, migration, client edits or scheduler edits.
 | Machine binding | Owner-only profile/binding/state; exact config/task ID, ledger, format/incarnation, rules, targets; verify and public status | NOT RUN |
 | Caller inventory | Every interactive/scheduled/wrapper/backup entry resolves current ledger and compatible binary; no retired-ledger writer | NOT RUN |
 | Manual workflow | Same launcher/binding from both entry templates; capture → two Lens decisions → explicit publish approvals; no-op repeat | NOT RUN |
+| Installed current entry | Verified package read/check/launch; exact stdin digest/action; cross-install and tamper refusal; permanent delivery claim | NOT RUN |
+| Reader/bridge binding | Separate private reader state, matching package/workflow pins; actual bridge/client/config hashes and input inventory | NOT RUN |
 | Actual MiniMax | Fresh actual session and executor evidence, not just client label | NOT RUN |
 | Actual Codex | Fresh actual session, same task/state and bidirectional read/write; original-byte replay | NOT RUN |
 | Schedule definition | Owner-selected existing entry ID; before, exact approved diff, independently read after; preserved unrelated fields/notification policy | NOT RUN |

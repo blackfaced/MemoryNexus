@@ -31,12 +31,15 @@ def selected(path):
             or path.startswith(INTEGRATION + 'memorynexus-')
             or path.startswith('integrations/minimax/memorynexus-task-memory/')
             or path == 'integrations/codex/task-memory.md'
+            or path.startswith('docs/current-knowledge/')
+            or path.startswith('docs/current-knowledge-')
+            or path == 'docs/acceptance/current-knowledge.md'
             or path.startswith('docs/repository-memory/')
             or path.startswith('docs/repository-memory-')
             or path in ('docs/task-memory-contract.md', 'docs/task-memory-onboarding.md',
                         'docs/acceptance/task-memory-cross-client.md',
                         'docs/acceptance/repository-memory-installation.md')
-            or path.startswith(('decisions/ADR-027-', 'decisions/ADR-028-', 'decisions/ADR-029-'))):
+            or path.startswith(('decisions/ADR-027-', 'decisions/ADR-028-', 'decisions/ADR-029-', 'decisions/ADR-030-'))):
         return 'package/' + path
     return None
 
