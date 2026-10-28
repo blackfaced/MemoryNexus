@@ -146,10 +146,17 @@ def main():
         if not sys.flags.isolated:
             raise InstallError('isolated_python_required')
         argv = sys.argv[1:]
-        if not argv or argv[0] not in COMMANDS | {'verify'}:
+        if not argv or argv[0] not in COMMANDS | {'verify', 'current'}:
             raise InstallError('invalid_command')
+        current = argv[0] == 'current'
+        if current:
+            argv = argv[1:]
+            if not argv or argv[0] not in {'read', 'check', 'launch'}:
+                raise InstallError('invalid_command')
         flags = {'--binding', '--root', '--selection', '--run-dir', '--workflow', '--client',
                  '--prepared', '--submission', '--plan', '--approve'}
+        if current:
+            flags = {'--binding', '--request', '--evidence', '--run-dir'}
         if any(arg.startswith('--') and arg.partition('=')[0] not in flags for arg in argv[1:]):
             raise InstallError('invalid_command')
         root = Path(__file__).absolute().parent
@@ -158,6 +165,24 @@ def main():
         from workflow_cli import load_context
         from workflow_io import WorkflowError
         try:
+            if current:
+                # Check installation identity before the adapter creates artifacts.
+                b = parse(read(binding_argument(argv), 32768, private=True))
+                if not isinstance(b, dict) or any(b.get(key) != value for key, value in {
+                    'binary': str(root / 'bin/memorynexus-feedback-cli'),
+                    'binary_sha256': manifest['binary_sha256'],
+                    'package': str(root / 'package'),
+                    'package_sha256': manifest['package_sha256'],
+                    'python': manifest['python'],
+                }.items()):
+                    raise InstallError('installation_binding_mismatch')
+                import runpy
+                # Execute the installed script with its real entry identity.
+                # Preserve bridge authentication; the adapter pins CLI/ledger env.
+                entry = str(root / 'package/current_knowledge.py')
+                sys.argv = [entry, *argv]
+                runpy.run_path(entry, run_name='__main__')
+                raise InstallError('invalid_command')
             ctx = None
             if argv[0] not in ('inspect', 'verify') or (argv[0] == 'verify' and len(argv) > 1):
                 ctx = load_context(binding_argument(argv))
