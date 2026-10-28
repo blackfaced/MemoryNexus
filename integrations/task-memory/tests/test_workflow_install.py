@@ -28,7 +28,7 @@ class Installation(unittest.TestCase):
         original = REPO / 'integrations/task-memory'
         for name in ('scripts', 'memorynexus-task-bootstrap', 'memorynexus-repo-onboard', 'memorynexus-repository-review'):
             shutil.copytree(original / name, integration / name, ignore=shutil.ignore_patterns('__pycache__'))
-        for name in ('PROTOCOL.md', 'launch.py'):
+        for name in ('PROTOCOL.md', 'launch.py', 'codex_bridge.py', 'install_codex_bridge.py'):
             shutil.copyfile(original / name, integration / name)
         for name in ('integrations/minimax/memorynexus-task-memory', 'integrations/codex', 'docs/repository-memory', 'docs/current-knowledge'):
             shutil.copytree(REPO / name, cls.source / name)
