@@ -33,7 +33,7 @@ def selected(path):
             or path == 'integrations/codex/task-memory.md'
             or path.startswith('docs/current-knowledge/')
             or path.startswith('docs/current-knowledge-')
-            or path == 'docs/acceptance/current-knowledge.md'
+            or path in ('docs/acceptance/current-knowledge.md', 'docs/acceptance/codex-bridge.md')
             or path.startswith('docs/repository-memory/')
             or path.startswith('docs/repository-memory-')
             or path in ('docs/task-memory-contract.md', 'docs/task-memory-onboarding.md',

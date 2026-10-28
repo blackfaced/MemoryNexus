@@ -1,6 +1,8 @@
 # Pinned read-only Codex bridge
 
 Implementation ticket: #337, following the local real-client probe in #336.
+[Acceptance evidence](acceptance/codex-bridge.md) separates deterministic fixtures
+from the generated bridge's real local Codex probe.
 This bridge supports the observed `codex-cli 0.162.0` JSON event protocol. It starts
 one fresh, ephemeral, read-only Codex session from current material supplied by the
 frozen adapter. It is not a general client launcher or a writable coding session.
