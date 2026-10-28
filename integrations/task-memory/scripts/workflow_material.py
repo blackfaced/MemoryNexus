@@ -227,7 +227,7 @@ def validate_prepared(v):
                 uuid(w['previous_approval_id'])
         else:
             recovery(w)
-    reasons = ('awaiting_extraction', 'awaiting_review', 'awaiting_approval', 'target_queued', 'partial_tail', 'source_unavailable', 'blocked_unit', 'plan_missing', 'restore_gate')
+    reasons = ('awaiting_extraction', 'awaiting_review', 'awaiting_approval', 'target_queued', 'partial_tail', 'source_unavailable', 'blocked_unit', 'plan_missing', 'restore_gate', 'unselected')
     for r in arr(v['remaining'], 20):
         fields(r, ('id', 'reason'))
         string(r['id'], 128)

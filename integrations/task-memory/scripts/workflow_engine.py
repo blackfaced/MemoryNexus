@@ -85,6 +85,22 @@ def block_generations(decisions, publications):
 def prepare(a, ctx):
     if getattr(a, 'removals', None) and a.workflow != 'publish':
         fail('invalid_input')
+    selection = None
+    if getattr(a, 'publish_selection', None):
+        if a.workflow != 'publish' or getattr(a, 'removals', None):
+            fail('invalid_input')
+        from workflow_types import uuid as valid_uuid
+        request = load(a.publish_selection)
+        exact(request, ['schema_version', 'items'])
+        if type(request['schema_version']) is not int or request['schema_version'] != 1 or not isinstance(request['items'], list) or not 1 <= len(request['items']) <= 2:
+            fail('invalid_input')
+        selection = {}
+        for x in request['items']:
+            exact(x, ['decision_id', 'purpose'])
+            valid_uuid(x['decision_id'])
+            if x['decision_id'] in selection or x['purpose'] not in ('publish', 'neutralize'):
+                fail('invalid_input')
+            selection[x['decision_id']] = x['purpose']
     header(ctx, allow_recovery=a.workflow == 'recovery')
     b = ctx['binding']
     run = new_run(a.run_dir, state_root=b['state_root'], task_root=b['task_root'])
@@ -165,6 +181,9 @@ def prepare(a, ctx):
             if purpose == 'neutralize':
                 if generations.get(d['block_id'], 0) > d['generation']:
                     continue
+            if selection is not None and selection.get(d['decision_id']) != purpose:
+                remaining.append(dict(id=d['decision_id'], reason='unselected'))
+                continue
             target = c['target_id']
             output = retained_output(ctx, d) if purpose == 'publish' else None
             if purpose == 'publish' and (not output):
@@ -203,6 +222,8 @@ def prepare(a, ctx):
             if purpose == 'neutralize':
                 w['previous_approval_id'] = next((p['approval_id'] for p in pubs if p['publication'] == 'applied' and (not p.get('maintenance'))))
             items.append(w)
+    if selection is not None and {w['decision_id']: w['purpose'] for w in items} != selection:
+        fail('invalid_input')
     if a.workflow == 'recovery':
         from workflow_recovery import prepare_recovery
         (items, recovery_pending) = prepare_recovery(ctx, publications)
