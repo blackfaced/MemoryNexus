@@ -1,9 +1,9 @@
 # Shared task memory: real-client acceptance TODO
 
-Status: **PARTIAL — the mechanism is verified twice on this machine: once on a
-synthetic task, then on a real owner task directory with a recurring review
-entry. The Codex client could not be reached and the owner decision is still
-missing.**
+Status: **PARTIAL — earlier MiniMax task/review evidence remains valid in its
+original scope. On 2026-10-28, local Codex 0.162.0 completed a fresh-session
+current-knowledge A→B marker probe. Full MiniMax↔Codex bidirectional handoff,
+native input coverage and the owner continuation decision remain incomplete.**
 
 The owner confirmed on 2026-10-21 that the other machine cannot currently be
 provided. A run on that date exercised the protocol and the CLI end to end on
@@ -15,6 +15,68 @@ the same ledger. That run proves the mechanism works on real task content; it
 does **not** satisfy the Codex-specific case, and it is not owner acceptance.
 [#301](https://github.com/blackfaced/MemoryNexus/issues/301) and parent
 [#296](https://github.com/blackfaced/MemoryNexus/issues/296) stay open.
+
+## 2026-10-28: local Codex current-knowledge probe
+
+The owner selected the local Codex runtime. This run used a new private synthetic
+task/ledger and a disposable bridge, not the existing remote pilot or its production
+binding. The prior Codex reachability failure below describes the earlier runtime;
+it is not the current status of this local CLI.
+
+- Installed source: `61c4dae6d4c48906fb898c7dd8f8d5c94be3bdf4` (#335), through
+  the official installer into a new isolated version directory. This is temporary
+  acceptance installation, not a stable production deployment.
+- Real CLI: `codex-cli 0.162.0`, existing ChatGPT login, default configured model.
+  Used the existing AIWB wrapper, without altering registry, client configuration,
+  authentication, project instructions or schedules. Sandbox preflight blocked the
+  wrapper initially; the authorized probe then ran outside the outer sandbox with
+  the child Codex explicitly restricted to `--sandbox read-only`.
+- Runtime invocation: `codex exec --ephemeral --json --sandbox read-only
+  --skip-git-repo-check -C <synthetic-task> <fixed-test-instruction>`. The fixed
+  instruction asked for the marker named by the current stdin material; it
+  contained neither A nor B. No resume/fork or previous conversation was used.
+- The real MemoryNexus CLI recorded A, then explicitly corrected that exact record
+  to B in the synthetic ledger. Installed `launch.py current read` produced 646
+  bytes. `current launch` rechecked them and sent them unchanged to the bridge;
+  the bridge passed the same bytes as Codex stdin alongside the fixed instruction.
+- Codex JSON events reported a new thread, successful command execution
+  `cat workspace-b/marker.txt`, and `turn.completed`. The command output digest
+  matches B's marker. No command to A appeared in the captured command events.
+- Bridge returned acknowledgement only after Codex exited successfully and emitted
+  the session/completion events. Delivery ID/hash matched the original read;
+  material was removed afterwards. A repeated installed launch returned exit 3 /
+  `delivery_already_attempted`, with the client proof unchanged and no new spawn.
+
+| Evidence | Value |
+| --- | --- |
+| read_id | `cc242ed2-96cb-474d-b381-c900c2db0e84` |
+| fresh session | `01a1808e-e1f5-7de2-8e39-e3a1e8cadd32` |
+| material SHA-256 | `ce66d0bb36bda2bee18f175f5a8b1b4d1b190b8ec0680d2f1dd4a8a095516013` |
+| marker/action output SHA-256 | `13dd66a18f4c37dc1fe9c756ccd78ee52c872798b698d453dc2a8c4c6a90f1d5` |
+| sanitized client proof SHA-256 | `168a095262194fa194ec6d45070dd138d09d5690e735359455e0225f1981b4a2` |
+| test binary source | `46434b06a7304ce421aa8d020657675066f8249e` (Rust unchanged in installed source) |
+| test binary SHA-256 | `3ff8ad8c4ae9d398ccde82e82bdff10f86010d408376e6ec9a639d883a275b23` |
+
+Private evidence retains installed manifest, reader binding, read/result/evidence,
+delivery claim/receipt, sanitized client command events and verdict. No credentials,
+raw model prompt or raw stderr were retained in this evidence bundle. Client/wrapper/
+registry/config digests were observed during the run and checked unchanged after it;
+these are not a pre-spawn, enforced pin of the full client dependency closure.
+The bridge executable itself was pinned and checked by the adapter.
+
+**PASS only for this local probe:** installed read→recheck→exact process stdin,
+fresh real Codex command/action and duplicate-launch refusal. The JSON CLI events
+are client-reported action evidence, not an independent server-side model-input
+trace. Codex wraps stdin with the fixed instruction; raw model input and all
+AGENTS/native-memory/cache injection sources were not independently enumerated.
+Their coverage remains UNKNOWN; this does not claim whole-machine freshness.
+
+**Still pending:** a deployable bridge with enforced client/config pins and
+capability/failure handling, actual input inventory, the same-task MiniMax→Codex
+and Codex→MiniMax handoff, real repository/scheduler and recurring-backup evidence,
+and owner continuation decision. The synthetic correction was performed by the
+test harness, not by MiniMax or the child Codex. Do not mark either bidirectional
+acceptance row complete from this run. #301/#312/#313 and parent #317 remain open.
 
 Follow [the onboarding guide](../task-memory-onboarding.md). Synthetic CLI
 processes with `client: minimax` and `client: codex` are preflight only. Keep
