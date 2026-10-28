@@ -122,8 +122,9 @@ otherwise. Copying a pointer or changing a client label does not pass #301/#313.
 The same verified installation exposes `launch.py current read`, `current check`
 and `current launch`. These dispatch the frozen [current-knowledge adapter](current-knowledge-contract.md);
 the existing workflow commands above retain their meanings. Installation includes
-its modules, contract/examples, acceptance matrix and ADR-030. It does not create
-or select a real client bridge.
+its modules, contract/examples, acceptance matrix and ADR-030. It does not select a real client bridge. For the supported local Codex runtime,
+use the [pinned read-only bridge generator](repository-memory-codex-bridge.md)
+after reviewing its explicit client/configuration inventory.
 
 Prepare a separate owner-only reader binding using the frozen
 [current binding fields](current-knowledge-contract.md#binding). Copy the five
