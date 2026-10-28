@@ -1,7 +1,8 @@
-# Current knowledge G1 acceptance
+# Current knowledge acceptance
 
-Status: **CONTRACT v1 FROZEN (2026-10-27); G2 task read/check implemented and
-locally tested. G3 repository read/check is implemented below; bridge delivery and real clients remain pending.**
+Status: **CONTRACT v1 FROZEN (2026-10-27); G2 task read/check, G3 repository
+read/check and G4 bridge launch are implemented and tested with synthetic public
+processes. Actual MiniMax/Codex and scheduler acceptance remains separate.**
 Issue [#318](https://github.com/blackfaced/MemoryNexus/issues/318) delivers the
 [contract](../current-knowledge-contract.md), examples and implementation handoff.
 It does not install a bridge or complete real-client acceptance.
@@ -30,7 +31,7 @@ ledger, model, private repository, hook or scheduler is modified.
 supported stdin examples, with target/source IDs explicitly replaced from CLI
 responses. [read-request.json](../current-knowledge/examples/read-request.json)
 and [material.json](../current-knowledge/examples/material.json) use the frozen
-adapter contract. The complete G4 test will run separate CLI, adapter and child bridge processes;
+adapter contract. The G4 tests run separate CLI, adapter and child bridge processes;
 no direct database mutation, fake CLI response, or model label stands in for one.
 
 | Case | Setup/action through public interfaces | Required assertions |
@@ -56,11 +57,12 @@ For C10, search synthetic sentinel bodies in newly generated outputs, not merely
 in JSON state labels. Historical pre-withdrawal backup contents are not a failure
 of the post-withdrawal restore assertion and must not be silently deleted.
 
-Expected future test location:
-`integrations/task-memory/tests/test_workflow_current_knowledge.py`.
-Exact build/discovery commands and ownership are in the
-[runtime handoff](../current-knowledge/runtime-handoff.md). G2 task-only coverage is recorded below. C01–C12 are not marked complete end-to-end;
-repository coverage belongs to #328 and bridge/action coverage to #329.
+Implemented tests are `test_workflow_current_knowledge.py`,
+`test_workflow_current_knowledge_repository.py` and
+`test_workflow_current_knowledge_delivery.py` under `integrations/task-memory/tests/`.
+Build/discovery commands and ownership are in the
+[runtime handoff](../current-knowledge/runtime-handoff.md). The G4 matrix below
+combines their simulated coverage; it does not establish real-client acceptance.
 
 ## Separate execution columns
 
@@ -69,13 +71,13 @@ success into one total. Missing input visibility is UNKNOWN, not pass.
 
 | Evidence | Simulated public processes | Real MiniMax | Real Codex | Actual scheduler |
 | --- | --- | --- | --- | --- |
-| G1 installed binary/package/bridge SHA and binding | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
-| Current material bytes/IDs/R/I/source observations | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
-| Input delivery trace and fresh session/run identity | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
-| B marker action, without A/B answer in prompt/env/argv | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
-| Drift/withdrawal prevents use of old material | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
-| Remaining injected copies and bypass coverage | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
-| No-op/retry and actual scheduler trigger proof | NOT RUN | n/a | n/a | NOT RUN |
+| Pinned binary/package/bridge SHA and binding | PASS synthetic fixture | NOT RUN | NOT RUN | NOT RUN |
+| Current material bytes/IDs/R/I/source observations | PASS | NOT RUN | NOT RUN | NOT RUN |
+| Input delivery trace and fresh session/run identity | PASS fresh synthetic child | NOT RUN | NOT RUN | NOT RUN |
+| B marker action, without A/B answer in prompt/env/argv | PASS | NOT RUN | NOT RUN | NOT RUN |
+| Drift/withdrawal prevents covered launch of old material | PASS | NOT RUN | NOT RUN | NOT RUN |
+| Remaining injected copies and bypass coverage | Declared copies tested; bypass outside coverage | NOT RUN | NOT RUN | NOT RUN |
+| No-op/retry and actual scheduler trigger proof | Replay/claim PASS; scheduler NOT RUN | n/a | n/a | NOT RUN |
 
 Each private run record must include date/operator, source commit, OS, binary/
 package/bridge hashes, task and installation binding digest, client version and
@@ -151,7 +153,7 @@ required Clippy/Build/Test gates still apply to the PR.
 
 At the G2 baseline, repository mode, repository_binding and launch returned
 `unsupported_version`. G3 below implements repository read/check and binding
-verification; launch remains the #329 dependency gate. No bridge was installed, no
+verification. G4 below adds launch after the accepted G3 dependency. No bridge was installed, no
 actual client received material, and the real-client/scheduler table above stays
 NOT RUN for this adapter. Existing #301 PARTIAL evidence retains its own scope.
 This is a partial implementation of frozen v1, with no change to authority or
@@ -210,3 +212,90 @@ human regions or unobserved native caches. Material remains subject to the froze
 This is repository adapter acceptance only. No bridge, real MiniMax/Codex session
 or scheduled trigger ran, and the separate real-client columns remain NOT RUN for
 this adapter. #312/#301/#313 and the existing #283 gate retain their own scope.
+
+
+## G4 bridge delivery implementation (2026-10-27)
+
+Implementation source: `09b12285cf226dcb9a3d0a266db4ae6a2b04ecec` (#329). G3 was
+reviewed and accepted at `fd05036f73ce7ed08d6b9f1d6b5cedacfcd85750` in #331,
+after all required CI checks passed. G4 uses the same frozen v1 contract and
+unchanged Rust CLI binary/source/hash recorded above.
+
+`launch` uses the complete task/repository check, reconstructs the original bytes,
+checks the pinned executable, and creates/fsyncs an exclusive no-follow claim in
+the original read directory before spawning one bridge. The child receives only
+those bytes on stdin, no shell or extra argv, with the bound cwd and ledger.
+Bounded ack/timeout/pipe handling separates acknowledged from unknown delivery.
+An existing claim blocks later attempts even under another run directory. Neither
+a failed spawn nor a missing ack authorizes automatic retry. Evidence stores no
+authentication environment, stderr or material body; material is purged after
+an attempt. Following a crash, the next adapter invocation purges identifiable
+claimed material while preserving the claim. A crashed run without delivery.json
+is unresolved, never an implied successful or safe-to-repeat launch.
+
+Changed files: new `scripts/current_knowledge_delivery.py` and
+`tests/test_workflow_current_knowledge_delivery.py`, plus the existing entry,
+transport/evidence helpers, test fixture and the obsolete unsupported-launch test
+expectation. No existing workflow runner behavior, Rust/schema, installer or real
+client hook changed. The runtime does not create a scheduler or model client.
+
+### Combined synthetic C01–C12 evidence
+
+| Case | Result and precise scope |
+| --- | --- |
+| C01 | PASS: one two-task fixture records A, reviews a candidate, publishes both consumers, corrects the exact current ID to B, rejects both old snapshots, and republishes with fresh approval. Separate task and repository launches receive the exact new bytes and actually open B's marker; neither covered child opens A. |
+| C02 | PASS: G2 exact replay/competing correction/race tests establish one current revision. G4 never replaces a stale snapshot during launch. |
+| C03 | PASS: candidates remain metadata-only in task input; draft/auxiliary record/source/candidate dependencies retain original trust in repository output. No candidate body is delivered. |
+| C04 | PASS: explicit superseded history remains audit material; history launch refuses before claim/spawn. |
+| C05 | PASS: G2 strict/empty/overflow/missing-ledger/timeout refusals produce no usable original evidence; G4 missing/changed bridge and invalid original evidence cannot spawn. |
+| C06 | PASS: real task/page revision races, final source/file rechecks, immutable check/launch comparison and concurrent delivery claims. A post-check external write remains a documented finite-observation limit. |
+| C07 | PASS: G3 source/JSONL/profile/target drift cases; G4 actual upstream source mutation and injected stale target block stop launch before claim. Human regions remain unchanged. |
+| C08 | PASS within declared-file scope: external old cache blocks covered reads/launch; independent cache contents are preserved. An explicit direct-bridge bypass test can still read independently cached A bytes, with no adapter claim/delivery record. That is outside coverage, not freshness success. Native injection visibility remains a real-client gate. |
+| C09 | PASS: task/config/repository mismatch and cross-task context tests; task X in the combined fixture receives no A/B instruction body. |
+| C10 | PASS: task correction/retraction/backup/restore and repository restored-incarnation tests; old material cannot launch and is purged. Prior independent backups/copies remain outside chain erasure. |
+| C11 | PASS: exact stdin hash, actual marker read/hash, fresh child PID/session receipt, bound cwd/ledger and inherited synthetic auth. Wrong ID/hash, extra/duplicate fields, oversized ack/session, stderr overflow, nonzero exit, lost ack, timeout and spawn failure produce unknown; claim prevents repeat. |
+| C12 | PASS: G2/G3 strict input/path/artifact/paging bounds and G4 claim symlink/crash/concurrent-process cases. Cross-ID contradictory records and bypass remain explicit limits, not semantic dedup or whole-machine enforcement. |
+
+The A/B selection comes only from material text: neither marker choice is supplied
+in argv, environment or a separate prompt. The bridge code performs a bounded
+synthetic marker selection, opens that relative file in the bound task root and
+records its digest. This proves the adapter's controlled test path, not model
+comprehension or any installed MiniMax/Codex bridge. The deliberate bypass case
+is separate from the covered C01 trace and is never counted as a compliant action.
+
+Validation at the implementation source: 48 affected current-knowledge tests
+passed (17 task, 17 repository, 14 delivery; the initial 46-test run plus two
+boundary tests), 22 bootstrap tests passed, no skips. The full workflow regression
+and exact-head required CI are recorded in the #329 PR. Python source parsing,
+`cargo fmt --all -- --check` and `git diff --check` passed. No new Rust tests were
+added because Rust behavior did not change; remote Format/Clippy/Build/Test and
+PostgreSQL integration remain mandatory. The optional external-service Acceptance
+job is not a substitute for the real-client columns above.
+
+### Actual-install handoff
+
+[#312](https://github.com/blackfaced/MemoryNexus/issues/312) must install a versioned
+package/CLI and an explicitly selected, pinned client bridge on the target machine.
+Its existing #325 workflow launcher invokes workflow operations and is not a
+client bridge. Keep the reader state root separate from workflow runs, ledger and
+package; store the strict current binding owner-only. A package/binary/binding
+change also requires the existing confirmed workflow-binding/reconciliation path;
+do not silently reuse previous publication authority after changing its pin.
+
+The bridge must establish a fresh real session, deliver the exact stdin bytes and
+return the frozen ack only after real delivery. Pin and record the actual client
+version/configuration as well as the bridge hash. Missing client capability is
+bridge_unavailable/unknown, never a fabricated ack. Inventory AGENTS/skills/native
+memory/cache inputs: declared external copies remain unknown under v1. A successful
+synthetic bridge cannot justify deleting an inventory entry or promising the old
+chat history is erased.
+
+[#301](https://github.com/blackfaced/MemoryNexus/issues/301) retains the actual
+MiniMax↔Codex handoff and owner decision. [#313](https://github.com/blackfaced/MemoryNexus/issues/313)
+retains the repository workflow and actual scheduler trigger/no-op/retry evidence.
+Record client input trace, fresh real session IDs, B-marker action, hashes and
+unknown injected inputs in those existing private acceptance records. Do not retry
+an unknown delivery by deleting its claim; reconcile client evidence first.
+No real client, native hook, scheduler, production ledger or private repository
+was changed by G4. #317 remains the parent for real-use feedback and later phases;
+#283 and the legacy contraction gates remain unchanged.

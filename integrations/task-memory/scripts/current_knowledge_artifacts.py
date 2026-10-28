@@ -108,7 +108,11 @@ def cleanup(state):
         try:
             if child.is_symlink() or not child.is_dir(): continue
             evidence, _, run = read_origin(child / 'evidence.json', root)
-            if expired(evidence):
+            try:
+                (run / 'delivery-started.json').lstat()
+                attempted = True
+            except FileNotFoundError: attempted = False
+            if expired(evidence) or attempted:
                 verify_material(run, evidence['material']); purge(run)
         except (WorkflowError, OSError, ValueError, TypeError, RecursionError):
             # Unknown/damaged artifacts belong to the owner, not our cleanup.
