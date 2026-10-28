@@ -35,6 +35,32 @@ File baseline and block identity are rechecked immediately before replacement.
 The retained plan handles response loss and recovery exactly as publication does;
 a restored ledger requires reconciliation and renewed authorization.
 
+## Publication selection (#339)
+
+`prepare --workflow publish --publish-selection SELECT.json` accepts strict JSON
+`{"schema_version":1,"items":[{"decision_id":"UUID","purpose":"publish"}]}`.
+One or two unique decisions, purpose `publish` or `neutralize`, at most one per
+target. Empty selections, unknown decisions, unsupported purposes, conflicting
+targets and ineligible work fail explicitly. This flag is mutually exclusive
+with `--removals` and is rejected for other workflows. Omission retains FIFO.
+
+Selection filters candidates before target allocation and truncation; it cannot
+add fabricated prepared items or change their order. Unselected eligible work
+remains `unselected` in remaining (with total count when truncated), without any
+ledger decision change. The immutable prepared snapshot and canonical plan bind
+exactly the selected effects. Preview still requires `items: []`; it is not a
+second selection mechanism. Publish/remove always require owner digest. Selected
+pure neutralization alone retains its existing explicit profile policy.
+
+Command acceptance: create two targets headed by neutralization with later
+publishable decisions; prepare with their decision IDs must select those later
+publishes only, preview/apply with owner digest updates them while preserving the
+old blocks and publication history. Unknown/duplicate/same-target/empty requests
+fail without effects. Missing output and stale snapshot cannot be bypassed.
+Default preparation remains unchanged. Following an approved #338 removal,
+fresh default preparation can publish successors without recreating removed
+blocks. No production deployment is part of either issue.
+
 ## Command-level acceptance
 
 Use synthetic files, two consumers and the compiled CLI in separate processes.
