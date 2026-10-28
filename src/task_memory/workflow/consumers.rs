@@ -98,7 +98,13 @@ pub(super) fn validate(action: &str, v: &mut Value) -> Result<(), Error> {
             envelope(
                 v,
                 &["decision_id", "decision_sha256", "proposal"],
-                &["confirmation", "maintenance"],
+                &[
+                    "confirmation",
+                    "maintenance",
+                    "previous_approval_id",
+                    "reason",
+                    "prior_block_sha256",
+                ],
             )?;
             canonical_uuid(string(v, "decision_id")?)?;
             hash(string(v, "decision_sha256")?)?;
@@ -130,7 +136,15 @@ pub(super) fn validate(action: &str, v: &mut Value) -> Result<(), Error> {
             if p["base_exists"] == false && p["base_sha256"] != hash_bytes(b"") {
                 return Err(Error::invalid());
             }
-            if v.get("maintenance").is_some() {
+            if v["maintenance"] == "remove" {
+                literal(v, "confirmation", "confirmed")?;
+                canonical_uuid(string(v, "previous_approval_id")?)?;
+                bounded(string(v, "reason")?, 240)?;
+                hash(string(v, "prior_block_sha256")?)?;
+                if p["base_exists"] != true || p["output_sha256"] != hash_bytes(b"") {
+                    return Err(Error::invalid());
+                }
+            } else if v.get("maintenance").is_some() {
                 literal(v, "maintenance", "neutralize")?;
                 if v.get("confirmation").is_some() {
                     return Err(Error::invalid());
@@ -140,6 +154,13 @@ pub(super) fn validate(action: &str, v: &mut Value) -> Result<(), Error> {
                     return Err(approval());
                 }
                 literal(v, "confirmation", "confirmed")?;
+            }
+            if v["maintenance"] != "remove"
+                && ["previous_approval_id", "reason", "prior_block_sha256"]
+                    .iter()
+                    .any(|k| v.get(*k).is_some())
+            {
+                return Err(Error::invalid());
             }
         }
         _ => return Err(Error::invalid()),
@@ -506,7 +527,38 @@ async fn approve(
         return Err(recovery());
     }
     let c = consumer(profile, string(&d, "consumer_id")?)?;
-    if maintenance {
+    if v["maintenance"] == "remove" {
+        let prior = publication_data(conn, task, string(v, "previous_approval_id")?).await?;
+        if prior["decision_id"] != d["decision_id"]
+            || prior.get("maintenance").is_some()
+            || prior["proposal"]["target_id"] != proposal["target_id"]
+            || prior["proposal"]["block_id"] != proposal["block_id"]
+            || prior["proposal"]["output_sha256"] != v["prior_block_sha256"]
+            || c["target_id"] != d["target_id"]
+            || latest_attempt(conn, task, string(v, "previous_approval_id")?)
+                .await?
+                .map_or(true, |a| a["outcome"] != "applied")
+        {
+            return Err(approval());
+        }
+        let newer: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM task_consumer_decisions d
+             JOIN task_publications p ON p.decision_id=d.decision_id AND p.task_id=d.task_id
+             JOIN task_publication_attempts a ON a.approval_id=p.approval_id
+             WHERE d.task_id=? AND d.workflow_id=? AND json_extract(d.data,'$.block_id')=?
+             AND d.generation>? AND json_extract(a.data,'$.outcome')='applied')",
+        )
+        .bind(task)
+        .bind(string(&d, "workflow_id")?)
+        .bind(string(&d, "block_id")?)
+        .bind(d["generation"].as_i64().ok_or_else(Error::invalid)?)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(Error::storage)?;
+        if newer {
+            return Err(approval());
+        }
+    } else if maintenance {
         if !matches!(d["validity"].as_str(), Some("stale" | "retracted"))
             || c["neutralize_stale"] != true
             || c["target_id"] != d["target_id"]
@@ -577,13 +629,16 @@ async fn approve(
     let existing=sqlx::query("SELECT data FROM task_publications WHERE task_id=? AND decision_id=? ORDER BY workflow_sequence").bind(task).bind(string(&d,"decision_id")?).fetch_all(&mut *conn).await.map_err(Error::storage)?;
     for r in existing {
         let p: Value = serde_json::from_str(&r.get::<String, _>("data")).map_err(Error::storage)?;
-        if p.get("maintenance").is_some() != maintenance
+        if p.get("maintenance") != v.get("maintenance")
             || p["incarnation"] != v["incarnation"]
             || p["profile_revision"] != v["profile_revision"]
         {
             continue;
         }
         if p["proposal"] == *proposal
+            && ["previous_approval_id", "reason", "prior_block_sha256"]
+                .iter()
+                .all(|k| p.get(*k) == v.get(*k))
             && p["incarnation"] == v["incarnation"]
             && p["profile_revision"] == v["profile_revision"]
         {
@@ -599,7 +654,12 @@ async fn approve(
     let id = Uuid::new_v4().to_string();
     let mut p = json!({"approval_id":id,"decision_id":d["decision_id"],"incarnation":v["incarnation"],"profile_revision":v["profile_revision"],"proposal":proposal,"validity":d["validity"]});
     if maintenance {
-        p["maintenance"] = json!("neutralize");
+        p["maintenance"] = v["maintenance"].clone();
+        if v["maintenance"] == "remove" {
+            for k in ["previous_approval_id", "reason", "prior_block_sha256"] {
+                p[k] = v[k].clone();
+            }
+        }
     } else {
         d["decision"] = json!("approved");
         sqlx::query("UPDATE task_consumer_decisions SET data=? WHERE decision_id=?")

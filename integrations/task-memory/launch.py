@@ -154,7 +154,7 @@ def main():
             if not argv or argv[0] not in {'read', 'check', 'launch'}:
                 raise InstallError('invalid_command')
         flags = {'--binding', '--root', '--selection', '--run-dir', '--workflow', '--client',
-                 '--prepared', '--submission', '--plan', '--approve'}
+                 '--prepared', '--submission', '--plan', '--approve', '--removals'}
         if current:
             flags = {'--binding', '--request', '--evidence', '--run-dir'}
         if any(arg.startswith('--') and arg.partition('=')[0] not in flags for arg in argv[1:]):

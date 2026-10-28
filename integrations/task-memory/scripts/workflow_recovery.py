@@ -106,7 +106,7 @@ def apply_recovery(ctx, run, plan, item, index):
     if state in ('conflict', 'uncertain', 'restored'):
         result['code'] = 'recovery_required' if state == 'restored' else 'stale_snapshot'
         return result
-    if state == 'before' and pubs[0]['validity'] != 'current':
+    if state == 'before' and pubs[0]['validity'] != 'current' and original.get('purpose') != 'remove':
         raise WorkflowError('stale_snapshot')
     # publication() replays original approval, then verifies current authority
     # before write, or reports already-observed after bytes without replacement.
