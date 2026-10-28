@@ -627,6 +627,7 @@ async fn approve(
         }
     }
     let existing=sqlx::query("SELECT data FROM task_publications WHERE task_id=? AND decision_id=? ORDER BY workflow_sequence").bind(task).bind(string(&d,"decision_id")?).fetch_all(&mut *conn).await.map_err(Error::storage)?;
+    let mut reusable_removal = None;
     for r in existing {
         let p: Value = serde_json::from_str(&r.get::<String, _>("data")).map_err(Error::storage)?;
         if p.get("maintenance") != v.get("maintenance")
@@ -642,6 +643,12 @@ async fn approve(
             && p["incarnation"] == v["incarnation"]
             && p["profile_revision"] == v["profile_revision"]
         {
+            if v["maintenance"] == "remove" {
+                // Do not return an older matching failure before checking for
+                // a newer pending/applied approval of a different plan.
+                reusable_removal = Some(p);
+                continue;
+            }
             return Ok(Operation {
                 changed: false,
                 result: approval_result(conn, task, &p).await?,
@@ -649,7 +656,24 @@ async fn approve(
                 id: string(&p, "approval_id")?.into(),
             });
         }
+        if v["maintenance"] == "remove"
+            && latest_attempt(conn, task, string(&p, "approval_id")?)
+                .await?
+                .is_some_and(|a| matches!(a["outcome"].as_str(), Some("failed" | "conflict")))
+        {
+            // A new owner-approved plan may follow a recorded terminal failure.
+            // Keep the old approval, attempts and idempotency receipts intact.
+            continue;
+        }
         return Err(Error::conflict());
+    }
+    if let Some(p) = reusable_removal {
+        return Ok(Operation {
+            changed: false,
+            result: approval_result(conn, task, &p).await?,
+            kind: "approval",
+            id: string(&p, "approval_id")?.into(),
+        });
     }
     let id = Uuid::new_v4().to_string();
     let mut p = json!({"approval_id":id,"decision_id":d["decision_id"],"incarnation":v["incarnation"],"profile_revision":v["profile_revision"],"proposal":proposal,"validity":d["validity"]});

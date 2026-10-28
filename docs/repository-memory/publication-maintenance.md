@@ -35,6 +35,44 @@ File baseline and block identity are rechecked immediately before replacement.
 The retained plan handles response loss and recovery exactly as publication does;
 a restored ledger requires reconciliation and renewed authorization.
 
+## Renewing a conflicted removal (#344)
+
+A removal approval with a latest `publication-result` outcome of `failed` or
+`conflict` does not reserve the block forever. Prepare a fresh `--removals` run
+against the current intact block and file baseline, preview its complete diff,
+and obtain the new canonical plan digest from the owner. Apply with that digest
+creates a distinct approval and attempt when the proposal differs. Preserve all
+earlier approvals, attempts and receipts; do not rewrite them as successful.
+
+An approval without an attempt is pending and blocks a different proposal. An
+applied removal also blocks a different proposal. Check every matching removal
+approval in the same decision/incarnation/profile revision before reusing an old
+failed proposal, so it cannot bypass a newer pending or successful removal.
+The exact same proposal and removal metadata may reuse the same approval. An
+exact original request/key replays its existing receipt; changed bytes on the
+same key conflict. New plans use new keys and require fresh owner approval.
+Ordinary publication and neutralization approval rules are unchanged. Existing
+block ownership, intact-body, target-baseline and recovery gates still apply.
+
+Command acceptance: publish a fixture block, preview removal, append human text
+outside its block, then apply to record `conflict` without overwriting the file.
+Reprepare/preview; no digest or the old digest must refuse without writes. The
+new digest must remove only the block and retain the human text, using a new
+approval/attempt while every historical failure and receipt remains. Repeat with
+multiple conflicts and a recorded failed outcome; pending and applied approvals
+must reject a competing proposal. Original-key replay and changed-key-body
+conflict remain distinct. Run the existing restored-ledger/newer-owner and
+publication-selection regressions as well. All fixtures are isolated.
+
+Reproduce against a fixed compiled binary (do not rebuild it during the tests):
+
+```sh
+cargo build --locked --bin memorynexus-feedback-cli
+MEMORYNEXUS_TEST_BINARY="$PWD/target/debug/memorynexus-feedback-cli" \
+  PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s integrations/task-memory/tests -p 'test_workflow_removal_reapproval.py' -v
+```
+
 ## Publication selection (#339)
 
 `prepare --workflow publish --publish-selection SELECT.json` accepts strict JSON
