@@ -62,7 +62,15 @@ python3 scripts/task-memory-smoke.py --binary "$MEMORYNEXUS_BIN"
 把该二进制放到两种执行器都能访问的位置。新安装路径不要覆盖仍用于个人实验的已验证
 二进制，直到既有命令的回归检查通过。通过 `"$MEMORYNEXUS_BIN" task --help`
 核对 schema version 1 和 init/record/context/review/correct/retract/backup/restore/export
-能力；缺少任何所需命令就停止，不回退到 legacy REST/MCP 文档。
+九条必需能力；合法的额外命令（例如 repository-memory 的命令）不影响预检。
+缺少任何所需命令或响应格式非法就停止，不回退到 legacy REST/MCP 文档。
+
+若第 0 步曾误报 `missing_commands`，保留现有 worktree、失败 JSON 和 binary 摘要，
+从包含 #333 修复的固定 commit 运行上述 smoke，并记录 smoke 脚本的 commit/SHA-256
+及实际 CLI 的源码 commit/SHA-256。Python-only 修复可以复用原已编译 CLI，但必须实测
+并记录这个版本组合；不要把新脚本标作旧 commit，也不要静默覆盖旧安装。
+五组检查全通过后，由原试点操作会话按原授权继续同一预留 config/ledger 的初始化，
+并读回 instruction。已有状态不得删除或覆盖；本修复不授权写入真实试点 ledger。
 
 task 功能运行时无需启动 PostgreSQL、Qdrant、Docker 或 MemoryNexus daemon。
 源码构建仍受当前 Cargo 依赖影响；这里不承诺安装耗时或所有平台都有预编译制品。

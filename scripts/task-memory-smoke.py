@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import tempfile
@@ -61,7 +62,8 @@ class Smoke:
         except (ValueError, UnicodeError):
             raise CheckFailed("invalid_json_response") from None
         require(isinstance(response, dict), "invalid_response_shape")
-        require(response.get("schema_version") == 1, "unsupported_response_schema")
+        require(type(response.get("schema_version")) is int and response["schema_version"] == 1,
+                "unsupported_response_schema")
         if error:
             require(result.returncode == 2 and response.get("status") == "error", "expected_error")
             require(response.get("code") == error, "wrong_error_code")
@@ -95,10 +97,15 @@ class Smoke:
     def capabilities_and_binding(self):
         help_result = self.invoke(["--help"])
         require(help_result["result"].get("command") == "task", "wrong_command")
-        require(set(help_result["result"].get("commands", [])) == {
+        commands = help_result["result"].get("commands")
+        require(isinstance(commands, list) and all(
+            isinstance(command, str) and re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", command)
+            for command in commands
+        ), "invalid_commands")
+        require({
             "init", "record", "context", "review", "correct", "retract",
             "export", "backup", "restore",
-        }, "missing_commands")
+        }.issubset(commands), "missing_commands")
         for index in (0, 1):
             response = self.task(index, "init", {
                 "idempotency_key": str(uuid.uuid4()), "display_name": "Synthetic task",
