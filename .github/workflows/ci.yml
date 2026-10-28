@@ -63,6 +63,27 @@ jobs:
       - uses: swatinem/rust-cache@v2
       - run: cargo test --all-features --all-targets
         timeout-minutes: 20
+      - name: Task memory smoke regressions and public-process preflight
+        env:
+          MEMORYNEXUS_TEST_BINARY: ${{ github.workspace }}/target/debug/memorynexus-feedback-cli
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          test -x "$MEMORYNEXUS_TEST_BINARY"
+          python3 - <<'PY'
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover(
+              "scripts", pattern="test_task_memory_smoke.py"
+          )
+          if suite.countTestCases() == 0:
+              raise SystemExit("No task memory smoke tests discovered")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit("Task memory smoke tests must not be skipped")
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
+          python3 scripts/task-memory-smoke.py --binary "$MEMORYNEXUS_TEST_BINARY"
+        timeout-minutes: 3
       - name: Task bootstrap public-process acceptance
         env:
           MEMORYNEXUS_TEST_BINARY: ${{ github.workspace }}/target/debug/memorynexus-feedback-cli
