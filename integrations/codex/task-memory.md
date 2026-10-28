@@ -32,3 +32,9 @@ through the [versioned installation entry](../../docs/repository-memory-installa
 Invoke the pinned `PYTHON -I -S -B VERSION/launch.py` with the same explicit private
 binding used by MiniMax and the scheduled Agent. Installation does not switch
 the ledger, approve a workflow binding, or install Codex hooks.
+
+For current-knowledge delivery, use the same installed launcher with
+`current read`, `current check` and `current launch`, and the separate private
+reader binding described in the installation guide. Launch requires a reviewed,
+pinned bridge for this actual client; no bridge is supplied by this pointer.
+Keep fresh-session input/action evidence separate from synthetic acceptance.

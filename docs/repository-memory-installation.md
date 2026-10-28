@@ -117,6 +117,63 @@ protocol with explicit config/ledger. Repository workflow `review` is a distinct
 operation. Client Skill loading is best effort unless the actual runtime proves
 otherwise. Copying a pointer or changing a client label does not pass #301/#313.
 
+## Current knowledge from the installed version
+
+The same verified installation exposes `launch.py current read`, `current check`
+and `current launch`. These dispatch the frozen [current-knowledge adapter](current-knowledge-contract.md);
+the existing workflow commands above retain their meanings. Installation includes
+its modules, contract/examples, acceptance matrix and ADR-030. It does not create
+or select a real client bridge.
+
+Prepare a separate owner-only reader binding using the frozen
+[current binding fields](current-knowledge-contract.md#binding). Copy the five
+installation values (`binary`, `binary_sha256`, `package`, `package_sha256`,
+`python`) from installed `verify`. Pin the existing task/config/ledger and a
+separate private reader state root; do not reuse workflow runs. Repository mode
+also references the matching workflow binding, whose package upgrade/reconciliation
+requires its existing explicit authorization. Never silently rebind to make a read
+pass. Use a fresh request and a new direct child of the reader state for each call:
+
+```sh
+"$PYTHON" -I -S -B "$VERSION/launch.py" current read \
+  --binding "$READER_BINDING" --request "$READ_REQUEST" --run-dir "$READ_RUN"
+"$PYTHON" -I -S -B "$VERSION/launch.py" current check \
+  --binding "$READER_BINDING" --evidence "$READ_RUN/evidence.json" --run-dir "$CHECK_RUN"
+"$PYTHON" -I -S -B "$VERSION/launch.py" current launch \
+  --binding "$READER_BINDING" --evidence "$READ_RUN/evidence.json" --run-dir "$LAUNCH_RUN"
+```
+
+Every call verifies the immutable installation before importing its adapter and
+rejects a binding for another installation before creating reader artifacts.
+Launcher preflight errors use the existing failed/exit2 envelope; after dispatch,
+the adapter retains its exact result/artifact schema and exit0/2/3 semantics.
+Unlike workflow dispatch, current dispatch preserves the authentication environment
+needed by the pinned bridge; the adapter still overrides the CLI/ledger environment.
+Authentication values must never be copied into evidence.
+
+`check` does not start a client. `launch` requires an explicitly selected executable
+and SHA in the reader binding; it sends exact JSON bytes on stdin after rechecking.
+Retain the original read evidence. An unknown delivery cannot be retried by deleting
+the claim or changing run directories. Installation success and synthetic bridge
+acknowledgement do not establish an actual client session or model action.
+
+Before activating an actual bridge, retain this private handoff:
+
+| Item | Required evidence |
+| --- | --- |
+| Selected runtime | Client/executor version, exact executable/config hashes, supported fresh-session invocation; no guessed hook flags |
+| Bridge | Reviewed fixed executable/hash, client configuration pins, stdin delivery trace and bounded acknowledgement only after receipt |
+| Input inventory | AGENTS/skills/native memory/cache and managed targets; every declared external copy remains unknown in v1 |
+| Fresh action | New real session ID, matching input digest, harmless B-marker action after A→B; no B answer preloaded in prompt/env/argv |
+| Unknown outcome | Retained delivery claim and client evidence reconciliation; no automatic resend |
+
+If the actual executor cannot provide a fresh-session delivery trace, keep bridge
+activation pending. Do not invent an ack, erase copy inventory, or count a synthetic
+bridge as MiniMax/Codex acceptance. Track actual client evidence under #301 and
+repository/scheduler evidence under #313, preserving their earlier partial results.
+This installation slice does not change client settings, bind a production workflow
+or modify a schedule.
+
 ## 3. External schedule handoff (a template, not a scheduler)
 
 Prepare a **diff against the owner's selected existing entry**, using its supported

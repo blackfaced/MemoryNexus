@@ -38,3 +38,9 @@ and private binding: `PYTHON -I -S -B VERSION/launch.py`. Keep the actual provid
 schedule/delivery settings unchanged until their specific deployment is approved.
 Use independent schedule readback and provider run evidence; a manual run or
 `client=minimax` label does not prove a real trigger or automatic catch-up.
+
+For current-knowledge delivery, use the same installed launcher with
+`current read`, `current check` and `current launch`, and the separate private
+reader binding described in the installation guide. Launch requires a reviewed,
+pinned bridge for this actual client; no bridge is supplied by this pointer.
+Keep fresh-session input/action evidence separate from synthetic acceptance.
