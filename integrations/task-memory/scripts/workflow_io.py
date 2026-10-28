@@ -209,6 +209,14 @@ def render(base, block_id, output_text):
     return base + (b'\n' if base and not base.endswith(b'\n') else b'') + block
 
 
+def remove_block(base, block_id, prior_sha256):
+    base.decode('utf-8')
+    region = _region(base, block_id)
+    if region is None or _hash(region[2]) != prior_sha256:
+        raise WorkflowError('target_conflict')
+    return base[:region[0]] + base[region[1]:]
+
+
 def publish(path, expected_exists, expected_sha, rendered, after_sha):
     path = safe_path(path)
     if _hash(rendered) != after_sha:

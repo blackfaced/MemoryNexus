@@ -298,3 +298,10 @@ detectable interference reports conflict, never overwrite it on retry. The syste
 does not claim cross-file/SQLite atomicity or prevention of every noncooperating
 editor race. Ledger can become stale before documents are neutralized; status
 must expose that lag. SQLite restore does not restore documents or operation files.
+
+## Explicit block removal
+
+See [publication maintenance](publication-maintenance.md) for
+`prepare --workflow publish --removals REQUEST.json`, exact owner approval,
+byte-preserving block removal and command-level acceptance. No production
+installation or binding change is implied by this extension.

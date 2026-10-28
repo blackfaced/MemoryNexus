@@ -189,6 +189,8 @@ def snapshot(binding_path, b, pins, req, read_id, created_at):
         cid = decision['consumer_id']
         if cid not in req['consumer_ids'] or decision['validity'] != 'current': continue
         if decision['decision'] != 'approved': continue
+        if any(p['decision_id'] == decision['decision_id'] and p.get('maintenance') == 'remove'
+               and p['publication'] == 'applied' for p in views['publications']): continue
         if decision['profile_revision'] != workflow['profile_revision']: fail('stale_snapshot')
         pubs = [p for p in views['publications'] if p['decision_id'] == decision['decision_id'] and
                 p['validity'] == 'current' and p['publication'] == 'applied' and not p.get('maintenance')]

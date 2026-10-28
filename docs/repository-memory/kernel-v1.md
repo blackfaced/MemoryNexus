@@ -492,3 +492,11 @@ task-aware experiment binary rejects the unchanged application_id; older binarie
 predating that guard cannot be assumed safe. File permissions are the owner trust
 boundary, not protection against an obsolete trusted writer. No reverse cutover
 to a pre-v2 tool against the v2 file; retain v1 backup separately.
+
+## Owner-approved publication removal
+
+The bounded extension in [publication maintenance](publication-maintenance.md)
+adds `maintenance: remove` to `consumer-approve`, retaining the existing envelope,
+publication tables and result command. Removal is always owner-confirmed and
+records its reason and previous applied approval; it never retracts a source or
+uses automatic neutralization authority.
