@@ -135,17 +135,27 @@ def validate_plan(v):
             if 'previous_decision_id' in w:
                 uuid(w['previous_decision_id'])
         elif kind == 'publish':
-            fields(w, ('id', 'kind', 'consumer_id', 'decision_id', 'decision_sha256', 'target_id', 'block_id', 'base_exists', 'base_sha256', 'after_sha256', 'output_text', 'output_sha256', 'rendered', 'purpose'), ('previous_approval_id',))
+            fields(w, ('id', 'kind', 'consumer_id', 'decision_id', 'decision_sha256', 'target_id', 'block_id', 'base_exists', 'base_sha256', 'after_sha256', 'output_text', 'output_sha256', 'rendered', 'purpose'), ('previous_approval_id', 'reason', 'prior_block_sha256'))
             name(w['consumer_id'])
             uuid(w['decision_id'])
             name(w['target_id'])
-            string(w['output_text'], 1001)
+            if w['purpose'] == 'remove':
+                if w['output_text'] != '':
+                    fail()
+            else:
+                string(w['output_text'], 1001)
             ref(w['rendered'])
             for k in ('decision_sha256', 'block_id', 'base_sha256', 'after_sha256', 'output_sha256'):
                 hash_value(w[k])
-            if type(w['base_exists']) is not bool or w['target_id'] in targets or w['purpose'] not in ('publish', 'neutralize'):
+            if type(w['base_exists']) is not bool or w['target_id'] in targets or w['purpose'] not in ('publish', 'neutralize', 'remove'):
                 fail()
             targets.add(w['target_id'])
+            if w['purpose'] == 'remove':
+                uuid(w.get('previous_approval_id'))
+                string(w.get('reason'), 240)
+                hash_value(w.get('prior_block_sha256'))
+            elif 'reason' in w or 'prior_block_sha256' in w:
+                fail()
             if 'previous_approval_id' in w:
                 uuid(w['previous_approval_id'])
         else:
@@ -198,20 +208,26 @@ def validate_prepared(v):
             if 'previous_validity' in w and w['previous_validity'] != 'stale':
                 fail()
         elif w['kind'] == 'publish':
-            fields(w, ('id', 'kind', 'consumer_id', 'decision_id', 'decision_sha256', 'target_id', 'block_id', 'output', 'output_sha256', 'purpose'), ('previous_approval_id',))
+            fields(w, ('id', 'kind', 'consumer_id', 'decision_id', 'decision_sha256', 'target_id', 'block_id', 'output', 'output_sha256', 'purpose'), ('previous_approval_id', 'reason', 'prior_block_sha256'))
             name(w['consumer_id'])
             uuid(w['decision_id'])
             name(w['target_id'])
             prior(w['output'])
             for k in ('decision_sha256', 'block_id', 'output_sha256'):
                 hash_value(w[k])
-            if w['purpose'] not in ('publish', 'neutralize'):
+            if w['purpose'] not in ('publish', 'neutralize', 'remove'):
+                fail()
+            if w['purpose'] == 'remove':
+                uuid(w.get('previous_approval_id'))
+                string(w.get('reason'), 240)
+                hash_value(w.get('prior_block_sha256'))
+            elif 'reason' in w or 'prior_block_sha256' in w:
                 fail()
             if 'previous_approval_id' in w:
                 uuid(w['previous_approval_id'])
         else:
             recovery(w)
-    reasons = ('awaiting_extraction', 'awaiting_review', 'awaiting_approval', 'target_queued', 'partial_tail', 'source_unavailable', 'blocked_unit', 'plan_missing', 'restore_gate')
+    reasons = ('awaiting_extraction', 'awaiting_review', 'awaiting_approval', 'target_queued', 'partial_tail', 'source_unavailable', 'blocked_unit', 'plan_missing', 'restore_gate', 'unselected')
     for r in arr(v['remaining'], 20):
         fields(r, ('id', 'reason'))
         string(r['id'], 128)

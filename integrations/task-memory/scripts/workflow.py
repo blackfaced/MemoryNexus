@@ -127,6 +127,8 @@ def main():
         if command == 'prepare':
             p.add_argument('--workflow', choices=('capture', 'review', 'publish', 'recovery'), required=True)
             p.add_argument('--client', required=True)
+            p.add_argument('--removals')
+            p.add_argument('--publish-selection')
         if command == 'preview':
             p.add_argument('--prepared', required=True)
             p.add_argument('--submission', required=True)

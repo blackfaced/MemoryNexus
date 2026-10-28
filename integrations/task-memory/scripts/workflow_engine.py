@@ -2,7 +2,7 @@
 from pathlib import Path
 import uuid
 from workflow import load, exact, sha, now, encode, canonical, report, save_report
-from workflow_io import WorkflowError, read_regular, write_new, new_run, artifact_ref, resolve_ref, target_snapshot, render, publish, task_lock
+from workflow_io import WorkflowError, read_regular, write_new, new_run, artifact_ref, resolve_ref, target_snapshot, render, remove_block, publish, task_lock
 from workflow_cli import load_context, call, status_all
 from workflow_scan import scans
 
@@ -83,6 +83,24 @@ def block_generations(decisions, publications):
     return generations
 
 def prepare(a, ctx):
+    if getattr(a, 'removals', None) and a.workflow != 'publish':
+        fail('invalid_input')
+    selection = None
+    if getattr(a, 'publish_selection', None):
+        if a.workflow != 'publish' or getattr(a, 'removals', None):
+            fail('invalid_input')
+        from workflow_types import uuid as valid_uuid
+        request = load(a.publish_selection)
+        exact(request, ['schema_version', 'items'])
+        if type(request['schema_version']) is not int or request['schema_version'] != 1 or not isinstance(request['items'], list) or not 1 <= len(request['items']) <= 2:
+            fail('invalid_input')
+        selection = {}
+        for x in request['items']:
+            exact(x, ['decision_id', 'purpose'])
+            valid_uuid(x['decision_id'])
+            if x['decision_id'] in selection or x['purpose'] not in ('publish', 'neutralize'):
+                fail('invalid_input')
+            selection[x['decision_id']] = x['purpose']
     header(ctx, allow_recovery=a.workflow == 'recovery')
     b = ctx['binding']
     run = new_run(a.run_dir, state_root=b['state_root'], task_root=b['task_root'])
@@ -140,10 +158,17 @@ def prepare(a, ctx):
                 if previous:
                     w.update(previous_decision_id=previous['decision_id'], previous_validity='stale')
                 items.append(w)
-    if a.workflow == 'publish':
+    if a.workflow == 'publish' and getattr(a, 'removals', None):
+        from workflow_removal import prepare_removals
+        items = prepare_removals(ctx, run, s, load(a.removals), decisions, publications)
+    elif a.workflow == 'publish':
         queued = set()
         generations = block_generations(decisions, publications)
         for d in decisions:
+            if any(p.get('maintenance') == 'remove' and p['publication'] == 'applied'
+                   and any(x['decision_id'] == p['decision_id'] and x['block_id'] == d['block_id']
+                           and x['generation'] >= d['generation'] for x in decisions) for p in publications):
+                continue
             pubs = [p for p in publications if p['decision_id'] == d['decision_id']]
             if any((p['publication'] == 'applied' and p['validity'] == 'current' for p in pubs)):
                 continue
@@ -156,6 +181,9 @@ def prepare(a, ctx):
             if purpose == 'neutralize':
                 if generations.get(d['block_id'], 0) > d['generation']:
                     continue
+            if selection is not None and selection.get(d['decision_id']) != purpose:
+                remaining.append(dict(id=d['decision_id'], reason='unselected'))
+                continue
             target = c['target_id']
             output = retained_output(ctx, d) if purpose == 'publish' else None
             if purpose == 'publish' and (not output):
@@ -194,6 +222,8 @@ def prepare(a, ctx):
             if purpose == 'neutralize':
                 w['previous_approval_id'] = next((p['approval_id'] for p in pubs if p['publication'] == 'applied' and (not p.get('maintenance'))))
             items.append(w)
+    if selection is not None and {w['decision_id']: w['purpose'] for w in items} != selection:
+        fail('invalid_input')
     if a.workflow == 'recovery':
         from workflow_recovery import prepare_recovery
         (items, recovery_pending) = prepare_recovery(ctx, publications)
@@ -270,13 +300,17 @@ def preview(a, ctx):
             path = next((t['path'] for t in ctx['binding']['targets'] if t['target_id'] == w['target_id']))
             target = next((t for t in prepared['snapshot']['targets'] if t['target_id'] == w['target_id']))
             base = read_regular(path, 2 * 1024 * 1024) if target['exists'] else b''
-            after = render(base, w['block_id'], text)
+            after = remove_block(base, w['block_id'], w['prior_block_sha256']) if w['purpose'] == 'remove' else render(base, w['block_id'], text)
             n = 'rendered/' + w['id'] + '.md'
             write_new(run / n, after)
             item = {k: w[k] for k in ('id', 'kind', 'consumer_id', 'decision_id', 'decision_sha256', 'target_id', 'block_id', 'purpose')}
             item.update(base_exists=target['exists'], base_sha256=target['sha256'], after_sha256=sha(after), output_text=text, output_sha256=sha(text.encode()), rendered=artifact_ref(run, n))
             if 'previous_approval_id' in w:
                 item['previous_approval_id'] = w['previous_approval_id']
+            if w['purpose'] == 'remove':
+                item.update(reason=w['reason'], prior_block_sha256=w['prior_block_sha256'])
+            import difflib
+            write_new(run / ('rendered/' + w['id'] + '.diff'), ''.join(difflib.unified_diff(base.decode().splitlines(True), after.decode().splitlines(True), fromfile=path, tofile=path)).encode())
             items.append(item)
     if workflow == 'recovery':
         items = prepared['items']
@@ -468,7 +502,9 @@ def publication(ctx, run, plan, item, i, result):
     proposal['plan_sha256'] = ph
     body = envelope(plan, 'consumer-approve', i)
     body.update(decision_id=item['decision_id'], decision_sha256=item['decision_sha256'], proposal=proposal)
-    if item['purpose'] == 'neutralize':
+    if item['purpose'] == 'remove':
+        body.update(maintenance='remove', confirmation='confirmed', previous_approval_id=item['previous_approval_id'], reason=item['reason'], prior_block_sha256=item['prior_block_sha256'])
+    elif item['purpose'] == 'neutralize':
         body['maintenance'] = 'neutralize'
     else:
         body['confirmation'] = 'confirmed'
@@ -499,14 +535,20 @@ def publication(ctx, run, plan, item, i, result):
         # A maintenance approval records the validity of the decision it
         # neutralises, so it is stale by construction; only a substantive
         # publication requires a current approval.
-        allowed = ('stale', 'retracted') if item['purpose'] == 'neutralize' else ('current',)
+        allowed = ('current', 'stale', 'retracted') if item['purpose'] == 'remove' else ('stale', 'retracted') if item['purpose'] == 'neutralize' else ('current',)
         decisions = status_all(ctx, 'decisions')
         decision = next((d for d in decisions if d['decision_id'] == item['decision_id']), None)
         if (live['validity'] not in allowed or decision is None
                 or decision['validity'] not in allowed
                 or decision['decision_sha256'] != item['decision_sha256']):
             fail('stale_snapshot')
-        if item['purpose'] == 'neutralize':
+        if item['purpose'] == 'remove':
+            from workflow_removal import validate_owner
+            validate_owner(item['previous_approval_id'], decisions, publications)
+            base = read_regular(target, 2 * 1024 * 1024)
+            if remove_block(base, item['block_id'], item['prior_block_sha256']) != rendered:
+                fail('stale_snapshot')
+        elif item['purpose'] == 'neutralize':
             if block_generations(decisions, publications).get(item['block_id'], 0) > decision['generation']:
                 fail('stale_snapshot')
         elif decision['proposed_decision'] != 'proposed':
