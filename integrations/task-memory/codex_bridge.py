@@ -78,7 +78,18 @@ def check_pin(pin):
     if 'resolved' in pin:
         require(str(path(target, links=True).resolve(strict=True)) == pin['resolved'])
         target = pin['resolved']
-    require(hashlib.sha256(read(target)).hexdigest() == pin['sha256'])
+    target = path(target)
+    fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_size <= 512*1024*1024)
+        digest = hashlib.sha256(); size = 0
+        while True:
+            chunk = stream.read(1024*1024)
+            if not chunk: break
+            size += len(chunk); require(size <= 512*1024*1024)
+            digest.update(chunk)
+    require(digest.hexdigest() == pin['sha256'])
 
 
 def validate(spec):

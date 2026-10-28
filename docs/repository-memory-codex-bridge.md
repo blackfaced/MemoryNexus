@@ -32,6 +32,7 @@ Create an owner-only spec outside the task and installation. Exact fields:
 
 Replace all placeholders with reviewed values. `files` must include the selected
 Codex home's `config.toml`, and may contain up to 64 distinct regular-file pins.
+Each pinned file is bounded to 512 MiB and hashed in chunks.
 Explicitly inventory any wrapper registry/payload, actual native executable,
 project/layered configuration, rules, and configuration references involved in
 the selected entry. Include those files before approving the spec; the generator
