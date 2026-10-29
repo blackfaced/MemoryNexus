@@ -27,7 +27,7 @@ def selected(path):
         return 'package/' + path[len(INTEGRATION + 'scripts/'):]
     if path in (INTEGRATION + name for name in ('launch.py', 'codex_bridge.py', 'install_codex_bridge.py')):
         return path[len(INTEGRATION):]
-    if (path == INTEGRATION + 'PROTOCOL.md'
+    if (path == 'LICENSE' or path == INTEGRATION + 'PROTOCOL.md'
             or path.startswith(INTEGRATION + 'memorynexus-')
             or path.startswith('integrations/minimax/memorynexus-task-memory/')
             or path == 'integrations/codex/task-memory.md'

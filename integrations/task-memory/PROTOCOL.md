@@ -16,6 +16,10 @@ mapping, use the [repository onboarding Skill](memorynexus-repo-onboard/SKILL.md
 It produces a profile and new-task seed preview or existing-task incremental
 proposal; it does not install a collector, change schedules or open a ledger.
 
+For daily interactions with an existing task, use the canonical
+[daily Skill](memorynexus-task-memory/SKILL.md). Its [frozen helper interface](memorynexus-task-memory/references/daily-interface.md)
+implements the pending lifecycle below without creating a task or a repository workflow.
+
 ## Bind the entry explicitly
 
 The operator supplies an absolute `MEMORYNEXUS_BIN`, an absolute `TASK_CONFIG`,

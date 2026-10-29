@@ -17,6 +17,24 @@ from workflow_types import digest
 INSTALLER = REPO / 'integrations/task-memory/install.py'
 PYTHON = str(Path(sys.executable).resolve())
 
+# Exact source-only document edges, explained in daily-interface.md. Never
+# exempt a directory, suffix or target globally: the referring page matters.
+SOURCE_ONLY_EDGES = {
+    ('docs/repository-memory-v1.md', 'acceptance/repository-memory-workflows.md'),
+    ('docs/task-memory-onboarding.md', 'TODO.md'),
+    ('decisions/ADR-028-shared-task-memory.md', '../docs/TODO.md'),
+    ('decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md', 'README.md'),
+    ('decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md', '../docs/TODO.md'),
+    ('docs/repository-memory-workflows-issues.md', 'handoffs/minimax-repository-memory-discovery.md'),
+    ('decisions/ADR-029-repository-memory-workflows.md', '../docs/handoffs/minimax-repository-memory-discovery.md'),
+    ('docs/acceptance/current-knowledge.md', 'repository-memory-workflows.md'),
+    ('docs/current-knowledge-plan.md', '../src/task_memory/lifecycle.rs'),
+    ('docs/current-knowledge-plan.md', '../src/task_memory/mod.rs'),
+    ('docs/current-knowledge-plan.md', '../src/task_memory/workflow/lifecycle_hooks.rs'),
+    ('docs/current-knowledge-plan.md', '../integrations/task-memory/scripts/workflow_io.py'),
+    ('docs/current-knowledge-plan.md', 'acceptance/repository-memory-workflows.md'),
+}
+
 
 class Installation(unittest.TestCase):
     @classmethod
@@ -26,21 +44,32 @@ class Installation(unittest.TestCase):
         integration = cls.source / 'integrations/task-memory'
         integration.mkdir(parents=True)
         original = REPO / 'integrations/task-memory'
-        for name in ('scripts', 'memorynexus-task-bootstrap', 'memorynexus-repo-onboard', 'memorynexus-repository-review'):
+        for name in ('scripts', 'memorynexus-task-bootstrap', 'memorynexus-repo-onboard', 'memorynexus-repository-review', 'memorynexus-task-memory'):
             shutil.copytree(original / name, integration / name, ignore=shutil.ignore_patterns('__pycache__'))
         for name in ('PROTOCOL.md', 'launch.py', 'codex_bridge.py', 'install_codex_bridge.py'):
             shutil.copyfile(original / name, integration / name)
         for name in ('integrations/minimax/memorynexus-task-memory', 'integrations/codex', 'docs/repository-memory', 'docs/current-knowledge'):
             shutil.copytree(REPO / name, cls.source / name)
-        for name in ('docs/current-knowledge-contract.md', 'docs/acceptance/current-knowledge.md',
+        for name in ('docs/task-memory-onboarding.md', 'docs/task-memory-contract.md',
+                     'docs/acceptance/task-memory-cross-client.md', 'docs/acceptance/codex-bridge.md',
+                     'docs/repository-memory-installation.md',
+                     'docs/current-knowledge-contract.md', 'docs/acceptance/current-knowledge.md',
+                     'docs/acceptance/repository-memory-installation.md',
+                     'docs/current-knowledge-plan.md', 'docs/repository-memory-codex-bridge.md',
+                     'docs/repository-memory-v1.md', 'docs/repository-memory-workflows-contract.md',
+                     'docs/repository-memory-workflows-issues.md',
+                     'decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md',
+                     'decisions/ADR-028-shared-task-memory.md',
+                     'decisions/ADR-029-repository-memory-workflows.md',
                      'decisions/ADR-030-current-knowledge-maintenance.md'):
             target = cls.source / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / name, target)
+        shutil.copyfile(REPO / 'LICENSE', cls.source / 'LICENSE')
         template = cls.source / 'empty-template'
         template.mkdir()
         cls.git('init', '--quiet', '--template=' + str(template))
-        cls.git('add', 'integrations', 'docs', 'decisions')
+        cls.git('add', 'integrations', 'docs', 'decisions', 'LICENSE')
         cls.git('-c', 'user.name=Synthetic install test', '-c', 'user.email=synthetic@example.invalid',
                 '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Synthetic install fixture')
         cls.revision = cls.git('rev-parse', 'HEAD').decode().strip()
@@ -107,6 +136,10 @@ class Installation(unittest.TestCase):
         paths = [entry['path'] for entry in manifest['files']]
         self.assertEqual(paths, sorted(paths, key=Path))
         self.assertIn('package/workflow.py', paths)
+        self.assertIn('package/daily.py', paths)
+        self.assertIn('package/LICENSE', paths)
+        self.assertIn('package/integrations/task-memory/memorynexus-task-memory/SKILL.md', paths)
+        self.assertIn('package/integrations/task-memory/memorynexus-task-memory/references/daily-interface.md', paths)
         self.assertIn('package/current_knowledge.py', paths)
         self.assertIn('package/docs/current-knowledge-contract.md', paths)
         self.assertIn('package/docs/current-knowledge/examples/read-request.json', paths)
@@ -143,6 +176,92 @@ class Installation(unittest.TestCase):
         f.save_binding()
         f.record('Read workspace-b/marker.txt')
         return f
+
+    def assert_daily_resources(self):
+        import re
+        package = self.version / 'package'
+        for name in ('daily.py', 'current_knowledge_task.py', 'workflow_cli.py',
+                     'workflow_io.py', 'workflow_types.py'):
+            self.assertTrue((package / name).is_file(), name)
+        self.assertFalse((package / 'integrations/task-memory/scripts/workflow_io.py').exists())
+        pending = [package / 'integrations/task-memory/memorynexus-task-memory/SKILL.md']
+        visited, missing = set(), set()
+        while pending:
+            document = pending.pop()
+            if document in visited:
+                continue
+            visited.add(document)
+            for target in re.findall(r'\]\(([^)]+)\)', document.read_text()):
+                if ':' in target or target.startswith('#'):
+                    continue
+                path = (document.parent / target.split('#')[0]).resolve()
+                edge = (document.relative_to(package).as_posix(), target)
+                self.assertTrue(path.is_relative_to(package), edge)
+                if not path.is_file():
+                    missing.add(edge)
+                elif path.suffix == '.md':
+                    pending.append(path)
+        self.assertEqual(missing, SOURCE_ONLY_EDGES)
+        boundary = (package / 'integrations/task-memory/memorynexus-task-memory/references/daily-interface.md').read_text()
+        for name, target in SOURCE_ONLY_EDGES:
+            source = (REPO / name).parent / target
+            self.assertTrue(source.is_file(), (name, target))
+            # Every exception must also be visible to the Skill's reader.
+            self.assertIn('`' + name + '`', boundary)
+            self.assertIn('`' + source.resolve().relative_to(REPO).as_posix() + '`', boundary)
+
+    def test_installed_daily_relative_references_are_complete(self):
+        self.assertEqual(self.install()[0], 0)
+        self.assert_daily_resources()
+
+    def test_daily_resource_boundary_rejects_missing_runtime_unknown_edges_and_escape(self):
+        self.assertEqual(self.install()[0], 0)
+        package = self.version / 'package'
+        runtime = package / 'workflow_io.py'
+        original = runtime.read_bytes()
+        runtime.unlink()
+        with self.assertRaises(AssertionError):
+            self.assert_daily_resources()
+        runtime.write_bytes(original)
+        runtime.chmod(0o600)
+        page = package / 'docs/current-knowledge-plan.md'
+        original_page = page.read_text()
+        for target in ('unexpected-missing.md', '../../outside-package.md'):
+            with self.subTest(target=target):
+                page.write_text(original_page + '\n[Unexpected resource](' + target + ')\n')
+                with self.assertRaises(AssertionError):
+                    self.assert_daily_resources()
+        page.write_text(original_page)
+        stale_exception = package / 'docs/TODO.md'
+        stale_exception.write_text('Synthetic now-packaged roadmap.\n')
+        with self.assertRaises(AssertionError):
+            self.assert_daily_resources()
+        stale_exception.unlink()
+        self.assert_daily_resources()
+
+    def test_installed_daily_entry_roundtrip_on_v2_without_workflow_profile(self):
+        f = self.current_fixture()
+        entry = self.version / 'package/daily.py'
+        request = f.private / 'daily-request.json'
+        body = {'idempotency_key': 'daily-install-roundtrip',
+                'run_id': '60000000-0000-4000-8000-000000000002',
+                'client': f.binding['client'], 'kind': 'execution',
+                'text': 'Synthetic installed daily report.', 'occurred_at': '2026-10-29T08:00:00Z'}
+        f.write(request, body)
+        run = f.state / 'daily-write'
+        def daily(command, *args):
+            proc = subprocess.run([PYTHON, '-I', '-S', '-B', str(entry), command,
+                                   '--binding', str(f.binding_path), *map(str, args)],
+                                  capture_output=True, cwd='/', timeout=30)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            return json.loads(proc.stdout)
+        daily('verify')
+        daily('stage', '--action', 'record', '--request', request, '--run-dir', run)
+        result = daily('apply', '--run-dir', run)
+        record_id = result['receipt']['record_id']
+        self.assertEqual(result['readback']['result']['entries'][0]['text'], body['text'])
+        self.assertIn(record_id, [r['id'] for r in daily('read')['context']['result']['entries']])
+        self.assertEqual(self.run_launcher('verify')[0], 0)
 
     def test_installed_current_read_check_launch_and_no_retry(self):
         f = self.current_fixture()

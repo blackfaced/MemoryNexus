@@ -177,7 +177,7 @@ def call(b, action, body, budget=None):
     return value
 
 
-def context_result(value, req):
+def context_result(value, req, *, allow_historical=False):
     """Validate context before copying any entry body."""
     fields(value, ('display_name', 'entries', 'candidates', 'candidate_count', 'omitted_count', 'truncated'))
     string(value['display_name'], 1, 120); number(value['candidate_count']); number(value['omitted_count'])
@@ -194,7 +194,10 @@ def context_result(value, req):
             unique(row['source_ids']); seen.append(row['id'])
             if 'supersedes_id' in row: uuid(row['supersedes_id'])
             if row['kind'] not in ('instruction', 'checkpoint', 'execution', 'lesson', 'draft'): fail()
-            if row['state'] not in ('current', 'superseded', 'stale', 'retracted'): fail()
+            states = ('current', 'superseded', 'stale', 'retracted')
+            if allow_historical and req['purpose'] == 'history':
+                states += ('historical',)
+            if row['state'] not in states: fail()
             if row['trust'] not in ('owner_confirmed', 'execution_reported', 'review_candidate', 'source_reported'): fail()
             if candidate != (row['trust'] == 'review_candidate'): fail()
             if candidate and row['kind'] != 'lesson': fail()
