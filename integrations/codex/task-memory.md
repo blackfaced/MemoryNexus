@@ -1,40 +1,24 @@
 # Codex task-memory entry
 
-Read and follow [the shared protocol](../task-memory/PROTOCOL.md) on every task
-session. The operator supplies absolute binary/config paths and the same
-`MEMORYNEXUS_TASK_LEDGER` used by the other client and existing review entry.
-Verify local execution, stdin/JSON stdout and shared filesystem access from the
-actual Codex runtime; a remote/sandboxed runtime without access is blocked.
+Use the [canonical daily Skill](../task-memory/memorynexus-task-memory/SKILL.md)
+for an existing task's read, record, correction and handoff. It owns the shared
+workflow and references PROTOCOL.md; this file only describes Codex capabilities.
 
-After verifying that the runtime reads the task's instruction file, append a
-reference to this entry and the pinned shared protocol location. Preserve existing
-AGENTS.md content. Do not assume a Codex-specific hook configuration or install
-global settings. An enforced hook or explicit wrapper requires a separate actual
-runtime check; instructions alone provide **best-effort** loading.
+The operator supplies the exact pinned Python/helper and private task binding.
+Verify local process execution, stdin, JSON stdout and shared filesystem access
+in the actual Codex runtime. A remote or restricted runtime without access is
+blocked; changing a `client` label is not client acceptance.
 
-Read `context` before work; save a bounded authorized record after meaningful
-work. Use `client: "codex"` for new writes only. Preserve the original request
-bytes and provenance on retries, even for a MiniMax-created pending request.
-Review text remains a sourced candidate; exact-content owner confirmation is
-required for instructions, correction and withdrawal. Apply the shared pending,
-error and recovery rules. Never silently substitute chat history for a failed
-read or claim another machine was accepted from a simulated CLI check.
+Use `client:"codex"` on new write envelopes only. An explicit retry retains the
+original bytes and provenance. Register the canonical Skill or a pointer in the
+actual runtime-supported project instruction entry only after its location and
+loading behavior are verified. Preserve existing AGENTS.md and global settings.
+Prompt-only loading is best effort; no startup hook is installed by this entry.
 
-For first-time initialization from existing repository material, use the shared
-[bootstrap Skill](../task-memory/memorynexus-task-bootstrap/SKILL.md). Copy its
-complete bundle and retain the common protocol path; show the exact draft and
-obtain approval before any initialization/write. Existing tasks require review,
-not automatic reseeding.
-
-For repository-source workflows, use the shared
-[repository-review Skill](../task-memory/memorynexus-repository-review/SKILL.md)
-through the [versioned installation entry](../../docs/repository-memory-installation.md).
-Invoke the pinned `PYTHON -I -S -B VERSION/launch.py` with the same explicit private
-binding used by MiniMax and the scheduled Agent. Installation does not switch
-the ledger, approve a workflow binding, or install Codex hooks.
-
-For current-knowledge delivery, use the same installed launcher with
-`current read`, `current check` and `current launch`, and the separate private
-reader binding described in the installation guide. Launch requires a reviewed,
-pinned bridge for this actual client; no bridge is supplied by this pointer.
-Keep fresh-session input/action evidence separate from synthetic acceptance.
+The existing [Codex bridge](../../docs/acceptance/codex-bridge.md) supports pinned,
+read-only fresh-session delivery through `current launch`. This is distinct from
+daily writes and an already-open desktop chat. After another client changes the
+ledger, the original desktop chat must explicitly run the daily read again on
+its next turn. Neither old conversation merging nor automatic removal of old
+model context is promised. Real desktop-turn evidence and fresh CLI evidence
+must be recorded separately with source IDs and revisions.

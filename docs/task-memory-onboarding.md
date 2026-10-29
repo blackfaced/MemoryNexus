@@ -252,3 +252,32 @@ NOT RUN；#301 和父票 #296 保持打开。#283 十四天个人实验 gate 独
 逐项通过/失败/未验证、对应 request/record IDs、启动是否强制或 best effort、pending
 请求状态，以及备份恢复结果。机器不可访问或客户端不可执行时，真实 gate 保持未通过；
 不以本地单元测试、品牌标签或这份文档的存在替代验收。
+
+## 已有任务的日常接入（#343）
+
+一个短意图加绝对 binding 路径即可交接，例如“接上任务，入口 `/absolute/private/binding.json`”。
+使用 [canonical Skill](../integrations/task-memory/memorynexus-task-memory/SKILL.md)；
+精确 `verify/read/stage/apply`、完整 envelope、pending/receipt 与失败语义以
+[冻结接口](../integrations/task-memory/memorynexus-task-memory/references/daily-interface.md) 为准。
+helper 不代填确认、不 bootstrap/migrate，不要求 repository profile/consumer/publication。
+
+部署仍使用固定 source 的 install.py，scripts 会进入 `VERSION/package/`；Skill 及所有
+相对文档保留包内原目录。日常入口为 `PYTHON -I -S -B VERSION/package/daily.py`，
+不是 `launch.py daily`，也不是不存在的 Rust `task read/check`。安装已有 workflow
+包时沿用其 rule-file 参数；该参数不要求为日常任务创建 workflow binding。
+安装前核验资源清单含 canonical Skill、daily.py、共用模块、协议及 LICENSE。
+
+handoff 应分别记录 script source 的完整 SHA、canonical 路径、包内文件清单/摘要、
+CLI build source SHA 与 binary SHA、Python 路径/版本、兼容 CLI schema 1/ledger v1/v2。
+脚本升级可复用经过能力检查和 public-process 测试的旧 binary；Rust 改动则重建。
+不要把脚本 source SHA 当成旧 binary 的构建来源，不要把合入等同于本机更新。
+新版本先安装到新目录，核对新 manifest 后由 owner 切换绑定；旧 pending 继续使用原
+binding/脚本/binary，不改 pin 来让它通过。
+
+普通 context 包含单列候选正文；v2 current adapter 的候选只有索引，且另做已知复制件
+检查。不要删除 external copies 声明、静默降级或把候选当成已用于当前事实的正文。
+
+客户端证据分开：本机 CLI 真实进程测试是协议验证；Codex/Traex 的实际执行能力、
+原 Codex Desktop 下一轮显式重读、AIWB #155 的独立验收否决→修复→重验及协调成本
+需分别记录。prompt-only 不承诺强制加载，fresh bridge 不承诺旧聊天历史合并。
+本票不自动更改全局客户端、私人 ledger 或任何已有调度。
