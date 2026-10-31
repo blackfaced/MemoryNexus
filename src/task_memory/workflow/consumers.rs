@@ -154,11 +154,15 @@ pub(super) fn validate(action: &str, v: &mut Value) -> Result<(), Error> {
                     return Err(approval());
                 }
                 literal(v, "confirmation", "confirmed")?;
+                if let Some(previous) = v.get("previous_approval_id") {
+                    canonical_uuid(previous.as_str().ok_or_else(Error::invalid)?)?;
+                }
             }
             if v["maintenance"] != "remove"
-                && ["previous_approval_id", "reason", "prior_block_sha256"]
+                && (["reason", "prior_block_sha256"]
                     .iter()
                     .any(|k| v.get(*k).is_some())
+                    || (v.get("maintenance").is_some() && v.get("previous_approval_id").is_some()))
             {
                 return Err(Error::invalid());
             }
@@ -628,6 +632,12 @@ async fn approve(
     }
     let existing=sqlx::query("SELECT data FROM task_publications WHERE task_id=? AND decision_id=? ORDER BY workflow_sequence").bind(task).bind(string(&d,"decision_id")?).fetch_all(&mut *conn).await.map_err(Error::storage)?;
     let mut reusable_removal = None;
+    let renewing = !maintenance && v.get("previous_approval_id").is_some();
+    let requested_predecessor = if renewing {
+        Some(publication_data(conn, task, string(v, "previous_approval_id")?).await?)
+    } else {
+        None
+    };
     for r in existing {
         let p: Value = serde_json::from_str(&r.get::<String, _>("data")).map_err(Error::storage)?;
         if p.get("maintenance") != v.get("maintenance")
@@ -665,6 +675,11 @@ async fn approve(
             // Keep the old approval, attempts and idempotency receipts intact.
             continue;
         }
+        if renewing
+            && (p.get("superseded_by").is_some() || p["approval_id"] == v["previous_approval_id"])
+        {
+            continue;
+        }
         return Err(Error::conflict());
     }
     if let Some(p) = reusable_removal {
@@ -675,8 +690,45 @@ async fn approve(
             id: string(&p, "approval_id")?.into(),
         });
     }
+    let mut predecessor = if let Some(old) = requested_predecessor {
+        let applied: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM task_publication_attempts
+             WHERE task_id=? AND approval_id=? AND json_extract(data,'$.outcome')='applied')",
+        )
+        .bind(task)
+        .bind(string(&old, "approval_id")?)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(Error::storage)?;
+        if old["decision_id"] != d["decision_id"]
+            || old.get("maintenance").is_some()
+            || old["incarnation"] != v["incarnation"]
+            || old["profile_revision"] != v["profile_revision"]
+            || old["validity"] != "current"
+            || old.get("superseded_by").is_some()
+            || old["proposal"]["output_sha256"] != proposal["output_sha256"]
+            || applied
+        {
+            return Err(Error::conflict());
+        }
+        Some(old)
+    } else {
+        None
+    };
     let id = Uuid::new_v4().to_string();
     let mut p = json!({"approval_id":id,"decision_id":d["decision_id"],"incarnation":v["incarnation"],"profile_revision":v["profile_revision"],"proposal":proposal,"validity":d["validity"]});
+    if let Some(ref mut old) = predecessor {
+        p["previous_approval_id"] = old["approval_id"].clone();
+        old["validity"] = json!("stale");
+        old["superseded_by"] = json!(id);
+        sqlx::query("UPDATE task_publications SET data=? WHERE approval_id=? AND task_id=?")
+            .bind(old.to_string())
+            .bind(string(old, "approval_id")?)
+            .bind(task)
+            .execute(&mut *conn)
+            .await
+            .map_err(Error::storage)?;
+    }
     if maintenance {
         p["maintenance"] = v["maintenance"].clone();
         if v["maintenance"] == "remove" {

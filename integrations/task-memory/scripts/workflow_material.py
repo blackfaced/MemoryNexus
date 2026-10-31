@@ -36,14 +36,14 @@ def prior(v):
     string(v['run_dir'], 4096)
     ref(v['artifact'])
 
-def scan(v):
+def scan(v, unit_limit=20):
     fields(v, ('collection_id', 'expected_scan', 'observed_at', 'availability', 'units'), ('cursor', 'reason'))
     uuid(v['collection_id'])
     number(v['expected_scan'])
     string(v['observed_at'], 64)
     if v['availability'] not in ('available', 'unavailable'):
         fail()
-    for u in arr(v['units'], 20):
+    for u in arr(v['units'], unit_limit):
         fields(u, ('sha256',), ('start', 'end'))
         hash_value(u['sha256'])
         if 'start' in u:
@@ -56,7 +56,7 @@ def scan(v):
     if 'reason' in v and v['reason'] not in ('missing', 'unreadable', 'identity_uncertain'):
         fail()
 
-def snapshot(v):
+def snapshot(v, publication=False):
     fields(v, ('task_id', 'workflow_id', 'incarnation', 'profile_revision', 'profile_sha256', 'binding_sha256', 'ledger_revision', 'scans', 'dependencies', 'targets'))
     for k in ('task_id', 'workflow_id', 'incarnation'):
         uuid(v[k])
@@ -65,7 +65,7 @@ def snapshot(v):
     number(v['profile_revision'], 1)
     number(v['ledger_revision'])
     for x in arr(v['scans'], 30):
-        scan(x)
+        scan(x, 40 if publication else 20)
     for x in arr(v['dependencies'], 600):
         dep(x)
     seen = set()
@@ -97,7 +97,7 @@ def validate_plan(v):
     string(v['created_at'], 64)
     string(v['client'], 64)
     hash_value(v['prepared_sha256'])
-    snapshot(v['snapshot'])
+    snapshot(v['snapshot'], v.get('workflow') == 'publish')
     if v['workflow'] not in ('capture', 'review', 'publish', 'recovery'):
         fail()
     auth = v['authorization']
@@ -160,6 +160,9 @@ def validate_plan(v):
                 uuid(w['previous_approval_id'])
         else:
             recovery(w)
+    if (v['workflow'] == 'publish' and auth['mode'] != 'owner'
+            and any(w['purpose'] != 'neutralize' for w in v['items'])):
+        fail('approval_required')
     return v
 
 def validate_prepared(v):
@@ -168,7 +171,7 @@ def validate_prepared(v):
     uuid(v['prepared_id'])
     string(v['created_at'], 64)
     string(v['client'], 64)
-    snapshot(v['snapshot'])
+    snapshot(v['snapshot'], v.get('workflow') == 'publish')
     if v['workflow'] not in ('capture', 'review', 'publish', 'recovery'):
         fail()
     for e in arr(v['evidence'], 600):

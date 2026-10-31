@@ -112,7 +112,7 @@ def prepare(a, ctx):
     inputs = status_all(ctx, 'inputs')
     decisions = status_all(ctx, 'decisions')
     publications = status_all(ctx, 'publications')
-    (ss, units, pending) = scans(ctx, status_all(ctx, 'collections'), sources)
+    (ss, units, pending) = ([], [], []) if a.workflow in ('publish', 'recovery') else scans(ctx, status_all(ctx, 'collections'), sources)
     s['scans'] = ss
     remaining.extend(pending)
     (run / 'evidence').mkdir(mode=448)
@@ -219,6 +219,13 @@ def prepare(a, ctx):
             queued.add(target)
             s['targets'].append(t)
             w = dict(kind='publish', consumer_id=d['consumer_id'], decision_id=d['decision_id'], decision_sha256=d['decision_sha256'], target_id=target, block_id=d['block_id'], output=output, output_sha256=sha(ref_bytes(ctx, output)), purpose=purpose)
+            if purpose == 'publish':
+                pending_intents = [p for p in pubs if not p.get('maintenance')
+                                   and p['validity'] == 'current' and p['publication'] != 'applied'
+                                   and p['profile_revision'] == ctx['profile']['revision']
+                                   and p['incarnation'] == ctx['incarnation']]
+                if pending_intents:
+                    w['previous_approval_id'] = pending_intents[-1]['approval_id']
             if purpose == 'neutralize':
                 w['previous_approval_id'] = next((p['approval_id'] for p in pubs if p['publication'] == 'applied' and (not p.get('maintenance'))))
             items.append(w)
@@ -230,6 +237,10 @@ def prepare(a, ctx):
         remaining.extend(recovery_pending)
     allitems = items
     items = items[:20]
+    if a.workflow == 'publish':
+        from workflow_publication import bounded_snapshot
+        s = bounded_snapshot(ctx, s, items, fresh=True)
+        check_snap(ctx, s)
     remaining.extend((dict(id=x.get('source_id', x.get('decision_id', x.get('input_record_id', 'pending'))), reason='awaiting_extraction' if a.workflow == 'capture' else 'awaiting_review') for x in allitems[20:]))
     for (i, item) in enumerate(items):
         item['id'] = 'u' + str(i)
@@ -253,7 +264,12 @@ def preview(a, ctx):
     exact(submission, ['schema_version', 'prepared_sha256', 'items'])
     if submission['prepared_sha256'] != sha(read_regular(a.prepared, 8 * 1024 * 1024)) or len(submission['items']) > 20:
         fail('invalid_input')
-    check_snap(ctx, prepared['snapshot'])
+    if prepared['workflow'] == 'publish':
+        from workflow_publication import bounded_snapshot
+        header(ctx)
+        check_snap(ctx, bounded_snapshot(ctx, prepared['snapshot'], prepared['items']))
+    else:
+        check_snap(ctx, prepared['snapshot'])
     run = new_run(a.run_dir, state_root=ctx['binding']['state_root'], task_root=ctx['binding']['task_root'])
     items = []
     used = set()
@@ -508,6 +524,29 @@ def publication(ctx, run, plan, item, i, result):
         body['maintenance'] = 'neutralize'
     else:
         body['confirmation'] = 'confirmed'
+        if 'previous_approval_id' in item:
+            body['previous_approval_id'] = item['previous_approval_id']
+    # Known drift must refuse before a new authoritative approval. Retained
+    # intents still reconcile after-bytes or record an actual baseline conflict.
+    existing = next((p for p in status_all(ctx, 'publications')
+                     if p['decision_id'] == item['decision_id'] and p['proposal'] == proposal
+                     and p['incarnation'] == plan['snapshot']['incarnation']
+                     and p['profile_revision'] == plan['snapshot']['profile_revision']), None)
+    before = target_snapshot(target, item['block_id'])
+    after_bytes = before['exists'] and before['sha256'] == item['after_sha256']
+    if existing and existing.get('superseded_by'):
+        fail('stale_snapshot')
+    if existing and existing['publication'] == 'applied':
+        result.update(status='ok', receipt_ids=[existing['approval_id']] + [a['attempt_id'] for a in existing['attempts']])
+        return
+    if item['purpose'] == 'publish' and (not existing or not after_bytes):
+        if existing and (existing['publication'] == 'conflict'
+                         or item['purpose'] == 'publish' and existing['validity'] != 'current'):
+            fail('stale_snapshot')
+        baseline_matches = before['exists'] == item['base_exists'] and before['sha256'] == item['base_sha256']
+        if not existing or baseline_matches:
+            from workflow_publication import bounded_snapshot
+            check_snap(ctx, bounded_snapshot(ctx, plan['snapshot'], [item]))
     approval = staged(ctx, run, plan, 'consumer-approve', i, body)['result']
     aid = approval['approval_id']
     result['receipt_ids'] = [aid]
@@ -530,8 +569,12 @@ def publication(ctx, run, plan, item, i, result):
         outcome = 'conflict'
         error = 'baseline_changed'
     elif not after:
-        bounded = {**plan['snapshot'], 'targets': [t for t in plan['snapshot']['targets'] if t['target_id'] == item['target_id']]}
+        from workflow_publication import bounded_snapshot
+        bounded = bounded_snapshot(ctx, plan['snapshot'], [item])
         check_snap(ctx, bounded)
+        live = next((p for p in status_all(ctx, 'publications') if p['approval_id'] == aid), None)
+        if live is None or live.get('superseded_by'):
+            fail('stale_snapshot')
         # A maintenance approval records the validity of the decision it
         # neutralises, so it is stale by construction; only a substantive
         # publication requires a current approval.

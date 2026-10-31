@@ -314,8 +314,18 @@ approved. All digests and exact before/after diff must be shown to the human.
 Core checks output/block/target identity, not file bytes. Approval creates an
 immutable publication intent; result is `approval_id`, `decision_id`,
 `decision:"approved"`, `validity:"current"`, `publication:"not_applied"`, and
-the exact proposal. One identical approval is noop; any changed proposal requires
-a new consumer decision generation and new approval. No automatic free-text publish.
+the exact proposal. One identical approval is noop. Changed output requires a new
+consumer decision generation. An unchanged output may renew an unapplied intent
+using optional `previous_approval_id:UUID` and a fresh owner-confirmed plan digest
+(#349). The predecessor must be the current substantive intent for this exact
+decision/incarnation/profile, with no applied attempt; pending, failed or conflict
+intents may be explicitly replaced. The new intent stores `previous_approval_id`;
+the predecessor becomes stale and records `superseded_by` without deleting any
+proposal, attempt or receipt. A competing successor, stale/superseded predecessor,
+changed output, applied predecessor or different scope is conflict. Exact original
+key/bytes still replay history but never restore authority. Superseded intents
+remain in publication history but not actionable pending counts/recovery work. Missing predecessor
+is not_found. No automatic free-text publish or automatic renewal authorization.
 
 `publication-result` fields: `approval_id:UUID`, `outcome:"applied"|"conflict"|"failed"`,
 `observed_at`, optional `observed_sha256:H`, optional `error_code`.
@@ -380,7 +390,7 @@ Duplicate IDs/keys are invalid_input. Exact item projections are:
 | sources | source_id, collection_id, source_revision, sha256, availability, observed_at, locator, extractor_version, blocked, root_record_id?; current observation per source |
 | inputs | v1 record fields id/kind/trust/occurred_at/run_id/client/state/revision/source_ids, root_record_id, text/evidence_refs only when current, origin? `{source_id,source_revision,extractor_version}`; current base chain heads by default |
 | decisions | decision_id, consumer_id, root_record_id, generation, input_record_id, proposed_decision, decision, validity, dependencies, dependency_sha256, decision_sha256, output_sha256?, block_id, reason? (absent when scrubbed), profile_revision |
-| publications | approval_id, decision_id, incarnation, profile_revision, proposal, maintenance?, validity, publication(not_applied/applied/conflict/failed), attempts `[ {attempt_id,outcome,observed_at,observed_sha256?,error_code?} ]` |
+| publications | approval_id, decision_id, incarnation, profile_revision, proposal, maintenance?, previous_approval_id?, superseded_by?, validity, publication(not_applied/applied/conflict/failed), attempts `[ {attempt_id,outcome,observed_at,observed_sha256?,error_code?} ]` |
 | receipts | idempotency_key, action, digest, result_type, result_id, revision(original commit), result (original identities plus current validity, no text) |
 
 Old source revisions and complete attempt history remain in export. Publications
