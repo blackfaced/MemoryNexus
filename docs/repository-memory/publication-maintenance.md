@@ -75,6 +75,46 @@ MEMORYNEXUS_TEST_BINARY="$PWD/target/debug/memorynexus-feedback-cli" \
 
 ## Publication selection (#339)
 
+### Selected evidence and unapplied intent renewal (#349)
+
+Substantive publication scans only its expanded dependencies. Text uses the
+registered selector; JSONL preserves the registered stream prefix and selected
+registered rows, not the next 20-row capture window. A changed unrelated collection
+does not invalidate that selected publication. Source/decision/target preflight
+precedes any new substantive approval and is repeated before replacement. Removal
+keeps its established approval/conflict-attempt history semantics. Preflight cannot eliminate
+races with external editors; approved-but-unapplied remains an explicit state.
+
+Fresh prepare/preview on that state carries `previous_approval_id` in the publish
+item. Following a fresh owner digest, the runner sends ordinary `consumer-approve`
+with its existing envelope, exact decision/proposal/confirmation, plus:
+
+```json
+{"previous_approval_id":"70000000-0000-4000-8000-000000000001"}
+```
+
+This is an explicit replacement of the pending substantive intent, not a removal
+or a new review generation. Its output must be unchanged and its predecessor
+current in the same scope, without an applied attempt. The predecessor becomes
+stale with `superseded_by`; the new intent retains `previous_approval_id`. Failed
+attempts, old requests and receipts remain. Two competing successors cannot both
+renew the same intent. Old plan/key replay cannot restore retired authority.
+Applied intent, changed output, restored incarnation, stale profile or missing
+recovery bytes require their existing reconciliation/review paths. Installation
+does not migrate old authorization or activate production automatically.
+
+Command-level regression (isolated real CLI/runner, no production paths):
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover \
+  -s integrations/task-memory/tests -p 'test_workflow_publication_preflight.py' -v
+```
+
+The tests check unrelated/related drift, no-intent after-byte confusion, per-item
+auxiliary evidence, >20 registered JSONL row proofs and append/prefix identity,
+fresh digest renewal, competing/applied/invalid predecessors, replay/conflict,
+human text preservation and retired plans producing no new effect.
+
 `prepare --workflow publish --publish-selection SELECT.json` accepts strict JSON
 `{"schema_version":1,"items":[{"decision_id":"UUID","purpose":"publish"}]}`.
 One or two unique decisions, purpose `publish` or `neutralize`, at most one per

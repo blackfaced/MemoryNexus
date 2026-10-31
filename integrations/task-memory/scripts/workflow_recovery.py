@@ -69,7 +69,7 @@ def _classify(ctx, plan, item):
 def prepare_recovery(ctx, publications):
     items, remaining = [], []
     for pub in publications:
-        if pub['publication'] == 'applied':
+        if pub['publication'] == 'applied' or pub.get('superseded_by'):
             continue
         retained = _retained(ctx, pub)
         if retained is None:

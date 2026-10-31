@@ -81,6 +81,9 @@ def retained_output(snap, decision, pub, target_id):
     if len(rendered) != ref['bytes'] or sha(rendered) != ref['sha256'] or sha(rendered) != item['after_sha256']: fail('stale_snapshot')
     approved = dict(envelope(plan, 'consumer-approve', index), decision_id=decision['decision_id'],
                     decision_sha256=decision['decision_sha256'], proposal=proposal, confirmation='confirmed')
+    if item.get('previous_approval_id') != pub.get('previous_approval_id'): fail('stale_snapshot')
+    if 'previous_approval_id' in item:
+        approved['previous_approval_id'] = item['previous_approval_id']
     local, live = receipt(snap, run, 'consumer-approve', index, 0, approved)
     for value in (local, live):
         if (value.get('approval_id') != pub['approval_id'] or value.get('decision_id') != decision['decision_id'] or

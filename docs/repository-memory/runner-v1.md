@@ -173,11 +173,31 @@ Git HEAD or unselected files. No widening of old bootstrap approval is allowed.
   proposed/deferred/skipped decision only; does not publish. Save output_text
   privately, keyed by returned decision ID/digest, for later publication preview.
 - publish: prepare from a current proposed decision + exact retained output →
-  preview complete file diff → human approves → consumer-approve intent → file
+  preview complete file diff → human approves → selected evidence/target/decision
+  preflight → consumer-approve intent → final preflight → file
   operation → publication-result. No free-text file write in capture/review phases.
 - recovery: classify a retained plan against ledger intent and current file hashes;
   exact replay/receipt completion only where §4 allows. New content requires a new
   review/publish plan. Missing material returns needs_review.
+
+Publication snapshots contain only the selected substantive decisions' expanded
+dependencies and affected targets. Direct auxiliary sources and inherited origin
+sources are included. Text proofs use their registered selector and digest;
+JSONL proofs include the registered stream prefix and the selected registered
+rows, including rows outside the next capture window. Append-only extension does
+not invalidate them. Unrelated collections are neither read nor pinned. Removal
+and fixed neutralization retain their owner/block guards without pinning unrelated
+source files. Preparation, preview and apply check these same proofs.
+
+A fresh publication prepare for a current approved-but-unapplied decision includes
+its current substantive `previous_approval_id`. The immutable plan and human
+preview expose this explicit renewal; apply requires its own owner digest and
+passes that ID to consumer-approve. It does not create a new review generation or
+reuse the old plan approval. Initial preflight failure writes no new intent or
+receipt. A race after intent creation may still leave not_applied; retain it for
+exact recovery or fresh explicit renewal. Already-applied effects are reconciled
+without rewriting files, even if a later source change has invalidated authority.
+New code never edits retained legacy plan bytes or invents missing recovery data.
 
 Derive write keys `wf:<plan_id>:<action>:<item-index>:<attempt>` within128 chars,
 keeping run_id=plan_id and original client label. Attempt starts0; only a known

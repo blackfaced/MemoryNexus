@@ -85,6 +85,14 @@ Work is one of these exact variants:
 | publish | consumer_id, decision_id, decision_sha256, target_id, block_id, output (prior-run ArtifactRef wrapper), output_sha256, purpose(publish/neutralize), previous_approval_id? |
 | recovery | consumer_id, approval_id, original_plan (prior-run ArtifactRef wrapper), item_id:name, classification(before/after/conflict/uncertain/restored), pending_request? (prior-run ArtifactRef wrapper) |
 
+For substantive publish, optional `previous_approval_id` explicitly identifies the
+unapplied intent being renewed under a fresh owner plan (#349). It does not refer
+to an older generation's applied block owner. The selected publication snapshot
+pins its expanded dependencies and source proofs, not unselected collections.
+Publication proof scans allow up to 40 units per collection (two decisions with
+at most 20 expanded dependencies each). Capture/review scans retain their 20-unit
+limit; no ingestion or cursor advancement occurs in publication preparation.
+
 Review includes all evidence that the Agent declares it will use; Agent may add
 only source dependencies present in prepared.evidence/current snapshot. If further
 evidence is needed, rerun prepare with an explicitly approved profile change where
