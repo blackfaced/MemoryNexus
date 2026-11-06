@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "status": "ok",
+  "task_id": "34600000-0000-4000-8000-000000000002",
+  "revision": 12,
+  "result": {
+    "display_name": "Synthetic second task",
+    "entries": [
+      {
+        "id": "34600000-0000-4000-8000-000000000090",
+        "kind": "execution",
+        "trust": "owner_confirmed",
+        "state": "current",
+        "revision": 12,
+        "occurred_at": "2026-10-29T08:12:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000190",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Different-task owner independently explained exact replay, changed-payload conflict and competing corrections in a verified exercise.",
+        "evidence_refs": []
+      }
+    ],
+    "candidates": [],
+    "candidate_count": 0,
+    "omitted_count": 0,
+    "truncated": false
+  }
+}

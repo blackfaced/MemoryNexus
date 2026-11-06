@@ -1,0 +1,23 @@
+{
+  "stage": "language-v2",
+  "freeze": {
+    "root": "/private/tmp/memorynexus-issue346-review-r5l6hixi/language-v2",
+    "synthetic_source_revision": "249b259d5029c3d7476d4896efeb42b4c5fb29a0",
+    "selected_files": 67,
+    "input_files": 86,
+    "closure": "PASS",
+    "rule_sha256": "51e530b2b2c6ad19ae410bd5f851a0735d41f00f460d776e7a764f32ecf490f1"
+  },
+  "semantic_a_b": "PASS: improved Agent answer did not increase human evidence",
+  "presentation": "FAIL: relative source links in A; long clause chains/full UUID; missing log linked as if navigable",
+  "outputs": [
+    {
+      "path": "presentation-v2-a.md",
+      "sha256": "ef7c1b06d7f37fecbea8db8c932f0ebeaff5305bb50c7b0f1530140b1955286e"
+    },
+    {
+      "path": "presentation-v2-b.md",
+      "sha256": "829ca5adad5bbe0be6d80efb0d98a55da6efcf800992c5c6eaef31fe5ce33937"
+    }
+  ]
+}

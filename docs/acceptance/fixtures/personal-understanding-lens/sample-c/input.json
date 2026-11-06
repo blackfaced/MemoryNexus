@@ -1,0 +1,15 @@
+{
+  "fixture_kind": "synthetic_native_shaped_not_cli_capture",
+  "task_id": "34600000-0000-4000-8000-000000000001",
+  "owner_topic": "idempotent retries after a lost response",
+  "read_at": "2026-10-30T02:00:00Z",
+  "reading_path": "ordinary daily context; candidate bodies remain review material",
+  "relative_evidence_base": ".",
+  "bounded_inputs": [
+    "task-context.json",
+    "other-task-context.json",
+    "sources/",
+    "history.json"
+  ],
+  "provenance_limit": "Synthetic records and attribution only; no real owner interaction, tool run, or verified authorship."
+}

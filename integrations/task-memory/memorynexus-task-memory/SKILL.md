@@ -45,6 +45,10 @@ retry the same run only when requested; preserve original client/run/time/key
 from the first attempt, even in another client. Do not invent a new key to hide
 a conflict. Historical/retracted replay does not make evidence current.
 
+For an explicit **理解与疑问 / understanding review** request, read the
+[understanding Lens](references/understanding-lens.md). Use one owner-selected
+topic and bounded evidence from this task; ordinary **接上** does not run it.
+
 Client integrations are prompt-only unless their actual runtime proves a stronger
 entry: [Codex](../../codex/task-memory.md), [MiniMax](../../minimax/memorynexus-task-memory/SKILL.md).
 Traex uses this same canonical Skill through its locally verified file/command

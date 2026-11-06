@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "status": "ok",
+  "task_id": "34600000-0000-4000-8000-000000000001",
+  "revision": 10,
+  "result": {
+    "display_name": "Synthetic retry learning task",
+    "entries": [
+      {
+        "id": "34600000-0000-4000-8000-000000000002",
+        "kind": "execution",
+        "trust": "owner_confirmed",
+        "state": "superseded",
+        "revision": 9,
+        "occurred_at": "2026-10-29T08:03:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000102",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Owner-supplied explanation of lost-response retry; see the bounded source.",
+        "evidence_refs": [
+          {
+            "path": "sources/owner-explanation.md",
+            "sha256": "6b5f29c39baaeae1cf69a1b45b61d2c8e9af48286bcbc63db43e899f9d6b7541"
+          }
+        ]
+      },
+      {
+        "id": "34600000-0000-4000-8000-000000000003",
+        "kind": "execution",
+        "trust": "execution_reported",
+        "state": "retracted",
+        "revision": 10,
+        "occurred_at": "2026-10-29T08:04:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000103",
+        "client": "synthetic-codex",
+        "source_ids": []
+      }
+    ],
+    "candidates": [
+      {
+        "id": "34600000-0000-4000-8000-000000000006",
+        "kind": "lesson",
+        "trust": "review_candidate",
+        "state": "stale",
+        "revision": 9,
+        "occurred_at": "2026-10-29T08:07:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000106",
+        "client": "synthetic-codex",
+        "source_ids": [
+          "34600000-0000-4000-8000-000000000002",
+          "34600000-0000-4000-8000-000000000003"
+        ]
+      }
+    ],
+    "candidate_count": 0,
+    "omitted_count": 0,
+    "truncated": false
+  }
+}

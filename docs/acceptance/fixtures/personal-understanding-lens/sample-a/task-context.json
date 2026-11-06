@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "status": "ok",
+  "task_id": "34600000-0000-4000-8000-000000000001",
+  "revision": 8,
+  "result": {
+    "display_name": "Synthetic retry learning task",
+    "entries": [
+      {
+        "id": "34600000-0000-4000-8000-000000000001",
+        "kind": "execution",
+        "trust": "owner_confirmed",
+        "state": "current",
+        "revision": 2,
+        "occurred_at": "2026-10-29T08:02:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000101",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Owner self-report: I already understand idempotent retries, including every conflict case.",
+        "evidence_refs": []
+      },
+      {
+        "id": "34600000-0000-4000-8000-000000000002",
+        "kind": "execution",
+        "trust": "owner_confirmed",
+        "state": "current",
+        "revision": 3,
+        "occurred_at": "2026-10-29T08:03:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000102",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Owner-supplied explanation of lost-response retry; see the bounded source.",
+        "evidence_refs": [
+          {
+            "path": "sources/owner-explanation.md",
+            "sha256": "6b5f29c39baaeae1cf69a1b45b61d2c8e9af48286bcbc63db43e899f9d6b7541"
+          }
+        ]
+      },
+      {
+        "id": "34600000-0000-4000-8000-000000000003",
+        "kind": "execution",
+        "trust": "execution_reported",
+        "state": "current",
+        "revision": 4,
+        "occurred_at": "2026-10-29T08:04:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000103",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Agent transcribed an owner prediction about a lost-response retry; no CLI outcome was captured.",
+        "evidence_refs": [
+          {
+            "path": "sources/owner-practice.md",
+            "sha256": "ae64b9a7c81c5e3812e575be73be46e8971fd3a53f38ce6a37e5bc24103930e2"
+          }
+        ]
+      },
+      {
+        "id": "34600000-0000-4000-8000-000000000004",
+        "kind": "execution",
+        "trust": "execution_reported",
+        "state": "current",
+        "revision": 5,
+        "occurred_at": "2026-10-29T08:05:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000104",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Agent produced a retry implementation explanation and reports passing tests; this is Agent work.",
+        "evidence_refs": [
+          {
+            "path": "sources/agent-answer.md",
+            "sha256": "f23c7de479e27727718ad6a95b413eb3a131455a3b1c9538a6e24e5523658fbc"
+          }
+        ]
+      },
+      {
+        "id": "34600000-0000-4000-8000-000000000005",
+        "kind": "execution",
+        "trust": "execution_reported",
+        "state": "current",
+        "revision": 6,
+        "occurred_at": "2026-10-29T08:06:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000105",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Agent reports that the owner independently executed all conflict cases successfully.",
+        "evidence_refs": [
+          {
+            "path": "sources/unavailable-run.log",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    ],
+    "candidates": [
+      {
+        "id": "34600000-0000-4000-8000-000000000006",
+        "kind": "lesson",
+        "trust": "review_candidate",
+        "state": "current",
+        "revision": 7,
+        "occurred_at": "2026-10-29T08:07:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000106",
+        "client": "synthetic-codex",
+        "source_ids": [
+          "34600000-0000-4000-8000-000000000002",
+          "34600000-0000-4000-8000-000000000003"
+        ],
+        "text": "Proposed review: the owner has mastered idempotent retries and conflict handling.",
+        "evidence_refs": []
+      }
+    ],
+    "candidate_count": 1,
+    "omitted_count": 0,
+    "truncated": false
+  }
+}
