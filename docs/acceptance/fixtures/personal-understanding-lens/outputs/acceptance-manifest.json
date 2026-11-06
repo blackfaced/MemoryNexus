@@ -1,0 +1,410 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-30",
+  "baseline_source_revision": "3c0d82b4b4d59657f500dd7c5d3dbeac3fe4ff51",
+  "synthetic_package_snapshot_revision": "1ae4a7bda92c0825b270a0ccdc885ebd0d7f504b",
+  "source_status": "local uncommitted candidate; synthetic snapshot is not a published source version",
+  "package_check": "install.collect exact materialization + existing Installation.assert_daily_resources; not full install/runtime",
+  "inputs": [
+    {
+      "path": "integrations/task-memory/memorynexus-task-memory/SKILL.md",
+      "sha256": "41fbaa3541277023b0cb6c5ed0c5f6b652411c1b01fa21059db35e0273f7a202"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-memory/references/understanding-lens.md",
+      "sha256": "8c30825e80d1029621973b299677ad362b24a15d9271e1eea4c0ac70022b9b61"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-a/input.json",
+      "sha256": "f87b0182b1755a67f8ef5362476fe8d331fa20b9e9b4fa4a2ea7136f06588586"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-a/other-task-context.json",
+      "sha256": "a064dedaa27a52d99460c5c47b8ee28cd3d7c5d8830fe8bf2a66590c47c7d78c"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-a/sources/agent-answer.md",
+      "sha256": "f23c7de479e27727718ad6a95b413eb3a131455a3b1c9538a6e24e5523658fbc"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-a/sources/owner-explanation.md",
+      "sha256": "6b5f29c39baaeae1cf69a1b45b61d2c8e9af48286bcbc63db43e899f9d6b7541"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-a/sources/owner-practice.md",
+      "sha256": "ae64b9a7c81c5e3812e575be73be46e8971fd3a53f38ce6a37e5bc24103930e2"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-a/task-context.json",
+      "sha256": "b3ab4577bb1cfe1ed7c6ba2be657792b1fe9752c82e683435c250c879e3f47a7"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-b/input.json",
+      "sha256": "f87b0182b1755a67f8ef5362476fe8d331fa20b9e9b4fa4a2ea7136f06588586"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-b/other-task-context.json",
+      "sha256": "a064dedaa27a52d99460c5c47b8ee28cd3d7c5d8830fe8bf2a66590c47c7d78c"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-b/sources/agent-answer.md",
+      "sha256": "559e188c08414124112e38f21307353c5a52ea3c077a485d213b3925109ed262"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-b/sources/owner-explanation.md",
+      "sha256": "6b5f29c39baaeae1cf69a1b45b61d2c8e9af48286bcbc63db43e899f9d6b7541"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-b/sources/owner-practice.md",
+      "sha256": "ae64b9a7c81c5e3812e575be73be46e8971fd3a53f38ce6a37e5bc24103930e2"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-b/task-context.json",
+      "sha256": "fc0ec4a48485fc819bc87df484163d1ee2f7f97771b9a7b2e7a674512536d010"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-c/history.json",
+      "sha256": "c776e6079d9009cf2f98108650b251b7e179a9fca1c6766fcf3d15b0bc932ade"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-c/input.json",
+      "sha256": "594eed108765178e9059e0dca402f7de978cd70955204c62bc97a389b1e6827a"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-c/other-task-context.json",
+      "sha256": "a064dedaa27a52d99460c5c47b8ee28cd3d7c5d8830fe8bf2a66590c47c7d78c"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-c/sources/agent-answer.md",
+      "sha256": "f23c7de479e27727718ad6a95b413eb3a131455a3b1c9538a6e24e5523658fbc"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-c/sources/owner-correction.md",
+      "sha256": "1f4845dd26eb2012bb4eed80464a650c89d5782319cc2529ca6d071d750c6b2b"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-c/sources/owner-explanation.md",
+      "sha256": "6b5f29c39baaeae1cf69a1b45b61d2c8e9af48286bcbc63db43e899f9d6b7541"
+    },
+    {
+      "path": "docs/acceptance/fixtures/personal-understanding-lens/sample-c/task-context.json",
+      "sha256": "b61ebffcbc44675b0f3a19c2032cf63838cfac899b12c6ed4ad137ebe2933a0b"
+    }
+  ],
+  "collected_package_files": [
+    {
+      "path": "LICENSE",
+      "sha256": "8379aa41e70151852a92aa3c25f895349a8f5aff47ee3566fbe27b17a6454d10"
+    },
+    {
+      "path": "current_knowledge.py",
+      "sha256": "50322b4854d370aead92151d2a6cf0e3deb6b9fbe3e78e372d5de3e9fbc5d101"
+    },
+    {
+      "path": "current_knowledge_artifacts.py",
+      "sha256": "5114622c546ae9ad3cba2c13e857f067eaed348754768b4617275bfa5cabb76d"
+    },
+    {
+      "path": "current_knowledge_delivery.py",
+      "sha256": "f80b33d29d8bd79adc3673b00be9213bc6c203a338ef4a00681769a0724ed327"
+    },
+    {
+      "path": "current_knowledge_publication.py",
+      "sha256": "c32a129726ddc9cf6d3409aec235c8e674b6ff0c66bc4416353fb794b4d08b93"
+    },
+    {
+      "path": "current_knowledge_repository.py",
+      "sha256": "d390be396997c93dd10e74bf8b4ff4ff94d464f44d7f9aac71a68ffba287e948"
+    },
+    {
+      "path": "current_knowledge_task.py",
+      "sha256": "49d4880e2c85a0be9f7f05a8d1e1bee0af77245f67dfbdb2965bd1bb04bc5664"
+    },
+    {
+      "path": "daily.py",
+      "sha256": "1d7faab811b77c8416fe4a70283d26c0b16c41c2be62ac2295c1c3a3cb444cdb"
+    },
+    {
+      "path": "decisions/ADR-027-sqlite-cli-minimax-feedback-kernel.md",
+      "sha256": "b25424905d9334fa8de5ea37623eb114a7e036cc62c7eafa225050f3f01f5c5d"
+    },
+    {
+      "path": "decisions/ADR-028-shared-task-memory.md",
+      "sha256": "ee0fbe8b30102b1f1f0c58c3479d575d5f7f4a029801786a061a6ff2a578d0c3"
+    },
+    {
+      "path": "decisions/ADR-029-repository-memory-workflows.md",
+      "sha256": "4e0875f35bae1330ec2b5713a8d71acfefa4b909921a95a03139c29d3789ffa4"
+    },
+    {
+      "path": "decisions/ADR-030-current-knowledge-maintenance.md",
+      "sha256": "dc7f57315e81d381cba5fa76bc62e2bba4b7ab2ebe32cfd2081733f74cf3606a"
+    },
+    {
+      "path": "docs/acceptance/codex-bridge.md",
+      "sha256": "bac024662adfabddf1964539b281e0765a3280c8b373c2735807d440f456478b"
+    },
+    {
+      "path": "docs/acceptance/current-knowledge.md",
+      "sha256": "f75d33d2e9a680be5bc5a4a95f7ba66b42473a3a00982c86a0f166e6fcecca1d"
+    },
+    {
+      "path": "docs/acceptance/repository-memory-installation.md",
+      "sha256": "27b1dbf9f828ad857ef36b17689cc0cf897c6cc133c7ffaa7a413e5ad7c791aa"
+    },
+    {
+      "path": "docs/acceptance/task-memory-cross-client.md",
+      "sha256": "d2401aa4ad5f0e153f02eea35848257f6973fa63e5e5d2642fbeb0d78562eff5"
+    },
+    {
+      "path": "docs/current-knowledge/contract-review.md",
+      "sha256": "f96bbbd7a4d163a455cc0eb3234494aa39fc900722478923963802b15622166f"
+    },
+    {
+      "path": "docs/current-knowledge/examples/material.json",
+      "sha256": "89d5d7151f8b85200e6c5c98696fea609d6e96fb55499fb2881c574cc2e53586"
+    },
+    {
+      "path": "docs/current-knowledge/examples/read-evidence.json",
+      "sha256": "44107417b2c9ee072f336ec9bca0ebe9e6aa682c047ef53cd2ed920421715e4b"
+    },
+    {
+      "path": "docs/current-knowledge/examples/read-request.json",
+      "sha256": "86ae686c24386cccdec584ff3fdc8c8eda05edd2a7cc694b4fac82adeb4e5c39"
+    },
+    {
+      "path": "docs/current-knowledge/examples/task-sequence.json",
+      "sha256": "9d0a2193e50b7e767c996d4a270cfd9d0fef1e531151bbd5e7bce4165189541f"
+    },
+    {
+      "path": "docs/current-knowledge/runtime-handoff.md",
+      "sha256": "c37ed711159e9b2bee96647abd3ea424009603f916253723a4ca967ce7ddaac2"
+    },
+    {
+      "path": "docs/current-knowledge-contract.md",
+      "sha256": "a9e725f5e54f925b8bd64aa006e5d7a7c50c184ed8841ad0bccfa4add1d44bfc"
+    },
+    {
+      "path": "docs/current-knowledge-plan.md",
+      "sha256": "85772b8c59c3614f08f42479f5a9a52f6d34bb732a82f60a0116f18e1e6ad63c"
+    },
+    {
+      "path": "docs/repository-memory/artifacts-v1.md",
+      "sha256": "a57756d90b5f7cf05ea94f1ec636ffee7dc230ca3f826df938f2dc5127c5c7f6"
+    },
+    {
+      "path": "docs/repository-memory/examples/sequence-v1.json",
+      "sha256": "9fb7f787b0cc2274027b59796cfa6a29b13a04f034458bff4f5ffd505da26177"
+    },
+    {
+      "path": "docs/repository-memory/kernel-v1.md",
+      "sha256": "f24aa77640db4c539b73da17d17a79c932abb6f3dde226b36dec0ed9b510d8f7"
+    },
+    {
+      "path": "docs/repository-memory/publication-maintenance.md",
+      "sha256": "273337a0eaad31738b949da15ee1fa2c0fd0e20d9c6a5646fcc8ab01dc23e654"
+    },
+    {
+      "path": "docs/repository-memory/runner-v1.md",
+      "sha256": "592d396cf7e7734655caa018a8d1e1ca538fe5c0f2e26cffa4ff594d6e31ad5a"
+    },
+    {
+      "path": "docs/repository-memory/walkthrough-v1.md",
+      "sha256": "8f2d60817f8fbef1d020c63544c7412a7ebad8689c6cbd04f07990d0b3432308"
+    },
+    {
+      "path": "docs/repository-memory-codex-bridge.md",
+      "sha256": "f60a439cbccaf992f5fb1366576a296d96c3d5f7b51c642c635230d3d405a990"
+    },
+    {
+      "path": "docs/repository-memory-installation.md",
+      "sha256": "f49b2ecdda69955c8bfcaec4f96ee5b3f5c45c183d5f2360039d2f2d14e27b61"
+    },
+    {
+      "path": "docs/repository-memory-v1.md",
+      "sha256": "af68bb908e0a2c3b8198c2e61383524cf7ade47a04dbde0357235e5a16263a21"
+    },
+    {
+      "path": "docs/repository-memory-workflows-contract.md",
+      "sha256": "8a1354fa8a4c81d287e5ec016ed93a8f824d406a5a230b448e1c5544666bed9b"
+    },
+    {
+      "path": "docs/repository-memory-workflows-issues.md",
+      "sha256": "279ddabab93925dd7722043a58db25ff9b59b971f0cf82710fc4d2f03a7abe04"
+    },
+    {
+      "path": "docs/task-memory-contract.md",
+      "sha256": "32b18a95235099452d7800e7efaadac81564073e1df100cde3515f970214d272"
+    },
+    {
+      "path": "docs/task-memory-onboarding.md",
+      "sha256": "f9a661fc5b2fe2d9fa50b6ffb04b8b86eb5ea8f6e24a55d3a6f3afb1db2729cc"
+    },
+    {
+      "path": "integrations/codex/task-memory.md",
+      "sha256": "275b3ad418507718314e99c38a1048bbfbafd66dfc7f17778a28d47f601d657b"
+    },
+    {
+      "path": "integrations/minimax/memorynexus-task-memory/SKILL.md",
+      "sha256": "861346312af2d90278e66e2e72638b9a70dd642c4497f3bc7add2b948bbb4902"
+    },
+    {
+      "path": "integrations/task-memory/PROTOCOL.md",
+      "sha256": "645fef7d255d41b794fe68e897a1a7000faf6a1f779f40d5930232b2de39006b"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-repo-onboard/SKILL.md",
+      "sha256": "1f2192032dfd0ef6e95dcf03bf59634a7bb97fb67af308e87d7e0af097d77861"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-repo-onboard/references/current-repository-demo.md",
+      "sha256": "8fe33cc8f57485ecf7e6d5351afce12c1ec4b8777a0a667121d02ffb4bff8e6f"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-repo-onboard/references/current-repository-seed.json",
+      "sha256": "36e66cfed7e0a8c699b17de7bc3feb2cfeb9ac4d88610844a54a9ecb26345549"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-repo-onboard/references/pilot-walkthrough.md",
+      "sha256": "a08435a192f9296e05c9f8d7fe59e2bc1fde25a769585d37607d764822bfc5a5"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-repo-onboard/references/profile-template.md",
+      "sha256": "635e880c590c8a278deb92d548d02446ea0430a2debe88476902606e887012dd"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-repository-review/SKILL.md",
+      "sha256": "acd015c20e8ef5228a793e911f093e679a3c8b6bd7004cc2e7a7f455ef8b10ed"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-repository-review/references/lens-rules.md",
+      "sha256": "f291baf444c0609e9112135b3ba820cb48863f41051532a42b356316ed011aa7"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-bootstrap/SKILL.md",
+      "sha256": "dcb2775f12984fc2e37b208cb4df2b4736944c1f5dd835c6b8ac691db749442a"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-bootstrap/references/manifest.md",
+      "sha256": "0b9a4ef2f4e85bce5b559c720618cb0fd315740c8bfddf483ea85ec811cd3b7f"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-bootstrap/scripts/bootstrap.py",
+      "sha256": "db5fcfaa7b5d3b3d25ef74c0d78e10ad7c2bd7d20cbe7b486e092fe42f5eabb3"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-memory/SKILL.md",
+      "sha256": "41fbaa3541277023b0cb6c5ed0c5f6b652411c1b01fa21059db35e0273f7a202"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-memory/references/acceptance.md",
+      "sha256": "00c89b991beb4440927c0fbd081b1218b50908066a8c102d3aca42af81922387"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-memory/references/daily-interface.md",
+      "sha256": "6fec906995e423e824d09a5d5b36e6a2801c5afa1d6f030dd2d160590c70a919"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-memory/references/understanding-lens.md",
+      "sha256": "8c30825e80d1029621973b299677ad362b24a15d9271e1eea4c0ac70022b9b61"
+    },
+    {
+      "path": "workflow.py",
+      "sha256": "31c4fcaeb21fb9d1d0a4f0fac8ce92382e32f5389d9fc4844331b16200f56285"
+    },
+    {
+      "path": "workflow_cli.py",
+      "sha256": "cdb4e4761639a4264391c1ea38f995461ddae682a3724745c4e9d4c877477a0c"
+    },
+    {
+      "path": "workflow_engine.py",
+      "sha256": "1d38dbf28c3cb44bc6bd039dda73ff5e8929159abb116fd647a01f67584fd844"
+    },
+    {
+      "path": "workflow_io.py",
+      "sha256": "1a74420bdf28b0c495fc69caff05deadcc3bceabafbc3a3f8bef6ccc68cc8f90"
+    },
+    {
+      "path": "workflow_material.py",
+      "sha256": "a66c2add662dc4d118e89ad5113f44d4efec89c4e4ad59687ed95b66f77a053d"
+    },
+    {
+      "path": "workflow_recovery.py",
+      "sha256": "89499db4a0ac915ec37b7379f018b941d4a8288ba67dbd1651839596ede30544"
+    },
+    {
+      "path": "workflow_removal.py",
+      "sha256": "40ed6baaf816fa67280e780c6ab23516b378158727fa9c8efe88a7d1fdb0ae0f"
+    },
+    {
+      "path": "workflow_scan.py",
+      "sha256": "cf7f6a06891b904c9bf844ba5cd1827c6bd793e98c4de7db41d4c21792487934"
+    },
+    {
+      "path": "workflow_trigger.py",
+      "sha256": "b70daf5ae0b4072a4369ce06264baf3d3b8c62ed5ab73d584c917d2aed85e4bd"
+    },
+    {
+      "path": "workflow_types.py",
+      "sha256": "7b54d6ecaae996367354f8318db3552734f105c22f462e37e7cfdd34618baa73"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "response-a.md",
+      "sha256": "7eb77aa9a4ed44025e249fbbf56307c38e4e3dd675a6b5cfbd34c5e71d1c3202"
+    },
+    {
+      "path": "response-b.md",
+      "sha256": "bdd3fb19ec83103ef7118e0ff57d5740300263e76d921dd6f8acab9b77b41c9e"
+    },
+    {
+      "path": "response-c.md",
+      "sha256": "60822683f92955c950fce2c24d9d77d5115ad8458f86d56bf27e5d058b255d15"
+    },
+    {
+      "path": "response-resume.md",
+      "sha256": "30af97f2eda7e2f38e4a16aaf45087a956808aa480263e7111e8c786961d52ea"
+    }
+  ],
+  "evaluations": [
+    {
+      "agent": "/root/lens_sample_a",
+      "initial_context": "fork_turns=none",
+      "sample": "sample-a",
+      "short_request": "看看我对 idempotent retries after a lost response 的理解与疑问，给一个下一步验证问题。",
+      "evidence_entry": "/private/tmp/memorynexus-issue346-review-r5l6hixi/fixtures/sample-a/input.json",
+      "output": "response-a.md"
+    },
+    {
+      "agent": "/root/lens_sample_b",
+      "initial_context": "fork_turns=none",
+      "sample": "sample-b",
+      "short_request": "看看我对 idempotent retries after a lost response 的理解与疑问，给一个下一步验证问题。",
+      "evidence_entry": "/private/tmp/memorynexus-issue346-review-r5l6hixi/fixtures/sample-b/input.json",
+      "output": "response-b.md"
+    },
+    {
+      "agent": "/root/lens_sample_a",
+      "initial_context": "follow-up after A",
+      "sample": "sample-c",
+      "short_request": "本任务记录刚发生订正和撤回。请重新读取授权有界入口 /private/tmp/memorynexus-issue346-review-r5l6hixi/fixtures-c-v2/input.json，仍使用原冻结 Skill，就同一主题再做一次理解与疑问 review。只读这次样本及原 Skill/协议，保存实际答复为 /private/tmp/memorynexus-issue346-review-r5l6hixi/response-c.md；不要修改原 response-a.md，不调用 live helper、不写 ledger。",
+      "evidence_entry": "/private/tmp/memorynexus-issue346-review-r5l6hixi/fixtures-c-v2/input.json",
+      "output": "response-c.md"
+    },
+    {
+      "agent": "/root/ordinary_resume",
+      "initial_context": "fork_turns=none",
+      "sample": "sample-a",
+      "short_request": "接上这个任务。",
+      "evidence_entry": "/private/tmp/memorynexus-issue346-review-r5l6hixi/fixtures/sample-a/input.json",
+      "output": "response-resume.md"
+    }
+  ],
+  "evaluation_setup": {
+    "skill": "/private/tmp/memorynexus-issue346-review-r5l6hixi/collected/package/integrations/task-memory/memorynexus-task-memory/SKILL.md",
+    "task_id": "34600000-0000-4000-8000-000000000001",
+    "scope": "only supplied sample plus Skill and relevant shared protocol; supplied snapshots, not a live binding; no live helper, ledger writes, other samples/reports/repository context; write actual Chinese response to named output",
+    "answer_hints_supplied": false
+  }
+}

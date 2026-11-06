@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-06",
+  "stage": "pre-publication static and resource revalidation",
+  "candidate_base_revision": "76128eb2f63d1ecfddfce03e26367c11f2d1ceb2",
+  "source_identity": [
+    {
+      "path": "integrations/task-memory/memorynexus-task-memory/SKILL.md",
+      "sha256": "41fbaa3541277023b0cb6c5ed0c5f6b652411c1b01fa21059db35e0273f7a202"
+    },
+    {
+      "path": "integrations/task-memory/memorynexus-task-memory/references/understanding-lens.md",
+      "sha256": "e476cc7b026f8340e81151fc83d82c8fc2c3dc0ca0ccb2a876e67a4442893bf2"
+    }
+  ],
+  "historical_behavior_inputs_verified": 21,
+  "historical_outputs_verified": 9,
+  "snapshot_count": 7,
+  "existing_reference_checks": 9,
+  "expected_missing_references": 3,
+  "agent_only_a_b_change": "PASS",
+  "final_response_source_links": [
+    7,
+    6,
+    6
+  ],
+  "archive_link_recheck": {
+    "attempt_1": "FAIL: historical temporary paths are no longer readable; original output bytes retained",
+    "unavailable_link_occurrences": 19,
+    "current_mapping": "PASS: every link maps to an existing versioned fixture with its original verified input hash"
+  },
+  "selected_file_count": 68,
+  "selected_inventory_sha256": "8f6e72919402ebdb382793d7ab5a0036ace7f8a7d65684b889e99cc5491d9864",
+  "resource_closure": "PASS: existing Installation.assert_daily_resources; no binary or full install",
+  "resource_harness_attempt_1": "BLOCKED: verifier used unresolved macOS temporary-directory alias; corrected verifier root with resolve(), production assertion unchanged",
+  "behavior_evidence": "Reused final frozen synthetic evaluation; no new model session run",
+  "scope": "Skill/reference/fixtures/acceptance only; no runtime or private ledger change"
+}

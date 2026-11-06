@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "status": "ok",
+  "task_id": "34600000-0000-4000-8000-000000000001",
+  "revision": 10,
+  "result": {
+    "display_name": "Synthetic retry learning task",
+    "entries": [
+      {
+        "id": "34600000-0000-4000-8000-000000000001",
+        "kind": "execution",
+        "trust": "owner_confirmed",
+        "state": "current",
+        "revision": 2,
+        "occurred_at": "2026-10-29T08:02:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000101",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Owner self-report: I already understand idempotent retries, including every conflict case.",
+        "evidence_refs": []
+      },
+      {
+        "id": "34600000-0000-4000-8000-000000000009",
+        "kind": "execution",
+        "trust": "owner_confirmed",
+        "state": "current",
+        "revision": 9,
+        "occurred_at": "2026-10-29T08:09:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000109",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Owner correction: the earlier explanation paraphrased Agent wording, not independent derivation; changed-payload conflict handling remains untested.",
+        "evidence_refs": [
+          {
+            "path": "sources/owner-correction.md",
+            "sha256": "1f4845dd26eb2012bb4eed80464a650c89d5782319cc2529ca6d071d750c6b2b"
+          }
+        ],
+        "supersedes_id": "34600000-0000-4000-8000-000000000002"
+      },
+      {
+        "id": "34600000-0000-4000-8000-000000000004",
+        "kind": "execution",
+        "trust": "execution_reported",
+        "state": "current",
+        "revision": 5,
+        "occurred_at": "2026-10-29T08:05:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000104",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Agent produced a retry implementation explanation and reports passing tests; this is Agent work.",
+        "evidence_refs": [
+          {
+            "path": "sources/agent-answer.md",
+            "sha256": "f23c7de479e27727718ad6a95b413eb3a131455a3b1c9538a6e24e5523658fbc"
+          }
+        ]
+      },
+      {
+        "id": "34600000-0000-4000-8000-000000000005",
+        "kind": "execution",
+        "trust": "execution_reported",
+        "state": "current",
+        "revision": 6,
+        "occurred_at": "2026-10-29T08:06:00Z",
+        "run_id": "34600000-0000-4000-8000-000000000105",
+        "client": "synthetic-codex",
+        "source_ids": [],
+        "text": "Agent reports that the owner independently executed all conflict cases successfully.",
+        "evidence_refs": [
+          {
+            "path": "sources/unavailable-run.log",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    ],
+    "candidates": [],
+    "candidate_count": 0,
+    "omitted_count": 0,
+    "truncated": false
+  }
+}
