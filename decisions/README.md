@@ -36,8 +36,15 @@ decisions/
 ├── ADR-027-sqlite-cli-minimax-feedback-kernel.md ✅ SQLite CLI Personal Experiment Feedback Kernel
 ├── ADR-028-shared-task-memory.md ✅ MiniMax / Codex shared task memory (current priority)
 ├── ADR-029-repository-memory-workflows.md ✅ 仓库记忆接入与可重复工作流（R3/R4 已实现；部署验收独立）
-└── ADR-030-current-knowledge-maintenance.md ✅ 当前有效知识维护（方向已接受；接入合同待冻结）
+├── ADR-030-current-knowledge-maintenance.md ✅ 当前有效知识维护（方向已接受；接入合同待冻结）
+└── ADR-031-cross-host-task-relay.md 📝 Proposed：跨机任务接力与记忆同步边界
 ```
+
+## 跨机接力设计提案
+
+[ADR-031](ADR-031-cross-host-task-relay.md) 与[接力合同](../docs/task-memory-cross-host-contract.md)
+交付 #347 的方案比较、身份/代码/执行权边界及八类故障推演。状态为 Proposed；
+设计票交付不代表多机例外获接受、同步实现或真实接力已通过。当前默认方向与其他 gate 保留。
 
 ## 当前默认方向
 
