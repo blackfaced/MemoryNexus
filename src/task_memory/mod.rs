@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 mod lifecycle;
 mod recovery;
+mod relay;
 mod strict_json;
 mod workflow;
 
@@ -47,8 +48,13 @@ pub async fn run(args: &[String]) -> Result<Value, Error> {
 async fn run_inner(args: &[String]) -> Result<Value, Error> {
     if args == ["--help"] {
         return Ok(
-            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
+            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","relay":{"usage":"task relay --config <absolute-path> <pair|export|receive>","key_env":"MEMORYNEXUS_TASK_PAIR_KEY"},"commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
         );
+    }
+    if let [group, flag, path, action] = args {
+        if group == "relay" && flag == "--config" && Path::new(path).is_absolute() {
+            return relay::run(Path::new(path), action).await;
+        }
     }
     let [flag, path, action] = args else {
         return Err(Error::invalid());
@@ -78,22 +84,36 @@ async fn run_inner(args: &[String]) -> Result<Value, Error> {
     }
     match action.as_str() {
         "init" => init(Path::new(path), read_input(false)?).await,
-        "record" => record(Path::new(path), read_input(false)?).await,
+        "record" => {
+            relay::write_local(Path::new(path), relay::Mutation::Record(read_input(false)?)).await
+        }
         "context" => context(Path::new(path), read_input(true)?).await,
-        "review" => lifecycle::review(Path::new(path), read_input(false)?).await,
-        "correct" => lifecycle::correct(Path::new(path), read_input(false)?).await,
+        "review" => {
+            relay::write_local(Path::new(path), relay::Mutation::Review(read_input(false)?)).await
+        }
+        "correct" => {
+            relay::write_local(
+                Path::new(path),
+                relay::Mutation::Correct(read_input(false)?),
+            )
+            .await
+        }
         "retract" => lifecycle::retract(Path::new(path), read_input(false)?).await,
         _ => Err(Error::invalid()),
     }
 }
 
 fn read_input<T: DeserializeOwned>(optional: bool) -> Result<T, Error> {
+    read_bounded_input(optional, MAX_INPUT)
+}
+
+fn read_bounded_input<T: DeserializeOwned>(optional: bool, limit: u64) -> Result<T, Error> {
     let mut input = Vec::new();
     std::io::stdin()
-        .take(MAX_INPUT + 1)
+        .take(limit + 1)
         .read_to_end(&mut input)
         .map_err(|_| Error::invalid())?;
-    if input.len() as u64 > MAX_INPUT {
+    if input.len() as u64 > limit {
         return Err(Error::invalid());
     }
     if optional && input.iter().all(u8::is_ascii_whitespace) {
@@ -292,10 +312,13 @@ async fn validate_format(conn: &mut SqliteConnection) -> Result<(), Error> {
         .fetch_one(&mut *conn)
         .await
         .map_err(Error::storage)?;
-    if version != 1 && version != 2 {
+    if !(1..=4).contains(&version) {
         return Err(Error::version());
     }
-    if version == 2 {
+    if version == 3 {
+        recovery::validate_base_schema(conn).await?;
+    }
+    if matches!(version, 2 | 4) {
         workflow::validate_schema(conn).await?;
     }
     Ok(())
@@ -429,7 +452,7 @@ async fn init(path: &Path, mut input: InitInput) -> Result<Value, Error> {
             .fetch_one(&mut *tx)
             .await
             .map_err(Error::storage)?;
-        if version != 1 {
+        if !matches!(version, 1 | 3) {
             return Err(Error::version());
         }
         if existing_config.is_some() {
@@ -567,20 +590,20 @@ async fn registered_task(
         .ok_or_else(Error::not_found)
 }
 
-async fn record(path: &Path, input: RecordInput) -> Result<Value, Error> {
+async fn record(
+    tx: &mut SqliteConnection,
+    task_id: &str,
+    id: &str,
+    parents: &[String],
+    input: RecordInput,
+) -> Result<Value, Error> {
     input.validate()?;
     let request_digest = digest("record", &input)?;
-    let config = read_config(path)?;
-    let mut conn = open(&ledger_path()?, false).await?;
-    let mut tx = conn
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .map_err(Error::storage)?;
-    let task = registered_task(&mut tx, &config.task_id).await?;
+    let task = registered_task(&mut *tx, task_id).await?;
     let previous_revision = task.get::<i64, _>("revision");
     if let Some(response) = lifecycle::replay(
-        &mut tx,
-        &config.task_id,
+        &mut *tx,
+        task_id,
         &input.idempotency_key,
         "record",
         &request_digest,
@@ -600,40 +623,34 @@ async fn record(path: &Path, input: RecordInput) -> Result<Value, Error> {
     } else {
         "execution_reported"
     };
-    let id = Uuid::new_v4().to_string();
     let revision = previous_revision + 1;
     if input.kind == RecordKind::Checkpoint {
-        let previous: Vec<String> = sqlx::query_scalar(
-            "SELECT id FROM task_records WHERE task_id=? AND kind='checkpoint' AND state='current'",
-        )
-        .bind(&config.task_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(Error::storage)?;
-        for id in previous {
-            lifecycle::invalidate_dependents(&mut tx, &config.task_id, &id, revision).await?;
+        for parent in parents {
+            let row = lifecycle::scoped_record(tx, task_id, parent).await?;
+            if row.get::<String, _>("kind") != "checkpoint" {
+                return Err(Error::conflict());
+            }
+            if row.get::<String, _>("state") == "current" {
+                lifecycle::invalidate_dependents(tx, task_id, parent, revision).await?;
+                sqlx::query("UPDATE task_records SET state='historical',revision=? WHERE task_id=? AND id=?")
+                    .bind(revision).bind(task_id).bind(parent).execute(&mut *tx).await.map_err(Error::storage)?;
+            }
         }
-        sqlx::query("UPDATE task_records SET state='historical', revision=? WHERE task_id=? AND kind='checkpoint' AND state='current'").bind(revision).bind(&config.task_id).execute(&mut *tx).await.map_err(Error::storage)?;
     }
     sqlx::query("INSERT INTO task_records (id,task_id,kind,trust,text,occurred_at,run_id,client,evidence_refs,state,revision) VALUES (?,?,?,?,?,?,?,?,?,'current',?)")
-        .bind(&id).bind(&config.task_id).bind(input.kind.as_str()).bind(trust).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(serde_json::to_string(&input.evidence_refs).map_err(Error::storage)?).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
+        .bind(id).bind(task_id).bind(input.kind.as_str()).bind(trust).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(serde_json::to_string(&input.evidence_refs).map_err(Error::storage)?).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
     lifecycle::save_receipt(
-        &mut tx,
-        &config.task_id,
+        &mut *tx,
+        task_id,
         &input.idempotency_key,
         "record",
         &request_digest,
-        &id,
+        id,
         revision,
     )
     .await?;
-    tx.commit().await.map_err(Error::storage)?;
     Ok(lifecycle::write_response(
-        "accepted",
-        &config.task_id,
-        revision,
-        &id,
-        "current",
+        "accepted", task_id, revision, id, "current",
     ))
 }
 

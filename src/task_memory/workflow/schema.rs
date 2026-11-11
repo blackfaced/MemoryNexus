@@ -70,6 +70,7 @@ pub(in crate::task_memory) async fn validate_schema(
         .chain(SCHEMA_V2.iter().map(|s| s.to_string()))
         .chain(std::iter::once(RECEIPTS.to_string()))
         .collect();
+    relay::include_schema(recovery::schema_version(conn).await?, &mut expected);
     actual.sort();
     expected.sort();
     if actual != expected {

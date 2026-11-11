@@ -179,23 +179,22 @@ pub(super) async fn save_receipt(
     Ok(())
 }
 
-pub(super) async fn review(path: &Path, input: ReviewInput) -> Result<Value, Error> {
+pub(super) async fn review(
+    tx: &mut SqliteConnection,
+    task_id: &str,
+    id: &str,
+    input: ReviewInput,
+) -> Result<Value, Error> {
     validate_envelope(&input.idempotency_key, &input.run_id, &input.client)?;
     bounded(&input.text, 1000)?;
     chrono::DateTime::parse_from_rfc3339(&input.occurred_at).map_err(|_| Error::invalid())?;
     validate_sources(&input.source_ids)?;
     let request_digest = digest("review", &input)?;
-    let config = read_config(path)?;
-    let mut conn = open(&ledger_path()?, false).await?;
-    let mut tx = conn
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .map_err(Error::storage)?;
-    let task = registered_task(&mut tx, &config.task_id).await?;
+    let task = registered_task(&mut *tx, task_id).await?;
     let previous_revision = task.get::<i64, _>("revision");
     if let Some(response) = replay(
-        &mut tx,
-        &config.task_id,
+        &mut *tx,
+        task_id,
         &input.idempotency_key,
         "review",
         &request_digest,
@@ -208,30 +207,22 @@ pub(super) async fn review(path: &Path, input: ReviewInput) -> Result<Value, Err
     if input.confirmation.is_none() && !task.get::<bool, _>("review_capture") {
         return Err(Error::invalid());
     }
-    require_current_sources(&mut tx, &config.task_id, &input.source_ids).await?;
-    let id = Uuid::new_v4().to_string();
+    require_current_sources(&mut *tx, task_id, &input.source_ids).await?;
     let revision = previous_revision + 1;
     sqlx::query("INSERT INTO task_records (id,task_id,kind,trust,text,occurred_at,run_id,client,evidence_refs,state,revision) VALUES (?,?,'lesson','review_candidate',?,?,?,?,'[]','current',?)")
-        .bind(&id).bind(&config.task_id).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
-    save_sources(&mut tx, &id, &input.source_ids).await?;
+        .bind(id).bind(task_id).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
+    save_sources(&mut *tx, id, &input.source_ids).await?;
     save_receipt(
-        &mut tx,
-        &config.task_id,
+        &mut *tx,
+        task_id,
         &input.idempotency_key,
         "review",
         &request_digest,
-        &id,
+        id,
         revision,
     )
     .await?;
-    tx.commit().await.map_err(Error::storage)?;
-    Ok(write_response(
-        "accepted",
-        &config.task_id,
-        revision,
-        &id,
-        "current",
-    ))
+    Ok(write_response("accepted", task_id, revision, id, "current"))
 }
 
 #[derive(Deserialize, Serialize)]
@@ -262,7 +253,12 @@ pub(super) async fn invalidate_dependents(
     Ok(())
 }
 
-pub(super) async fn correct(path: &Path, input: CorrectInput) -> Result<Value, Error> {
+pub(super) async fn correct(
+    tx: &mut SqliteConnection,
+    task_id: &str,
+    id: &str,
+    input: CorrectInput,
+) -> Result<Value, Error> {
     validate_envelope(&input.idempotency_key, &input.run_id, &input.client)?;
     canonical_uuid(&input.target_id)?;
     bounded(&input.text, 1000)?;
@@ -276,17 +272,11 @@ pub(super) async fn correct(path: &Path, input: CorrectInput) -> Result<Value, E
         }
     }
     let request_digest = digest("correct", &input)?;
-    let config = read_config(path)?;
-    let mut conn = open(&ledger_path()?, false).await?;
-    let mut tx = conn
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .map_err(Error::storage)?;
-    let task = registered_task(&mut tx, &config.task_id).await?;
+    let task = registered_task(&mut *tx, task_id).await?;
     let previous_revision = task.get::<i64, _>("revision");
     if let Some(response) = replay(
-        &mut tx,
-        &config.task_id,
+        &mut *tx,
+        task_id,
         &input.idempotency_key,
         "correct",
         &request_digest,
@@ -296,17 +286,17 @@ pub(super) async fn correct(path: &Path, input: CorrectInput) -> Result<Value, E
     {
         return Ok(response);
     }
-    let target = scoped_record(&mut tx, &config.task_id, &input.target_id).await?;
+    let target = scoped_record(&mut *tx, task_id, &input.target_id).await?;
     if target.get::<String, _>("state") != "current" {
         return Err(Error::conflict());
     }
     let sources = match &input.source_ids {
         Some(ids) => ids.clone(),
-        None => source_ids(&mut tx, &input.target_id).await?,
+        None => source_ids(&mut *tx, &input.target_id).await?,
     };
     let kind: String = target.get("kind");
     if kind == "lesson" {
-        require_current_sources(&mut tx, &config.task_id, &sources).await?;
+        require_current_sources(&mut *tx, task_id, &sources).await?;
     } else if !sources.is_empty() {
         return Err(Error::invalid());
     }
@@ -314,43 +304,35 @@ pub(super) async fn correct(path: &Path, input: CorrectInput) -> Result<Value, E
         Some(refs) => serde_json::to_string(refs).map_err(Error::storage)?,
         None => target.get("evidence_refs"),
     };
-    let id = Uuid::new_v4().to_string();
     let revision = previous_revision + 1;
     sqlx::query("UPDATE task_records SET state='superseded',revision=? WHERE task_id=? AND id=?")
         .bind(revision)
-        .bind(&config.task_id)
+        .bind(task_id)
         .bind(&input.target_id)
         .execute(&mut *tx)
         .await
         .map_err(Error::storage)?;
-    invalidate_dependents(&mut tx, &config.task_id, &input.target_id, revision).await?;
+    invalidate_dependents(&mut *tx, task_id, &input.target_id, revision).await?;
     sqlx::query("INSERT INTO task_records (id,task_id,kind,trust,text,occurred_at,run_id,client,evidence_refs,state,revision) VALUES (?,?,?,'owner_confirmed',?,?,?,?,?,'current',?)")
-        .bind(&id).bind(&config.task_id).bind(&kind).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(&refs).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
+        .bind(id).bind(task_id).bind(&kind).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(&refs).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
     sqlx::query("INSERT INTO task_record_revisions VALUES (?,?)")
-        .bind(&id)
+        .bind(id)
         .bind(&input.target_id)
         .execute(&mut *tx)
         .await
         .map_err(Error::storage)?;
-    save_sources(&mut tx, &id, &sources).await?;
+    save_sources(&mut *tx, id, &sources).await?;
     save_receipt(
-        &mut tx,
-        &config.task_id,
+        &mut *tx,
+        task_id,
         &input.idempotency_key,
         "correct",
         &request_digest,
-        &id,
+        id,
         revision,
     )
     .await?;
-    tx.commit().await.map_err(Error::storage)?;
-    Ok(write_response(
-        "accepted",
-        &config.task_id,
-        revision,
-        &id,
-        "current",
-    ))
+    Ok(write_response("accepted", task_id, revision, id, "current"))
 }
 
 #[derive(Deserialize, Serialize)]

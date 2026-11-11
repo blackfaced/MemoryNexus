@@ -43,6 +43,7 @@ argon2 = "0.5"
 async-trait = "0.1"
 rand = "0.8"
 sha2 = "0.10"
+hmac = "0.12"
 
 # Storage (S3)
 aws-config = "1"

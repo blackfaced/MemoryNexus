@@ -181,3 +181,17 @@ readback and how each execution/scheduled entry invokes the CLI. Both clients
 must resolve the same ledger path. A client-label-only test cannot close this
 gate. No notification delivery, fourteen-day health gate or LLM quality score is
 implied by successful task-memory handoff.
+
+### 显式配对任务的记录传递
+
+两个独立账本可从同一任务和已核对的基线记录开始。owner 为这一对设备生成两个设备 UUID、一个新的共享 epoch UUID 和一个随机的 32 字节密钥。通过已授权的私有通道向两端提供同一密钥的 64 位十六进制串，使用环境变量 `MEMORYNEXUS_TASK_PAIR_KEY`。密钥只用于 relay 调用。
+
+入口为 `task relay --config <绝对路径> <动作>`，沿用绑定和 `MEMORYNEXUS_TASK_LEDGER`。每次调用从 stdin 读取一个 JSON 对象。
+
+| 动作 | 输入及结果 |
+| --- | --- |
+| `pair` | 传入 `device`、`peer`、`epoch`、`confirmation: "confirmed"`。另一端对调 device 与 peer。配对在当前任务生效。账本格式 v1/v2 分别升为 3/4，后续访问使用支持配对的 CLI。 |
+| `export` | `{"record_ids":["<来源记录 UUID>"]}` 显式选择 1–20 条本端在此次配对后创建的记录。将输出的 `result` 原样传给对端。基线及所依赖的前序须已存在，或一同选中。 |
+| `receive` | 输入导出的签名批次。整批在一个事务中核对任务、设备、世代、签名和变更身份，按来源 ID 写入。返回本次新增及重放的 ID，以及此方向、此世代已接收的唯一变更数。该计数用于核对重放。 |
+
+普通 `record`、`review`、`correct` 仍产生本机 ID 和写入回执。配对后，这些写入一并保存来源设备、世代、序号和前序引用。原账本被撤回或已失效的正文不能导出。此入口传递记录创建及其引用，撤回传播和连续收齐水位另行定义。恢复副本后须以新世代重新配对。
