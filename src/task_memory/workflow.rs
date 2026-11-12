@@ -101,7 +101,7 @@ pub(super) async fn run(path: &Path, action: &str, mut input: Value) -> Result<V
         .fetch_one(&mut conn)
         .await
         .map_err(Error::storage)?;
-    if !matches!(version, 2 | 4) {
+    if !matches!(version, 2 | 4 | 6) {
         return Err(Error::version());
     }
     if action == "workflow-status" {
