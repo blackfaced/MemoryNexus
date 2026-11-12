@@ -130,6 +130,16 @@ async fn contiguous(
         .await.map_err(Error::storage)
 }
 
+async fn local_upper(tx: &mut SqliteConnection, pair: &SqliteRow) -> Result<i64, Error> {
+    sqlx::query_scalar("SELECT COALESCE(MAX(seq),0) FROM task_relay_changes WHERE task_id=? AND epoch=? AND origin=?")
+        .bind(pair.get::<&str, _>("task_id"))
+        .bind(pair.get::<&str, _>("epoch"))
+        .bind(pair.get::<&str, _>("device"))
+        .fetch_one(tx)
+        .await
+        .map_err(Error::storage)
+}
+
 pub(super) async fn start(
     tx: &mut SqliteConnection,
     pair: &SqliteRow,
@@ -163,12 +173,7 @@ pub(super) async fn start(
     let received = contiguous(tx, pair, prev.as_ref().map_or(0, |r| r.get("received"))).await?;
     let task = pair.get::<&str, _>("task_id");
     let epoch = pair.get::<&str, _>("epoch");
-    let upper: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(seq),0) FROM task_relay_changes WHERE task_id=? AND epoch=? AND origin=?")
-      .bind(task)
-        .bind(epoch)
-        .bind(pair.get::<&str,_>("device"))
-        .fetch_one(&mut *tx)
-        .await.map_err(Error::storage)?;
+    let upper = local_upper(tx, pair).await?;
     let inserted = sqlx::query("INSERT INTO task_relay_rounds(task_id,epoch,round,target,received,confirmed) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING")
        .bind(task)
         .bind(epoch)
@@ -316,11 +321,13 @@ pub(in crate::task_memory) async fn status(
     let receipt = row
         .as_ref()
         .and_then(|r| r.get::<Option<String>, _>("receipt"));
-    let outgoing = direction(
-        row.as_ref().map_or(0, |r| r.get("confirmed")),
+    let confirmed = row.as_ref().map_or(0, |r| r.get("confirmed"));
+    let mut outgoing = direction(
+        confirmed,
         row.as_ref().map(|r| r.get("target")),
         receipt.is_some(),
     );
+    outgoing["pending_count"] = json!(local_upper(tx, pair).await? - confirmed);
     let mut result = json!({"task_id":pair.get::<&str,_>("task_id"),"epoch":pair.get::<&str,_>("epoch"),"device":pair.get::<&str,_>("device"),"peer":pair.get::<&str,_>("peer"),"outgoing":outgoing,"incoming":direction(received,incoming_target,incoming_target.is_some()),"subsequent_peer_tail":"unknown"});
     if let Some(round) = round {
         result["round"] = json!(round);

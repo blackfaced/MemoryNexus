@@ -295,6 +295,8 @@ def main():
                             state = f'连续至 {position}，本轮目标 {upper} 待确认'
                         directions.append(f'{title}：{state}。')
                     notice = ''.join(directions) + '对端后续尾部未知。'
+                if sync and 'pending_count' in sync['outgoing']:
+                    notice += f'本机待发 {sync["outgoing"]["pending_count"]} 条。'
                 if count > 1:
                     label = '两' if count == 2 else str(count)
                     notice += f'有{label}条并发进度，待确认。'
