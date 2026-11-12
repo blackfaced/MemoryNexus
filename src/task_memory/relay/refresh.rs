@@ -77,7 +77,7 @@ impl<T: Serialize> Proof<T> {
 }
 
 async fn latest(tx: &mut SqliteConnection, pair: &SqliteRow) -> Result<Option<SqliteRow>, Error> {
-    if !matches!(recovery::schema_version(tx).await?, 5..=8) {
+    if !matches!(recovery::schema_version(tx).await?, 5..=10) {
         return Ok(None);
     }
     sqlx::query(
@@ -154,7 +154,7 @@ pub(super) async fn install(tx: &mut SqliteConnection) -> Result<(), Error> {
     let marker = match version {
         3 | 5 => "PRAGMA user_version=7",
         4 | 6 => "PRAGMA user_version=8",
-        7 | 8 => return Ok(()),
+        7..=10 => return Ok(()),
         _ => return Err(Error::version()),
     };
     if matches!(version, 3 | 4) {

@@ -1,5 +1,6 @@
 //! Explicit two-device batches for one locally paired task.
 pub(super) mod refresh;
+pub(super) mod revisions;
 use super::*;
 use hmac::{Hmac, Mac};
 use sqlx::sqlite::SqliteRow;
@@ -9,19 +10,24 @@ const CHANGES: &str = "CREATE TABLE task_relay_changes (task_id TEXT NOT NULL, e
 const MAX_BATCH: u64 = 1024 * 1024;
 
 pub(super) fn include_schema(version: i64, expected: &mut Vec<String>) {
-    if matches!(version, 7 | 8) {
+    if matches!(version, 9 | 10) {
+        expected.retain(|sql| !sql.starts_with("CREATE TABLE task_record_revisions "));
+        expected.push(revisions::EDGES.to_owned());
+        expected.push(revisions::BY_PARENT.to_owned());
+    }
+    if matches!(version, 7..=10) {
         expected.push(refresh::ENQUEUED.to_owned());
     }
-    if matches!(version, 5..=8) {
+    if matches!(version, 5..=10) {
         expected.push(refresh::ROUNDS.to_owned());
     }
-    if matches!(version, 3..=8) {
+    if matches!(version, 3..=10) {
         expected.extend([PAIR.to_owned(), CHANGES.to_owned()]);
     }
 }
 
-async fn installed(c: &mut SqliteConnection) -> Result<bool, Error> {
-    Ok(matches!(recovery::schema_version(c).await?, 3..=8))
+pub(super) async fn installed(c: &mut SqliteConnection) -> Result<bool, Error> {
+    Ok(matches!(recovery::schema_version(c).await?, 3..=10))
 }
 
 pub(super) async fn disable_restored_pairs(c: &mut SqliteConnection) -> Result<(), Error> {
@@ -58,11 +64,12 @@ impl Mutation {
         task: &str,
         id: &str,
         parents: &[String],
+        from_peer: Option<&SqliteRow>,
     ) -> Result<Value, Error> {
         match self {
             Self::Record(input) => record(tx, task, id, parents, input).await,
             Self::Review(input) => lifecycle::review(tx, task, id, input).await,
-            Self::Correct(input) => lifecycle::correct(tx, task, id, input).await,
+            Self::Correct(input) => lifecycle::correct(tx, task, id, input, from_peer).await,
         }
     }
 }
@@ -218,7 +225,7 @@ pub(super) async fn write_local(path: &Path, mutation: Mutation) -> Result<Value
         .transpose()
         .map_err(Error::storage)?;
     let id = Uuid::new_v4().to_string();
-    let response = mutation.apply(&mut tx, &task, &id, &parents).await?;
+    let response = mutation.apply(&mut tx, &task, &id, &parents, None).await?;
     if let (Some(row), Some(mutation)) = (pair, wire) {
         if response["status"] == "accepted" {
             let epoch: String = row.get("epoch");
@@ -407,7 +414,9 @@ async fn receive(
         if !mutation.checkpoint() && !c.parents.is_empty() {
             return Err(Error::invalid());
         }
-        let response = mutation.apply(tx, task, &c.record_id, &c.parents).await?;
+        let response = mutation
+            .apply(tx, task, &c.record_id, &c.parents, Some(pair))
+            .await?;
         if response["status"] != "accepted" {
             return Err(Error::conflict());
         }

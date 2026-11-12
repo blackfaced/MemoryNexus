@@ -232,6 +232,8 @@ pub(super) struct CorrectInput {
     run_id: String,
     client: String,
     target_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolve_with: Option<Vec<String>>,
     text: String,
     occurred_at: String,
     confirmation: Confirmation,
@@ -248,7 +250,7 @@ pub(super) async fn invalidate_dependents(
     revision: i64,
 ) -> Result<(), Error> {
     workflow::invalidate_record(conn, task_id, source, revision).await?;
-    sqlx::query("UPDATE task_records SET state='stale', revision=? WHERE task_id=? AND state='current' AND id IN (SELECT record_id FROM task_record_sources WHERE source_id=?)")
+    sqlx::query("UPDATE task_records SET state='stale', revision=? WHERE task_id=? AND state IN ('current','pending_confirmation') AND id IN (SELECT record_id FROM task_record_sources WHERE source_id=?)")
         .bind(revision).bind(task_id).bind(source).execute(conn).await.map_err(Error::storage)?;
     Ok(())
 }
@@ -258,6 +260,7 @@ pub(super) async fn correct(
     task_id: &str,
     id: &str,
     input: CorrectInput,
+    from_peer: Option<&sqlx::sqlite::SqliteRow>,
 ) -> Result<Value, Error> {
     validate_envelope(&input.idempotency_key, &input.run_id, &input.client)?;
     canonical_uuid(&input.target_id)?;
@@ -287,9 +290,15 @@ pub(super) async fn correct(
         return Ok(response);
     }
     let target = scoped_record(&mut *tx, task_id, &input.target_id).await?;
-    if target.get::<String, _>("state") != "current" {
-        return Err(Error::conflict());
-    }
+    let (parents, pending) = relay::revisions::prepare(
+        tx,
+        task_id,
+        &target,
+        input.resolve_with.as_deref(),
+        from_peer,
+        previous_revision + 1,
+    )
+    .await?;
     let sources = match &input.source_ids {
         Some(ids) => ids.clone(),
         None => source_ids(&mut *tx, &input.target_id).await?,
@@ -305,22 +314,26 @@ pub(super) async fn correct(
         None => target.get("evidence_refs"),
     };
     let revision = previous_revision + 1;
-    sqlx::query("UPDATE task_records SET state='superseded',revision=? WHERE task_id=? AND id=?")
-        .bind(revision)
-        .bind(task_id)
-        .bind(&input.target_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(Error::storage)?;
-    invalidate_dependents(&mut *tx, task_id, &input.target_id, revision).await?;
-    sqlx::query("INSERT INTO task_records (id,task_id,kind,trust,text,occurred_at,run_id,client,evidence_refs,state,revision) VALUES (?,?,?,'owner_confirmed',?,?,?,?,?,'current',?)")
-        .bind(id).bind(task_id).bind(&kind).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(&refs).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
-    sqlx::query("INSERT INTO task_record_revisions VALUES (?,?)")
-        .bind(id)
-        .bind(&input.target_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(Error::storage)?;
+    for parent in &parents {
+        sqlx::query("UPDATE task_records SET state='superseded',revision=? WHERE task_id=? AND id=? AND state!='superseded'")
+            .bind(revision).bind(task_id).bind(parent).execute(&mut *tx).await.map_err(Error::storage)?;
+        invalidate_dependents(tx, task_id, parent, revision).await?;
+    }
+    let state = if pending {
+        "pending_confirmation"
+    } else {
+        "current"
+    };
+    sqlx::query("INSERT INTO task_records (id,task_id,kind,trust,text,occurred_at,run_id,client,evidence_refs,state,revision) VALUES (?,?,?,'owner_confirmed',?,?,?,?,?,?,?)")
+        .bind(id).bind(task_id).bind(&kind).bind(&input.text).bind(&input.occurred_at).bind(&input.run_id).bind(&input.client).bind(&refs).bind(state).bind(revision).execute(&mut *tx).await.map_err(Error::storage)?;
+    for parent in parents {
+        sqlx::query("INSERT INTO task_record_revisions VALUES (?,?)")
+            .bind(id)
+            .bind(parent)
+            .execute(&mut *tx)
+            .await
+            .map_err(Error::storage)?;
+    }
     save_sources(&mut *tx, id, &sources).await?;
     save_receipt(
         &mut *tx,
@@ -332,7 +345,7 @@ pub(super) async fn correct(
         revision,
     )
     .await?;
-    Ok(write_response("accepted", task_id, revision, id, "current"))
+    Ok(write_response("accepted", task_id, revision, id, state))
 }
 
 #[derive(Deserialize, Serialize)]

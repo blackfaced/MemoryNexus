@@ -91,7 +91,7 @@ not grant permission to upgrade record trust.
 | `record` | `idempotency_key`, `run_id`, `client`, `kind` (`checkpoint`, `execution`, `instruction`), `text` (1–1000 chars), `occurred_at`; optional `confirmation`, `evidence_refs`, `merge_checkpoint_ids` | One current record ID. Instruction requires `confirmation: "confirmed"`. Checkpoint/execution requires the execution policy or per-write confirmation. |
 | `context` | optional `limit` (1–20, default 20), `record_ids` (at most 20) or `checkpoint_handoff: true` for current context | Current bounded context or specified same-task evidence. Read-only: no new records or database creation. |
 | `review` | `idempotency_key`, `run_id`, `client`, `text` (1–1000 chars), `source_ids` (1–20 unique UUIDs), `occurred_at`; optional `confirmation` | One `lesson` with `trust: "review_candidate"`. Requires the review policy or per-write confirmation; confirmation authorizes retention, not factual endorsement of generated text. |
-| `correct` | `idempotency_key`, `run_id`, `client`, `target_id`, replacement `text`, `occurred_at`, `confirmation: "confirmed"`; optional `source_ids`, `evidence_refs` | New owner-confirmed revision of a current same-task record; old revision superseded. Target kind stays fixed. All retained sources must still be current; caller must replace invalid sources explicitly. Concurrent competing corrections conflict. |
+| `correct` | `idempotency_key`, `run_id`, `client`, `target_id`, replacement `text`, `occurred_at`, `confirmation: "confirmed"`; optional `source_ids`, `evidence_refs` | New owner-confirmed revision of a current same-task record; old revision superseded. Target kind stays fixed. All retained sources must still be current; caller must replace invalid sources explicitly. A local edit against a superseded target returns conflict. Paired peer corrections and explicit resolution are described below. |
 | `retract` | `idempotency_key`, `run_id`, `client`, `target_id`, `reason` (1–240 chars), `confirmation: "confirmed"` | Withdraw the record and its revision-chain content; retain minimum identity/tombstone/digest for audit and replay prevention. |
 | `export` | `{}` | Versioned task-only JSON, all tasks/records/links/current states and minimal receipts; no raw request bodies or experiment records. |
 | `backup` | `path` (absolute, new destination) | SQLite-consistent snapshot including WAL state and all idempotency receipts; no overwrite. |
@@ -201,6 +201,14 @@ implied by successful task-memory handoff.
 | `receive` | 输入导出的签名批次。整批在一个事务中核对任务、设备、世代、签名和变更身份，按来源 ID 写入。返回本次新增及重放的 ID，以及此方向、此世代已接收的唯一变更数。该计数用于核对重放。 |
 
 普通 `record`、`review`、`correct` 仍产生本机 ID 和写入回执。配对后，这些写入一并保存来源设备、世代、序号和前序引用。原账本被撤回或已失效的正文不能导出。此入口传递记录创建及其引用，撤回传播另行定义。恢复副本后须以新世代重新配对。
+
+#### 同一修订的并发订正
+
+两台已配对设备离线订正同一版本时，接收端保留每条订正的原 ID、来源设备及共同前序。当前 `context` 用 `pending_corrections` 和 `pending_correction_count` 单列待取舍分支。每条分支的状态为 `pending_confirmation`，不计入当前结论或当前 checkpoint；仍可按 ID 查询正文、`origin_device` 和 `supersedes_id`。读取、重放和双向收齐回执均保留待取舍状态。
+
+owner 确认具体替换文本后，使用原 `correct` 入口，把一个待确认 ID 放入 `target_id`，同链其余待确认 ID 放入 `resolve_with`，同时给出 `text` 和 `confirmation: "confirmed"`。本机在写事务中核对完整分支集合，遗漏、异链或已失效的选择返回冲突。新订正按原同步路径传递，双方都能按新 ID 读到选定内容及全部直接前序 `supersedes_ids`；原分支保留各自来源，可按 ID 查阅。
+
+首次接收合法分叉时，状态和修订边在同一事务升级到 v9（基础账本）或 v10（工作流账本）；较早的配对账本在普通写入与读取时沿用原格式。已升级副本需使用支持该格式的 CLI。
 
 #### 手动刷新与连续回执
 
