@@ -77,7 +77,10 @@ fn pair_key() -> Result<String, Error> {
     Ok(key)
 }
 
-async fn active(c: &mut SqliteConnection, task: &str) -> Result<Option<SqliteRow>, Error> {
+pub(super) async fn active(
+    c: &mut SqliteConnection,
+    task: &str,
+) -> Result<Option<SqliteRow>, Error> {
     if !installed(c).await? {
         return Ok(None);
     }

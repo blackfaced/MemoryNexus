@@ -70,7 +70,7 @@ def bind(path):
             not isinstance(help_result.get('commands'), list) or
             not (ACTIONS | {'context'}).issubset(help_result['commands'])):
         fail('unsupported_version')
-    return b, pins
+    return b, pins, help_result.get('checkpoint_handoff') == 1
 
 
 def identity(b, pins):
@@ -79,7 +79,7 @@ def identity(b, pins):
             'config_sha256': pins['config_sha256']}
 
 
-def read_context(b, request):
+def read_context(b, request, *, handoff=False):
     fields(request, (), ('limit', 'record_ids'))
     limit = number(request.get('limit', 20), 1, 20)
     req = {'limit': limit, 'purpose': 'current'}
@@ -87,6 +87,9 @@ def read_context(b, request):
         for item in array(request['record_ids'], 20): uuid(item)
         unique(request['record_ids'])
         req.update(purpose='history', record_ids=request['record_ids'])
+    if handoff and 'record_ids' not in request:
+        request = dict(request, checkpoint_handoff=True)
+        req['checkpoint_handoff'] = True
     response = invoke(b, 'context', canonical(request))
     try:
         context_result(response['result'], req, allow_historical=True)
@@ -108,7 +111,7 @@ def envelope(action, raw):
         'retract': ('target_id', 'reason', 'confirmation'),
     }[action]
     optional = {
-        'record': ('confirmation', 'evidence_refs'),
+        'record': ('confirmation', 'evidence_refs', 'merge_checkpoint_ids'),
         'review': ('confirmation',),
         'correct': ('source_ids', 'evidence_refs'), 'retract': (),
     }[action]
@@ -118,6 +121,11 @@ def envelope(action, raw):
     if action == 'record':
         if body['kind'] not in ('checkpoint', 'execution', 'instruction'): fail()
         if body['kind'] == 'instruction' and body.get('confirmation') != 'confirmed': fail()
+    if 'merge_checkpoint_ids' in body:
+        if body['kind'] != 'checkpoint' or body.get('confirmation') != 'confirmed': fail()
+        ids = array(body['merge_checkpoint_ids'], 20, 2)
+        for item in ids: uuid(item)
+        unique(ids)
     if 'target_id' in body: uuid(body['target_id'])
     if 'text' in body: string(body['text'], 1, 1000)
     if 'reason' in body: string(body['reason'], 1, 240)
@@ -257,7 +265,7 @@ def main():
             if name == 'stage': p.add_argument('--action', required=True, choices=sorted(ACTIONS))
         args = parser.parse_args(); action = args.command
         if not sys.flags.isolated: fail('unsafe_path')
-        b, pins = bind(args.binding)
+        b, pins, handoff = bind(args.binding)
         if action == 'verify':
             context = read_context(b, {'limit': 1})
             result = {'status': 'ok', 'task_id': b['task_id'], 'revision': context['revision'],
@@ -265,8 +273,16 @@ def main():
                       'package_sha256': b['package_sha256']}
         elif action == 'read':
             request = strict_loads(read_regular(safe_path(args.request, True), 32768, True)) if args.request else {'limit': 20}
-            context = read_context(b, request)
+            context = read_context(b, request, handoff=handoff)
             result = {'status': 'incomplete' if context['result']['truncated'] else 'ok', 'context': context}
+            progress = context['result'].get('checkpoint_progress')
+            if progress is not None:
+                count = progress['current_count']
+                notice = '本机已知进度，对端是否收齐尚未确认。'
+                if count > 1:
+                    label = '两' if count == 2 else str(count)
+                    notice += f'有{label}条并发进度，待确认。'
+                result['checkpoint_notice'] = notice
         elif action == 'stage': result = stage(b, pins, args)
         else: result = apply(b, pins, args)
         print(canonical({'schema_version': 1, **result}).decode())
