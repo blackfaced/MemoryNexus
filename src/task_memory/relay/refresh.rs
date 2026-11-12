@@ -3,6 +3,15 @@ use super::*;
 
 pub(super) const ROUNDS: &str = "CREATE TABLE task_relay_rounds (id INTEGER PRIMARY KEY, task_id TEXT NOT NULL, epoch TEXT NOT NULL, round TEXT NOT NULL, target INTEGER NOT NULL, peer_target INTEGER, received INTEGER NOT NULL, confirmed INTEGER NOT NULL, receipt TEXT, UNIQUE(task_id,epoch,round), FOREIGN KEY(task_id,epoch) REFERENCES task_relay_pairs(task_id,epoch))";
 
+pub(super) const ENQUEUED: &str = "CREATE TABLE task_relay_enqueued (record_id TEXT PRIMARY KEY NOT NULL REFERENCES task_relay_changes(record_id), queued_at_ms INTEGER NOT NULL)";
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct StatusOptions {
+    #[serde(default)]
+    pub include_batch_age: bool,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Start {
@@ -68,7 +77,7 @@ impl<T: Serialize> Proof<T> {
 }
 
 async fn latest(tx: &mut SqliteConnection, pair: &SqliteRow) -> Result<Option<SqliteRow>, Error> {
-    if !matches!(recovery::schema_version(tx).await?, 5 | 6) {
+    if !matches!(recovery::schema_version(tx).await?, 5..=8) {
         return Ok(None);
     }
     sqlx::query(
@@ -140,6 +149,31 @@ async fn local_upper(tx: &mut SqliteConnection, pair: &SqliteRow) -> Result<i64,
         .map_err(Error::storage)
 }
 
+pub(super) async fn install(tx: &mut SqliteConnection) -> Result<(), Error> {
+    let version = recovery::schema_version(tx).await?;
+    let marker = match version {
+        3 | 5 => "PRAGMA user_version=7",
+        4 | 6 => "PRAGMA user_version=8",
+        7 | 8 => return Ok(()),
+        _ => return Err(Error::version()),
+    };
+    if matches!(version, 3 | 4) {
+        sqlx::query(ROUNDS)
+            .execute(&mut *tx)
+            .await
+            .map_err(Error::storage)?;
+    }
+    sqlx::query(ENQUEUED)
+        .execute(&mut *tx)
+        .await
+        .map_err(Error::storage)?;
+    sqlx::query(marker)
+        .execute(tx)
+        .await
+        .map_err(Error::storage)?;
+    Ok(())
+}
+
 pub(super) async fn start(
     tx: &mut SqliteConnection,
     pair: &SqliteRow,
@@ -154,21 +188,7 @@ pub(super) async fn start(
             return Ok(json!(offer(pair, row, key)?));
         }
     }
-    let v = recovery::schema_version(tx).await?;
-    if matches!(v, 3 | 4) {
-        sqlx::query(ROUNDS)
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::storage)?;
-        sqlx::query(if v == 3 {
-            "PRAGMA user_version=5"
-        } else {
-            "PRAGMA user_version=6"
-        })
-        .execute(&mut *tx)
-        .await
-        .map_err(Error::storage)?;
-    }
+    install(tx).await?;
     let confirmed = prev.as_ref().map_or(0, |r| r.get("confirmed"));
     let received = contiguous(tx, pair, prev.as_ref().map_or(0, |r| r.get("received"))).await?;
     let task = pair.get::<&str, _>("task_id");
@@ -291,7 +311,7 @@ pub(super) async fn acknowledge(
         .bind(through)
         .execute(&mut *tx)
         .await.map_err(Error::storage)?;
-    status(tx, pair).await
+    status(tx, pair, false).await
 }
 
 fn direction(position: i64, upper: Option<i64>, proved: bool) -> Value {
@@ -308,6 +328,7 @@ fn direction(position: i64, upper: Option<i64>, proved: bool) -> Value {
 pub(in crate::task_memory) async fn status(
     tx: &mut SqliteConnection,
     pair: &SqliteRow,
+    include_batch_age: bool,
 ) -> Result<Value, Error> {
     let row = latest(tx, pair).await?;
     let round = row.as_ref().map(|r| r.get::<&str, _>("round"));
@@ -327,7 +348,23 @@ pub(in crate::task_memory) async fn status(
         row.as_ref().map(|r| r.get("target")),
         receipt.is_some(),
     );
-    outgoing["pending_count"] = json!(local_upper(tx, pair).await? - confirmed);
+    let pending = local_upper(tx, pair).await? - confirmed;
+    outgoing["pending_count"] = json!(pending);
+    if include_batch_age {
+        let queued_at: Option<i64> = if pending > 0 && recovery::schema_version(tx).await? >= 7 {
+            sqlx::query_scalar("SELECT e.queued_at_ms FROM task_relay_changes c JOIN task_relay_enqueued e USING(record_id) WHERE c.task_id=? AND c.epoch=? AND c.origin=? AND c.seq=?")
+                .bind(pair.get::<&str, _>("task_id"))
+                .bind(pair.get::<&str, _>("epoch"))
+                .bind(pair.get::<&str, _>("device"))
+                .bind(confirmed + 1)
+                .fetch_optional(&mut *tx)
+                .await.map_err(Error::storage)?
+        } else {
+            None
+        };
+        outgoing["oldest_age_ms"] =
+            json!(queued_at.map(|ms| (chrono::Utc::now().timestamp_millis() - ms).max(0)));
+    }
     let mut result = json!({"task_id":pair.get::<&str,_>("task_id"),"epoch":pair.get::<&str,_>("epoch"),"device":pair.get::<&str,_>("device"),"peer":pair.get::<&str,_>("peer"),"outgoing":outgoing,"incoming":direction(received,incoming_target,incoming_target.is_some()),"subsequent_peer_tail":"unknown"});
     if let Some(round) = round {
         result["round"] = json!(round);

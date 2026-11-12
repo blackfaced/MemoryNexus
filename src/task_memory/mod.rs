@@ -312,13 +312,13 @@ async fn validate_format(conn: &mut SqliteConnection) -> Result<(), Error> {
         .fetch_one(&mut *conn)
         .await
         .map_err(Error::storage)?;
-    if !(1..=6).contains(&version) {
+    if !(1..=8).contains(&version) {
         return Err(Error::version());
     }
-    if matches!(version, 3 | 5) {
+    if matches!(version, 3 | 5 | 7) {
         recovery::validate_base_schema(conn).await?;
     }
-    if matches!(version, 2 | 4 | 6) {
+    if matches!(version, 2 | 4 | 6 | 8) {
         workflow::validate_schema(conn).await?;
     }
     Ok(())
@@ -452,7 +452,7 @@ async fn init(path: &Path, mut input: InitInput) -> Result<Value, Error> {
             .fetch_one(&mut *tx)
             .await
             .map_err(Error::storage)?;
-        if !matches!(version, 1 | 3 | 5) {
+        if !matches!(version, 1 | 3 | 5 | 7) {
             return Err(Error::version());
         }
         if existing_config.is_some() {
@@ -724,7 +724,7 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     };
     let handoff = pair.is_some();
     let progress = match &pair {
-        Some(p) if input.relay_progress => Some(relay::refresh::status(&mut tx, p).await?),
+        Some(p) if input.relay_progress => Some(relay::refresh::status(&mut tx, p, false).await?),
         _ => None,
     };
     let mut rows = Vec::new();
