@@ -177,10 +177,29 @@ def call(b, action, body, budget=None):
     return value
 
 
+def validate_relay_progress(sync):
+    fields(sync, ('task_id', 'epoch', 'device', 'peer', 'incoming', 'outgoing', 'subsequent_peer_tail'), ('round',))
+    for k in ('task_id', 'epoch', 'device', 'peer'): uuid(sync[k])
+    if 'round' in sync: uuid(sync['round'])
+    if sync['device'] == sync['peer'] or sync['subsequent_peer_tail'] != 'unknown': fail()
+    for direction in ('incoming', 'outgoing'):
+        part = sync[direction]
+        fields(part, ('through', 'covered'), ('target', 'unconfirmed_range'))
+        position, upper = number(part['through']), part.get('target')
+        if upper is not None: number(upper)
+        if type(part['covered']) is not bool: fail()
+        if part['covered'] and (upper is None or upper > position): fail()
+        expected = [position + 1, upper] if upper is not None and upper > position else None
+        if part.get('unconfirmed_range') != expected: fail()
+
+
 def context_result(value, req, *, allow_historical=False):
     """Validate context before copying any entry body."""
     optional = ('checkpoint_progress',) if req.get('checkpoint_handoff') else ()
+    if req.get('relay_progress'): optional += ('relay_progress',)
     fields(value, ('display_name', 'entries', 'candidates', 'candidate_count', 'omitted_count', 'truncated'), optional)
+    if 'relay_progress' in value:
+        validate_relay_progress(value['relay_progress'])
     progress = value.get('checkpoint_progress')
     if 'checkpoint_progress' in value:
         fields(progress, ('current_count', 'peer_completeness'))

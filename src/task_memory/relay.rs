@@ -1,4 +1,5 @@
 //! Explicit two-device batches for one locally paired task.
+pub(super) mod refresh;
 use super::*;
 use hmac::{Hmac, Mac};
 use sqlx::sqlite::SqliteRow;
@@ -8,13 +9,16 @@ const CHANGES: &str = "CREATE TABLE task_relay_changes (task_id TEXT NOT NULL, e
 const MAX_BATCH: u64 = 1024 * 1024;
 
 pub(super) fn include_schema(version: i64, expected: &mut Vec<String>) {
-    if matches!(version, 3 | 4) {
+    if matches!(version, 5 | 6) {
+        expected.push(refresh::ROUNDS.to_owned());
+    }
+    if matches!(version, 3..=6) {
         expected.extend([PAIR.to_owned(), CHANGES.to_owned()]);
     }
 }
 
 async fn installed(c: &mut SqliteConnection) -> Result<bool, Error> {
-    Ok(matches!(recovery::schema_version(c).await?, 3 | 4))
+    Ok(matches!(recovery::schema_version(c).await?, 3..=6))
 }
 
 pub(super) async fn disable_restored_pairs(c: &mut SqliteConnection) -> Result<(), Error> {
@@ -327,6 +331,17 @@ async fn export(
     Ok(signed)
 }
 
+fn decode_tag(value: &str) -> Result<Vec<u8>, Error> {
+    if value.len() != 64 || !value.is_ascii() {
+        return Err(Error::invalid());
+    }
+    (0..64)
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&value[i..i + 2], 16))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| Error::invalid())
+}
+
 async fn receive(
     tx: &mut SqliteConnection,
     task: &str,
@@ -345,14 +360,7 @@ async fn receive(
     {
         return Err(Error::scope());
     }
-    if signed.mac.len() != 64 || !signed.mac.is_ascii() {
-        return Err(Error::invalid());
-    }
-    let bytes = (0..64)
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&signed.mac[i..i + 2], 16))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| Error::invalid())?;
+    let bytes = decode_tag(&signed.mac)?;
     authenticator(key, &b)?
         .verify_slice(&bytes)
         .map_err(|_| Error::conflict())?;
@@ -414,10 +422,23 @@ enum Request {
     Pair(PairInput),
     Export(Selection),
     Receive(Signed),
+    Refresh(refresh::Start),
+    Page(refresh::Selection),
+    Accept(refresh::Page),
+    Ack(refresh::Proof<refresh::Receipt>),
+    Status,
 }
 
 pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
     let request = match action {
+        "refresh" => Request::Refresh(read_input(true)?),
+        "page" => Request::Page(read_input(false)?),
+        "receive-page" => Request::Accept(read_bounded_input(false, MAX_BATCH + 8192)?),
+        "ack" => Request::Ack(read_input(false)?),
+        "status" => {
+            let _: super::recovery::ExportInput = read_input(true)?;
+            Request::Status
+        }
         "pair" => Request::Pair(read_input(false)?),
         "export" => Request::Export(read_input(false)?),
         "receive" => Request::Receive(read_bounded_input(false, MAX_BATCH)?),
@@ -425,7 +446,10 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
     };
     let task = read_config(path)?.task_id;
     let key = pair_key()?;
-    let read_only = matches!(request, Request::Export(_));
+    let read_only = matches!(
+        request,
+        Request::Export(_) | Request::Page(_) | Request::Status
+    );
     let mut conn = open(&ledger_path()?, read_only).await?;
     let mut tx = conn
         .begin_with(if read_only {
@@ -438,13 +462,20 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
     registered_task(&mut tx, &task).await?;
     let result = match request {
         Request::Pair(input) => pair(&mut tx, &task, input, &key).await?,
-        Request::Export(selection) => {
+        other => {
             let binding = authorized(&mut tx, &task, &key).await?;
-            export(&mut tx, &task, &binding, &key, selection).await?
-        }
-        Request::Receive(signed) => {
-            let binding = authorized(&mut tx, &task, &key).await?;
-            receive(&mut tx, &task, &binding, &key, signed).await?
+            match other {
+                Request::Export(selection) => {
+                    export(&mut tx, &task, &binding, &key, selection).await?
+                }
+                Request::Receive(signed) => receive(&mut tx, &task, &binding, &key, signed).await?,
+                Request::Refresh(start) => refresh::start(&mut tx, &binding, start, &key).await?,
+                Request::Page(sel) => refresh::page(&mut tx, &binding, sel, &key).await?,
+                Request::Accept(page) => refresh::accept(&mut tx, &binding, page, &key).await?,
+                Request::Ack(proof) => refresh::acknowledge(&mut tx, &binding, proof, &key).await?,
+                Request::Status => refresh::status(&mut tx, &binding).await?,
+                Request::Pair(_) => unreachable!(),
+            }
         }
     };
     let revision: i64 = registered_task(&mut tx, &task).await?.get("revision");

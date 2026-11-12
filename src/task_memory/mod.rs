@@ -48,7 +48,7 @@ pub async fn run(args: &[String]) -> Result<Value, Error> {
 async fn run_inner(args: &[String]) -> Result<Value, Error> {
     if args == ["--help"] {
         return Ok(
-            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","checkpoint_handoff":1,"relay":{"usage":"task relay --config <absolute-path> <pair|export|receive>","key_env":"MEMORYNEXUS_TASK_PAIR_KEY"},"commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
+            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","checkpoint_handoff":1,"relay_progress":1,"relay":{"usage":"task relay --config <absolute-path> <pair|export|receive|refresh|page|receive-page|ack|status>","key_env":"MEMORYNEXUS_TASK_PAIR_KEY"},"commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
         );
     }
     if let [group, flag, path, action] = args {
@@ -312,13 +312,13 @@ async fn validate_format(conn: &mut SqliteConnection) -> Result<(), Error> {
         .fetch_one(&mut *conn)
         .await
         .map_err(Error::storage)?;
-    if !(1..=4).contains(&version) {
+    if !(1..=6).contains(&version) {
         return Err(Error::version());
     }
-    if version == 3 {
+    if matches!(version, 3 | 5) {
         recovery::validate_base_schema(conn).await?;
     }
-    if matches!(version, 2 | 4) {
+    if matches!(version, 2 | 4 | 6) {
         workflow::validate_schema(conn).await?;
     }
     Ok(())
@@ -452,7 +452,7 @@ async fn init(path: &Path, mut input: InitInput) -> Result<Value, Error> {
             .fetch_one(&mut *tx)
             .await
             .map_err(Error::storage)?;
-        if !matches!(version, 1 | 3) {
+        if !matches!(version, 1 | 3 | 5) {
             return Err(Error::version());
         }
         if existing_config.is_some() {
@@ -683,6 +683,8 @@ async fn record(
 struct ContextInput {
     #[serde(default)]
     checkpoint_handoff: bool,
+    #[serde(default)]
+    relay_progress: bool,
     #[serde(default = "default_limit")]
     limit: usize,
     #[serde(default)]
@@ -693,7 +695,9 @@ fn default_limit() -> usize {
 }
 
 async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
-    if !(1..=20).contains(&input.limit) || (input.record_ids.is_some() && input.checkpoint_handoff)
+    if (input.relay_progress && !input.checkpoint_handoff)
+        || !(1..=20).contains(&input.limit)
+        || (input.record_ids.is_some() && input.checkpoint_handoff)
     {
         return Err(Error::invalid());
     }
@@ -713,8 +717,16 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     let mut conn = open(&ledger_path()?, true).await?;
     let mut tx = conn.begin().await.map_err(Error::storage)?;
     let task = registered_task(&mut tx, &config.task_id).await?;
-    let handoff =
-        input.checkpoint_handoff && relay::active(&mut tx, &config.task_id).await?.is_some();
+    let pair = if input.checkpoint_handoff {
+        relay::active(&mut tx, &config.task_id).await?
+    } else {
+        None
+    };
+    let handoff = pair.is_some();
+    let progress = match &pair {
+        Some(p) if input.relay_progress => Some(relay::refresh::status(&mut tx, p).await?),
+        _ => None,
+    };
     let mut rows = Vec::new();
     if let Some(ids) = &input.record_ids {
         for id in ids {
@@ -837,6 +849,9 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     }
     let omitted = count - entries.len() - candidates.len();
     let mut result = json!({"display_name":display_name,"entries":entries,"candidates":candidates,"candidate_count":candidate_count,"omitted_count":omitted,"truncated":omitted>0});
+    if let Some(progress) = progress {
+        result["relay_progress"] = progress;
+    }
     if handoff {
         result["checkpoint_progress"] =
             json!({"current_count":checkpoint_count,"peer_completeness":"unconfirmed"});

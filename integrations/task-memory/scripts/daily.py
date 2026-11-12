@@ -70,7 +70,7 @@ def bind(path):
             not isinstance(help_result.get('commands'), list) or
             not (ACTIONS | {'context'}).issubset(help_result['commands'])):
         fail('unsupported_version')
-    return b, pins, help_result.get('checkpoint_handoff') == 1
+    return b, pins, {k: True for k in ('checkpoint_handoff', 'relay_progress') if help_result.get(k) == 1}
 
 
 def identity(b, pins):
@@ -79,7 +79,7 @@ def identity(b, pins):
             'config_sha256': pins['config_sha256']}
 
 
-def read_context(b, request, *, handoff=False):
+def read_context(b, request, *, handoff=None):
     fields(request, (), ('limit', 'record_ids'))
     limit = number(request.get('limit', 20), 1, 20)
     req = {'limit': limit, 'purpose': 'current'}
@@ -88,11 +88,13 @@ def read_context(b, request, *, handoff=False):
         unique(request['record_ids'])
         req.update(purpose='history', record_ids=request['record_ids'])
     if handoff and 'record_ids' not in request:
-        request = dict(request, checkpoint_handoff=True)
-        req['checkpoint_handoff'] = True
+        request = dict(request, **handoff)
+        req.update(handoff)
     response = invoke(b, 'context', canonical(request))
     try:
         context_result(response['result'], req, allow_historical=True)
+        sync = response['result'].get('relay_progress')
+        if sync and sync['task_id'] != b['task_id']: fail('scope_mismatch')
         rows = response['result']['entries'] + response['result']['candidates']
         if any(row['revision'] > response['revision'] for row in rows): fail()
         if len(response['result']['display_name']) + sum(len(row.get('text', '')) for row in rows) > 12000: fail()
@@ -279,6 +281,20 @@ def main():
             if progress is not None:
                 count = progress['current_count']
                 notice = '本机已知进度，对端是否收齐尚未确认。'
+                sync = context['result'].get('relay_progress')
+                if sync and sync.get('round'):
+                    directions = []
+                    for title, key in [('对端接收本机', 'outgoing'), ('本机接收对端', 'incoming')]:
+                        part = sync[key]
+                        position, upper = part['through'], part.get('target')
+                        if upper is None:
+                            state = f'连续至 {position}，本轮上界未知'
+                        elif part['covered']:
+                            state = f'已收齐本轮目标 {upper}'
+                        else:
+                            state = f'连续至 {position}，本轮目标 {upper} 待确认'
+                        directions.append(f'{title}：{state}。')
+                    notice = ''.join(directions) + '对端后续尾部未知。'
                 if count > 1:
                     label = '两' if count == 2 else str(count)
                     notice += f'有{label}条并发进度，待确认。'
