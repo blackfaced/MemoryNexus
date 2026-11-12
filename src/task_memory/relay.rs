@@ -9,16 +9,19 @@ const CHANGES: &str = "CREATE TABLE task_relay_changes (task_id TEXT NOT NULL, e
 const MAX_BATCH: u64 = 1024 * 1024;
 
 pub(super) fn include_schema(version: i64, expected: &mut Vec<String>) {
-    if matches!(version, 5 | 6) {
+    if matches!(version, 7 | 8) {
+        expected.push(refresh::ENQUEUED.to_owned());
+    }
+    if matches!(version, 5..=8) {
         expected.push(refresh::ROUNDS.to_owned());
     }
-    if matches!(version, 3..=6) {
+    if matches!(version, 3..=8) {
         expected.extend([PAIR.to_owned(), CHANGES.to_owned()]);
     }
 }
 
 async fn installed(c: &mut SqliteConnection) -> Result<bool, Error> {
-    Ok(matches!(recovery::schema_version(c).await?, 3..=6))
+    Ok(matches!(recovery::schema_version(c).await?, 3..=8))
 }
 
 pub(super) async fn disable_restored_pairs(c: &mut SqliteConnection) -> Result<(), Error> {
@@ -231,6 +234,13 @@ pub(super) async fn write_local(path: &Path, mutation: Mutation) -> Result<Value
             };
             let hash = digest("task-relay-v1", &change)?;
             remember(&mut tx, &task, &epoch, &device, &change, &hash).await?;
+            refresh::install(&mut tx).await?;
+            sqlx::query("INSERT INTO task_relay_enqueued (record_id, queued_at_ms) VALUES (?,?)")
+                .bind(&change.record_id)
+                .bind(chrono::Utc::now().timestamp_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(Error::storage)?;
         }
     }
     tx.commit().await.map_err(Error::storage)?;
@@ -426,7 +436,7 @@ enum Request {
     Page(refresh::Selection),
     Accept(refresh::Page),
     Ack(refresh::Proof<refresh::Receipt>),
-    Status,
+    Status(refresh::StatusOptions),
 }
 
 pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
@@ -435,10 +445,7 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
         "page" => Request::Page(read_input(false)?),
         "receive-page" => Request::Accept(read_bounded_input(false, MAX_BATCH + 8192)?),
         "ack" => Request::Ack(read_input(false)?),
-        "status" => {
-            let _: super::recovery::ExportInput = read_input(true)?;
-            Request::Status
-        }
+        "status" => Request::Status(read_input(true)?),
         "pair" => Request::Pair(read_input(false)?),
         "export" => Request::Export(read_input(false)?),
         "receive" => Request::Receive(read_bounded_input(false, MAX_BATCH)?),
@@ -448,7 +455,7 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
     let key = pair_key()?;
     let read_only = matches!(
         request,
-        Request::Export(_) | Request::Page(_) | Request::Status
+        Request::Export(_) | Request::Page(_) | Request::Status(_)
     );
     let mut conn = open(&ledger_path()?, read_only).await?;
     let mut tx = conn
@@ -473,7 +480,9 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
                 Request::Page(sel) => refresh::page(&mut tx, &binding, sel, &key).await?,
                 Request::Accept(page) => refresh::accept(&mut tx, &binding, page, &key).await?,
                 Request::Ack(proof) => refresh::acknowledge(&mut tx, &binding, proof, &key).await?,
-                Request::Status => refresh::status(&mut tx, &binding).await?,
+                Request::Status(options) => {
+                    refresh::status(&mut tx, &binding, options.include_batch_age).await?
+                }
                 Request::Pair(_) => unreachable!(),
             }
         }
