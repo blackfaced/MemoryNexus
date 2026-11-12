@@ -312,13 +312,13 @@ async fn validate_format(conn: &mut SqliteConnection) -> Result<(), Error> {
         .fetch_one(&mut *conn)
         .await
         .map_err(Error::storage)?;
-    if !(1..=8).contains(&version) {
+    if !(1..=10).contains(&version) {
         return Err(Error::version());
     }
-    if matches!(version, 3 | 5 | 7) {
+    if matches!(version, 3 | 5 | 7 | 9) {
         recovery::validate_base_schema(conn).await?;
     }
-    if matches!(version, 2 | 4 | 6 | 8) {
+    if matches!(version, 2 | 4 | 6 | 8 | 10) {
         workflow::validate_schema(conn).await?;
     }
     Ok(())
@@ -452,7 +452,7 @@ async fn init(path: &Path, mut input: InitInput) -> Result<Value, Error> {
             .fetch_one(&mut *tx)
             .await
             .map_err(Error::storage)?;
-        if !matches!(version, 1 | 3 | 5 | 7) {
+        if !matches!(version, 1 | 3 | 5 | 7 | 9) {
             return Err(Error::version());
         }
         if existing_config.is_some() {
@@ -754,9 +754,9 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
         }
     } else {
         let query = if handoff {
-            "SELECT r.*, c.origin AS origin_device, c.parents AS checkpoint_parents FROM task_records r LEFT JOIN task_relay_changes c ON c.task_id=r.task_id AND c.record_id=r.id WHERE r.task_id=? AND r.state='current' AND r.kind!='draft'"
+            "SELECT r.*, c.origin AS origin_device, c.parents AS checkpoint_parents FROM task_records r LEFT JOIN task_relay_changes c ON c.task_id=r.task_id AND c.record_id=r.id WHERE r.task_id=? AND r.state IN ('current','pending_confirmation') AND (r.kind!='draft' OR r.state='pending_confirmation')"
         } else {
-            "SELECT * FROM task_records WHERE task_id=? AND state='current' AND kind!='draft'"
+            "SELECT * FROM task_records WHERE task_id=? AND state IN ('current','pending_confirmation') AND (kind!='draft' OR state='pending_confirmation')"
         };
         rows = sqlx::query(query)
             .bind(&config.task_id)
@@ -766,6 +766,9 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     }
     rows.sort_by(|a, b| {
         fn priority(row: &sqlx::sqlite::SqliteRow) -> u8 {
+            if row.get::<&str, _>("state") == "pending_confirmation" {
+                return 4;
+            }
             match row.get::<String, _>("kind").as_str() {
                 "instruction" => 0,
                 "lesson" if row.get::<String, _>("trust") == "owner_confirmed" => 0,
@@ -774,11 +777,11 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
                 _ => 2,
             }
         }
-        if handoff && priority(a) == 1 && priority(b) == 1 {
+        let (left, right) = (priority(a), priority(b));
+        if left == right && (left == 4 || (handoff && left == 1)) {
             return a.get::<String, _>("id").cmp(&b.get::<String, _>("id"));
         }
-        priority(a)
-            .cmp(&priority(b))
+        left.cmp(&right)
             .then_with(|| {
                 b.get::<i64, _>("commit_sequence")
                     .cmp(&a.get::<i64, _>("commit_sequence"))
@@ -790,7 +793,9 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     let count = rows.len();
     let checkpoint_count = rows
         .iter()
-        .filter(|r| r.get::<String, _>("kind") == "checkpoint")
+        .filter(|r| {
+            r.get::<&str, _>("kind") == "checkpoint" && r.get::<&str, _>("state") == "current"
+        })
         .count();
     let candidate_count = rows
         .iter()
@@ -799,6 +804,12 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
                 && row.get::<String, _>("state") == "current"
         })
         .count();
+    let pending_count = rows
+        .iter()
+        .filter(|r| r.get::<&str, _>("state") == "pending_confirmation")
+        .count();
+    let mut pending = Vec::new();
+    let paired_schema = relay::installed(&mut tx).await?;
     let mut entries = Vec::new();
     let mut candidates = Vec::new();
     for row in rows {
@@ -809,7 +820,7 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
         } else {
             String::new()
         };
-        if entries.len() + candidates.len() == input.limit
+        if entries.len() + candidates.len() + pending.len() == input.limit
             || characters + text.chars().count() > 12000
         {
             continue;
@@ -819,10 +830,10 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
             serde_json::from_str(&row.get::<String, _>("evidence_refs")).map_err(Error::storage)?;
         let id: String = row.get("id");
         let sources = lifecycle::source_ids(&mut tx, &id).await?;
-        let supersedes: Option<String> =
-            sqlx::query_scalar("SELECT supersedes_id FROM task_record_revisions WHERE record_id=?")
+        let supersedes: Vec<String> =
+            sqlx::query_scalar("SELECT supersedes_id FROM task_record_revisions WHERE record_id=? ORDER BY supersedes_id")
                 .bind(&id)
-                .fetch_optional(&mut *tx)
+                .fetch_all(&mut *tx)
                 .await
                 .map_err(Error::storage)?;
         let mut entry = json!({"id":id,"kind":row.get::<String,_>("kind"),"trust":row.get::<String,_>("trust"),"occurred_at":row.get::<String,_>("occurred_at"),"run_id":row.get::<String,_>("run_id"),"client":row.get::<String,_>("client"),"state":state,"revision":row.get::<i64,_>("revision"),"source_ids":sources});
@@ -838,17 +849,40 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
             entry["text"] = json!(text);
             entry["evidence_refs"] = refs;
         }
-        if let Some(supersedes) = supersedes {
-            entry["supersedes_id"] = json!(supersedes);
+        if !supersedes.is_empty() {
+            if let [parent] = supersedes.as_slice() {
+                entry["supersedes_id"] = json!(parent);
+            } else {
+                entry["supersedes_ids"] = json!(supersedes);
+            }
+            if paired_schema {
+                let origin: Option<String> = sqlx::query_scalar(
+                    "SELECT origin FROM task_relay_changes WHERE task_id=? AND record_id=?",
+                )
+                .bind(&config.task_id)
+                .bind(&id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(Error::storage)?;
+                if let Some(origin) = origin {
+                    entry["origin_device"] = json!(origin);
+                }
+            }
         }
-        if row.get::<String, _>("trust") == "review_candidate" {
+        if state == "pending_confirmation" && input.record_ids.is_none() {
+            pending.push(entry);
+        } else if row.get::<String, _>("trust") == "review_candidate" {
             candidates.push(entry);
         } else {
             entries.push(entry);
         }
     }
-    let omitted = count - entries.len() - candidates.len();
+    let omitted = count - entries.len() - candidates.len() - pending.len();
     let mut result = json!({"display_name":display_name,"entries":entries,"candidates":candidates,"candidate_count":candidate_count,"omitted_count":omitted,"truncated":omitted>0});
+    if input.record_ids.is_none() && pending_count > 0 {
+        result["pending_correction_count"] = json!(pending_count);
+        result["pending_corrections"] = json!(pending);
+    }
     if let Some(progress) = progress {
         result["relay_progress"] = progress;
     }

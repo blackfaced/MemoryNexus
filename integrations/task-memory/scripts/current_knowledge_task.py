@@ -201,6 +201,7 @@ def context_result(value, req, *, allow_historical=False):
     """Validate context before copying any entry body."""
     optional = ('checkpoint_progress',) if req.get('checkpoint_handoff') else ()
     if req.get('relay_progress'): optional += ('relay_progress',)
+    if req['purpose'] == 'current': optional += ('pending_correction_count', 'pending_corrections')
     fields(value, ('display_name', 'entries', 'candidates', 'candidate_count', 'omitted_count', 'truncated'), optional)
     if 'relay_progress' in value:
         validate_relay_progress(value['relay_progress'])
@@ -212,14 +213,32 @@ def context_result(value, req, *, allow_historical=False):
     string(value['display_name'], 1, 120); number(value['candidate_count']); number(value['omitted_count'])
     if type(value['truncated']) is not bool or value['truncated'] != (value['omitted_count'] > 0): fail()
     entries, candidates = array(value['entries'], 20), array(value['candidates'], 20)
-    if len(entries) + len(candidates) > req['limit']: fail()
+    pending = array(value.get('pending_corrections', []), 20)
+    if ('pending_corrections' in value) != ('pending_correction_count' in value): fail()
+    if 'pending_correction_count' in value:
+        n = number(value['pending_correction_count'], 1)
+        if not len(pending) <= n <= len(pending) + value['omitted_count']: fail()
+    if len(entries) + len(candidates) + len(pending) > req['limit']: fail()
     seen = []
-    for candidate, rows in ((False, entries), (True, candidates)):
+    for rows in (entries, candidates, pending):
+        candidate = rows is candidates
         for row in rows:
             optional = ('text', 'evidence_refs', 'supersedes_id')
-            if progress is not None and isinstance(row, dict) and row.get('kind') == 'checkpoint' and 'origin_device' in row:
-                optional += ('origin_device', 'checkpoint_parents')
+            if not isinstance(row, dict): fail()
+            if 'supersedes_ids' in row:
+                ids = array(row['supersedes_ids'], 20, 2)
+                for item in ids: uuid(item)
+                unique(ids)
+                if 'supersedes_id' in row: fail()
+                optional += ('supersedes_ids',)
+            corrected = 'supersedes_ids' in row or 'supersedes_id' in row
+            if 'origin_device' in row:
+                if not (corrected or progress is not None and row.get('kind') == 'checkpoint'): fail()
                 uuid(row['origin_device'])
+                optional += ('origin_device',)
+            if 'checkpoint_parents' in row or (progress is not None and row.get('kind') == 'checkpoint' and 'origin_device' in row):
+                if progress is None or row.get('kind') != 'checkpoint' or 'origin_device' not in row: fail()
+                optional += ('checkpoint_parents',)
                 parents = row.get('checkpoint_parents')
                 if not isinstance(parents, list): fail()
                 for item in parents: uuid(item)
@@ -231,7 +250,7 @@ def context_result(value, req, *, allow_historical=False):
             unique(row['source_ids']); seen.append(row['id'])
             if 'supersedes_id' in row: uuid(row['supersedes_id'])
             if row['kind'] not in ('instruction', 'checkpoint', 'execution', 'lesson', 'draft'): fail()
-            states = ('current', 'superseded', 'stale', 'retracted')
+            states = ('current', 'superseded', 'stale', 'retracted', 'pending_confirmation')
             if allow_historical and req['purpose'] == 'history':
                 states += ('historical',)
             if row['state'] not in states: fail()
@@ -245,7 +264,11 @@ def context_result(value, req, *, allow_historical=False):
                 for ref in array(row.get('evidence_refs'), 5):
                     fields(ref, ('path',), ('sha256',)); string(ref['path'], 1, 32768)
                     if 'sha256' in ref: hash_value(ref['sha256'])
-            if req['purpose'] == 'current':
+            if row['state'] == 'pending_confirmation':
+                if not corrected or row['trust'] != 'owner_confirmed' or 'origin_device' not in row: fail()
+            if rows is pending:
+                if row['state'] != 'pending_confirmation': fail()
+            elif req['purpose'] == 'current':
                 if row['state'] != 'current' or row['kind'] == 'draft': fail()
                 if row['kind'] == 'lesson' and not candidate and row['trust'] != 'owner_confirmed': fail()
             elif row['id'] not in req['record_ids']: fail()

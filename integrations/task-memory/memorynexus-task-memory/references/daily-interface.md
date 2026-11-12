@@ -140,8 +140,12 @@ truncated output, bad schema/task, lost response or readback failure keep the
 same bytes and report `pending`, exit 2. Explicit retry keeps original provenance,
 even from the other client; a second binding may differ only in `client`.
 A validated save with cleanup failure is `saved_cleanup_pending`, exit 3. A
-completed run can be re-read without resubmitting. Competing correction remains
-conflict, never a new key, new target or automatic confirmation.
+completed run can be re-read without resubmitting. A stale local correction returns conflict.
+For paired concurrent corrections, `read` shows a `correction_notice` and separate
+`pending_corrections`. Show both IDs, source devices, common predecessor and texts.
+Once the owner chooses exact content, stage `correct` with one branch in `target_id`
+and the remaining observed branch IDs in `resolve_with`. A new current revision
+links all selected parents in `supersedes_ids`.
 
 Diagnostics are fixed codes only: no stderr, exception text, request body or raw
 chat. A binding failure before staging is `not_staged`. `verify`/`read` success

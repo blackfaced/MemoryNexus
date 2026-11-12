@@ -15,7 +15,7 @@ from workflow_types import (array, canonical, digest, fail, fields, number, stri
                             strict_loads, unique, uuid, hash_value, relative)
 
 ACTIONS = {'record', 'review', 'correct', 'retract'}
-STATES = {'current', 'historical', 'superseded', 'stale', 'retracted'}
+STATES = {'current', 'historical', 'superseded', 'stale', 'retracted', 'pending_confirmation'}
 CODES = {'invalid_input', 'scope_mismatch', 'unsupported_version', 'stale_snapshot',
          'conflict', 'not_found', 'storage_unavailable', 'unsafe_path', 'oversize',
          'io_error', 'busy', 'invalid_response', 'readback_failed'}
@@ -95,7 +95,7 @@ def read_context(b, request, *, handoff=None):
         context_result(response['result'], req, allow_historical=True)
         sync = response['result'].get('relay_progress')
         if sync and sync['task_id'] != b['task_id']: fail('scope_mismatch')
-        rows = response['result']['entries'] + response['result']['candidates']
+        rows = response['result']['entries'] + response['result']['candidates'] + response['result'].get('pending_corrections', [])
         if any(row['revision'] > response['revision'] for row in rows): fail()
         if len(response['result']['display_name']) + sum(len(row.get('text', '')) for row in rows) > 12000: fail()
     except WorkflowError:
@@ -115,7 +115,7 @@ def envelope(action, raw):
     optional = {
         'record': ('confirmation', 'evidence_refs', 'merge_checkpoint_ids'),
         'review': ('confirmation',),
-        'correct': ('source_ids', 'evidence_refs'), 'retract': (),
+        'correct': ('source_ids', 'evidence_refs', 'resolve_with'), 'retract': (),
     }[action]
     fields(body, common + required, optional)
     string(body['idempotency_key'], 1, 128); uuid(body['run_id']); string(body['client'], 1, 64)
@@ -129,6 +129,10 @@ def envelope(action, raw):
         for item in ids: uuid(item)
         unique(ids)
     if 'target_id' in body: uuid(body['target_id'])
+    if 'resolve_with' in body:
+        ids = array(body['resolve_with'], 19, 1)
+        for item in ids: uuid(item)
+        unique([body['target_id'], *ids])
     if 'text' in body: string(body['text'], 1, 1000)
     if 'reason' in body: string(body['reason'], 1, 240)
     if 'occurred_at' in body: string(body['occurred_at'], 1, 64)
@@ -154,11 +158,14 @@ def stage(b, pins, args):
     raw = read_regular(request_path, 32768, True)
     body = envelope(args.action, raw)
     if body['client'] != b['client']: fail('scope_mismatch')
-    request = {'record_ids': [body['target_id']]} if 'target_id' in body else {'limit': 1}
+    targets = [body['target_id'], *body.get('resolve_with', [])] if 'target_id' in body else []
+    request = {'record_ids': targets} if targets else {'limit': 1}
     context = read_context(b, request)
     if 'target_id' in body:
         rows = context['result']['entries'] + context['result']['candidates']
-        if len(rows) != 1 or (args.action == 'correct' and rows[0]['state'] != 'current'):
+        if {row['id'] for row in rows} != set(targets): fail('conflict')
+        expected = 'pending_confirmation' if 'resolve_with' in body else 'current'
+        if args.action == 'correct' and any(row['state'] != expected for row in rows):
             fail('conflict')
     run = new_run(run_path(b, args.run_dir), state_root=b['state_root'], task_root=b['task_root'])
     filename = str(uuid_module.uuid4()) + '.json'
@@ -186,8 +193,10 @@ def readback(b, receipt, body=None):
             if row['kind'] != body['kind'] or row['trust'] != trust: fail('readback_failed')
         if receipt['action'] == 'review' and (row['kind'] != 'lesson' or row['trust'] != 'review_candidate'):
             fail('readback_failed')
-        if receipt['action'] == 'correct' and (row['trust'] != 'owner_confirmed' or row.get('supersedes_id') != body['target_id']):
-            fail('readback_failed')
+        if receipt['action'] == 'correct':
+            parents = row.get('supersedes_ids', [row.get('supersedes_id')])
+            if row['trust'] != 'owner_confirmed' or sorted(parents) != sorted([body['target_id'], *body.get('resolve_with', [])]):
+                fail('readback_failed')
     return result
 
 
@@ -277,6 +286,9 @@ def main():
             request = strict_loads(read_regular(safe_path(args.request, True), 32768, True)) if args.request else {'limit': 20}
             context = read_context(b, request, handoff=handoff)
             result = {'status': 'incomplete' if context['result']['truncated'] else 'ok', 'context': context}
+            pending = context['result'].get('pending_correction_count')
+            if pending:
+                result['correction_notice'] = f'有 {pending} 条并发订正待 owner 确认取舍。'
             progress = context['result'].get('checkpoint_progress')
             if progress is not None:
                 count = progress['current_count']

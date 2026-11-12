@@ -54,7 +54,7 @@ def snapshot(binding_path, b, pins, req, read_id, created_at):
         copies.append(row)
     result = response['result']; gaps = []
     if copies: gaps.append('injection_unknown')
-    if result['truncated'] or result['omitted_count']: gaps.append('incomplete')
+    if result['truncated'] or result['omitted_count'] or result.get('pending_correction_count'): gaps.append('incomplete')
     if req['purpose'] == 'current' and not any(row.get('text') for row in entries): gaps.append('empty')
     material = {'schema_version': 1, 'read_id': read_id, 'task_id': b['task_id'],
                 'revision': header['revision'], 'incarnation': header['incarnation'],

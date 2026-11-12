@@ -40,18 +40,11 @@ pub(super) async fn chain_head(
     root: &str,
 ) -> Result<String, Error> {
     lifecycle::scoped_record(conn, task, root).await?;
-    let mut current = root.to_owned();
-    loop {
-        let next: Option<String> =
-            sqlx::query_scalar("SELECT record_id FROM task_record_revisions WHERE supersedes_id=?")
-                .bind(&current)
-                .fetch_optional(&mut *conn)
-                .await
-                .map_err(Error::storage)?;
-        match next {
-            Some(n) => current = n,
-            None => return Ok(current),
-        }
+    let heads: Vec<String> = sqlx::query_scalar("WITH RECURSIVE chain(id) AS (SELECT ? UNION SELECT r.record_id FROM task_record_revisions r JOIN chain c ON r.supersedes_id=c.id) SELECT id FROM chain c WHERE NOT EXISTS (SELECT 1 FROM task_record_revisions r WHERE r.supersedes_id=c.id) LIMIT 2")
+        .bind(root).fetch_all(conn).await.map_err(Error::storage)?;
+    match heads.as_slice() {
+        [head] => Ok(head.clone()),
+        _ => Err(Error::conflict()),
     }
 }
 pub(super) async fn record_origin(
@@ -216,7 +209,7 @@ pub(in crate::task_memory) async fn retract_records(
 async fn is_v2(conn: &mut SqliteConnection) -> Result<bool, Error> {
     Ok(matches!(
         recovery::schema_version(conn).await?,
-        2 | 4 | 6 | 8
+        2 | 4 | 6 | 8 | 10
     ))
 }
 async fn invalidate(
@@ -232,7 +225,10 @@ async fn invalidate(
     for id in records {
         let row = lifecycle::scoped_record(conn, task, id).await?;
         let lesson = row.get::<String, _>("kind") == "lesson";
-        if (include_base || lesson) && row.get::<String, _>("state") == "current" {
+        let state = row.get::<&str, _>("state");
+        if (include_base || lesson)
+            && (state == "current" || include_base && state == "pending_confirmation")
+        {
             sqlx::query(
                 "UPDATE task_records SET state='stale',revision=? WHERE task_id=? AND id=?",
             )
