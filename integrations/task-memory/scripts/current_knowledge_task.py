@@ -184,13 +184,17 @@ def validate_relay_progress(sync):
     if sync['device'] == sync['peer'] or sync['subsequent_peer_tail'] != 'unknown': fail()
     for direction in ('incoming', 'outgoing'):
         part = sync[direction]
-        fields(part, ('through', 'covered'), ('target', 'unconfirmed_range'))
+        optional = ('target', 'unconfirmed_range')
+        if direction == 'outgoing': optional += ('pending_count',)
+        fields(part, ('through', 'covered'), optional)
         position, upper = number(part['through']), part.get('target')
         if upper is not None: number(upper)
         if type(part['covered']) is not bool: fail()
         if part['covered'] and (upper is None or upper > position): fail()
         expected = [position + 1, upper] if upper is not None and upper > position else None
         if part.get('unconfirmed_range') != expected: fail()
+        if 'pending_count' in part:
+            number(part['pending_count'], minimum=upper - position if expected else 0)
 
 
 def context_result(value, req, *, allow_historical=False):

@@ -212,6 +212,6 @@ implied by successful task-memory handoff.
 | `page` | 以 `{"round":"<UUID>"}` 取已确认位置之后、冻结上界以内的下一批。可指定 `after` 和 `limit`。 |
 | `receive-page` | 输入对端的页，或仅传 `{"offer":<对端声明>}` 交换上界。以同一事务验证并保存记录、去重结果与连续位置。返回的 `receipt` 仅覆盖目标内的连续前缀。缺少前序依赖的变更须在前序到达后重投。 |
 | `ack` | 输入对端返回的签名 `receipt`，核对设备、任务、配对世代、当前轮及目标后持久化确认位置。同轮旧位置不能回退进度。 |
-| `status` | 传 `{}`。本机的 `outgoing` 是对端已回执的位置，`incoming` 是本机已持久接收的位置。`covered` 仅证明本轮冻结的目标，`unconfirmed_range` 是尚未连续证明的区间。省略 `target` 表示该方向尚未声明上界。 |
+| `status` | 传 `{}`。本机的 `outgoing` 是对端已回执的位置，`incoming` 是本机已持久接收的位置。`covered` 仅证明本轮冻结的目标，`unconfirmed_range` 是尚未连续证明的区间。省略 `target` 表示该方向尚未声明上界。 `outgoing.pending_count` 是本机对此配对任务、对端及世代尚无连续回执的变更总数，包含冻结上界后的新写入。首次刷新前也可读取；本轮 `covered` 为真时仍可能大于零。 |
 
 刷新中断后可以重新发起。上一轮可证的位置保留，新一轮需要自己的有效回执。签名回执遗失时重投同一批；接收方按原身份去重并重新签发。接手读取在同一 SQLite 快照查看两个方向和当前 checkpoint，已收齐的任务仍可能有多个待确认的 checkpoint。对端在已声明上界之后的尾部始终未知。
