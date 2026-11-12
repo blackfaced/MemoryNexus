@@ -57,7 +57,13 @@ a config shares identity; initialize a new config for a different task.
    Reuse a run ID within the same actual run if appropriate. Use at most 1,000
    Unicode text characters; never copy raw chat, logs, tool output or media.
    Optional evidence refs are relative artifact descriptors only; the CLI does
-   not read those files. A new checkpoint makes its predecessor historical.
+   not read those files. A new checkpoint makes its named predecessors historical.
+   On paired tasks, the daily read shows locally known progress and marks peer
+   completeness unknown. Present concurrent checkpoints together with their IDs,
+   origin and trust. Do not pick one by arrival time. Before saving a summary,
+   show the owner its exact text and all current checkpoint IDs. Only after their
+   confirmation send `confirmation: "confirmed"` and those `merge_checkpoint_ids`.
+   On conflict, reread and ask about the new heads; do not reuse the old approval.
 4. **Confirm authority at the correct point.** Automatic reports require the
    persisted execution policy, otherwise ask for confirmation of this write.
    `instruction`, `correct` and `retract` always require the owner's explicit

@@ -88,8 +88,8 @@ not grant permission to upgrade record trust.
 | Command | Required input | Result and rule |
 | --- | --- | --- |
 | `init` | `idempotency_key`, `display_name` (1–120 chars), `confirmation: "confirmed"`, `automatic_capture` (subset of `execution`, `review`) | Register/recover task, persist the one-time bounded policy and create config atomically where possible. `execution` permits checkpoint/execution reports; `review` permits candidates. Empty policy is valid. Policy changes are outside v1; a mismatch is a conflict. |
-| `record` | `idempotency_key`, `run_id`, `client`, `kind` (`checkpoint`, `execution`, `instruction`), `text` (1–1000 chars), `occurred_at`; optional `confirmation`, `evidence_refs` | One current record ID. Instruction requires `confirmation: "confirmed"`. Checkpoint/execution requires the execution policy or per-write confirmation. |
-| `context` | optional `limit` (1–20, default 20), `record_ids` (at most 20) | Current bounded context or specified same-task evidence. Read-only: no new records or database creation. |
+| `record` | `idempotency_key`, `run_id`, `client`, `kind` (`checkpoint`, `execution`, `instruction`), `text` (1–1000 chars), `occurred_at`; optional `confirmation`, `evidence_refs`, `merge_checkpoint_ids` | One current record ID. Instruction requires `confirmation: "confirmed"`. Checkpoint/execution requires the execution policy or per-write confirmation. |
+| `context` | optional `limit` (1–20, default 20), `record_ids` (at most 20) or `checkpoint_handoff: true` for current context | Current bounded context or specified same-task evidence. Read-only: no new records or database creation. |
 | `review` | `idempotency_key`, `run_id`, `client`, `text` (1–1000 chars), `source_ids` (1–20 unique UUIDs), `occurred_at`; optional `confirmation` | One `lesson` with `trust: "review_candidate"`. Requires the review policy or per-write confirmation; confirmation authorizes retention, not factual endorsement of generated text. |
 | `correct` | `idempotency_key`, `run_id`, `client`, `target_id`, replacement `text`, `occurred_at`, `confirmation: "confirmed"`; optional `source_ids`, `evidence_refs` | New owner-confirmed revision of a current same-task record; old revision superseded. Target kind stays fixed. All retained sources must still be current; caller must replace invalid sources explicitly. Concurrent competing corrections conflict. |
 | `retract` | `idempotency_key`, `run_id`, `client`, `target_id`, `reason` (1–240 chars), `confirmation: "confirmed"` | Withdraw the record and its revision-chain content; retain minimum identity/tombstone/digest for audit and replay prevention. |
@@ -124,11 +124,17 @@ Correction, retraction or invalidation of any source marks the dependent lesson
 stale in the same transaction; context excludes it until a new review is written
 from current sources. Owner endorsement does not erase source dependencies.
 
-Return owner-confirmed instructions and endorsed lessons first, the latest current checkpoint next,
+Return owner-confirmed instructions and endorsed lessons first, current checkpoints next,
 then recent current executions, then a separate candidate list. Order within
 groups by ledger commit sequence, with a stable ID tie-break; report occurrence
-time separately. Older checkpoints are historical, not simultaneous current
-progress. Corrections preserve historical links but replace current content.
+time separately. A checkpoint retires its causal predecessors. Independent children remain current.
+For a paired task, `checkpoint_handoff: true` orders current checkpoints by original ID
+and adds `origin_device` and `checkpoint_parents` where relay provenance exists.
+Its `checkpoint_progress` counts all local current checkpoints before truncation;
+`peer_completeness: "unconfirmed"` makes no claim about unseen peer writes.
+A checkpoint replacing multiple local heads requires `confirmation: "confirmed"`
+and `merge_checkpoint_ids` naming the exact set the owner approved. A changed set
+conflicts; an unchanged retry of an accepted write retains its original receipt. Corrections preserve historical links but replace current content.
 Two unrelated, conflicting instructions remain visible; timestamp alone cannot
 silently resolve them. Current context is bounded to 20 entries and 12,000 text
 characters (entry text plus display name), never silently truncates an entry,

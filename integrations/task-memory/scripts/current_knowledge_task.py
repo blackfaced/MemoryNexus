@@ -179,7 +179,13 @@ def call(b, action, body, budget=None):
 
 def context_result(value, req, *, allow_historical=False):
     """Validate context before copying any entry body."""
-    fields(value, ('display_name', 'entries', 'candidates', 'candidate_count', 'omitted_count', 'truncated'))
+    optional = ('checkpoint_progress',) if req.get('checkpoint_handoff') else ()
+    fields(value, ('display_name', 'entries', 'candidates', 'candidate_count', 'omitted_count', 'truncated'), optional)
+    progress = value.get('checkpoint_progress')
+    if 'checkpoint_progress' in value:
+        fields(progress, ('current_count', 'peer_completeness'))
+        number(progress['current_count'])
+        if progress['peer_completeness'] != 'unconfirmed': fail()
     string(value['display_name'], 1, 120); number(value['candidate_count']); number(value['omitted_count'])
     if type(value['truncated']) is not bool or value['truncated'] != (value['omitted_count'] > 0): fail()
     entries, candidates = array(value['entries'], 20), array(value['candidates'], 20)
@@ -187,7 +193,15 @@ def context_result(value, req, *, allow_historical=False):
     seen = []
     for candidate, rows in ((False, entries), (True, candidates)):
         for row in rows:
-            fields(row, ('id', 'kind', 'trust', 'state', 'revision', 'occurred_at', 'run_id', 'client', 'source_ids'), ('text', 'evidence_refs', 'supersedes_id'))
+            optional = ('text', 'evidence_refs', 'supersedes_id')
+            if progress is not None and isinstance(row, dict) and row.get('kind') == 'checkpoint' and 'origin_device' in row:
+                optional += ('origin_device', 'checkpoint_parents')
+                uuid(row['origin_device'])
+                parents = row.get('checkpoint_parents')
+                if not isinstance(parents, list): fail()
+                for item in parents: uuid(item)
+                unique(parents)
+            fields(row, ('id', 'kind', 'trust', 'state', 'revision', 'occurred_at', 'run_id', 'client', 'source_ids'), optional)
             uuid(row['id']); uuid(row['run_id']); number(row['revision'], 1)
             string(row['client'], 1, 64); string(row['occurred_at'], 1, 64)
             for x in array(row['source_ids'], 20): uuid(x)
@@ -213,5 +227,8 @@ def context_result(value, req, *, allow_historical=False):
                 if row['kind'] == 'lesson' and not candidate and row['trust'] != 'owner_confirmed': fail()
             elif row['id'] not in req['record_ids']: fail()
     unique(seen)
+    if progress is not None:
+        visible = sum(row['kind'] == 'checkpoint' for row in entries)
+        if not visible <= progress['current_count'] <= visible + value['omitted_count']: fail()
     if req['purpose'] == 'history' and len(seen) + value['omitted_count'] != len(req['record_ids']): fail()
     return entries, [{k: row[k] for k in ('id', 'kind', 'trust', 'state')} for row in candidates]

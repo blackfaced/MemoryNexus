@@ -48,7 +48,7 @@ pub async fn run(args: &[String]) -> Result<Value, Error> {
 async fn run_inner(args: &[String]) -> Result<Value, Error> {
     if args == ["--help"] {
         return Ok(
-            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","relay":{"usage":"task relay --config <absolute-path> <pair|export|receive>","key_env":"MEMORYNEXUS_TASK_PAIR_KEY"},"commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
+            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","checkpoint_handoff":1,"relay":{"usage":"task relay --config <absolute-path> <pair|export|receive>","key_env":"MEMORYNEXUS_TASK_PAIR_KEY"},"commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
         );
     }
     if let [group, flag, path, action] = args {
@@ -526,6 +526,8 @@ struct RecordInput {
     run_id: String,
     client: String,
     kind: RecordKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merge_checkpoint_ids: Option<Vec<String>>,
     text: String,
     occurred_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -541,6 +543,20 @@ impl RecordInput {
         bounded(&self.text, 1000)?;
         canonical_uuid(&self.run_id)?;
         chrono::DateTime::parse_from_rfc3339(&self.occurred_at).map_err(|_| Error::invalid())?;
+        if let Some(ids) = &self.merge_checkpoint_ids {
+            if self.kind != RecordKind::Checkpoint
+                || self.confirmation.is_none()
+                || !(2..=20).contains(&ids.len())
+            {
+                return Err(Error::invalid());
+            }
+            for id in ids {
+                canonical_uuid(id)?;
+            }
+            if ids.iter().collect::<std::collections::HashSet<_>>().len() != ids.len() {
+                return Err(Error::invalid());
+            }
+        }
         validate_evidence_refs(&self.evidence_refs)
     }
 }
@@ -613,6 +629,14 @@ async fn record(
     {
         return Ok(response);
     }
+    // An exact retry above remains valid after the confirmed merge retires its parents.
+    if let Some(ids) = &input.merge_checkpoint_ids {
+        if ids.len() != parents.len() || !ids.iter().all(|id| parents.contains(id)) {
+            return Err(Error::conflict());
+        }
+    } else if parents.len() > 1 {
+        return Err(Error::conflict());
+    }
     if input.confirmation.is_none()
         && (input.kind == RecordKind::Instruction || !task.get::<bool, _>("execution_capture"))
     {
@@ -657,6 +681,8 @@ async fn record(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ContextInput {
+    #[serde(default)]
+    checkpoint_handoff: bool,
     #[serde(default = "default_limit")]
     limit: usize,
     #[serde(default)]
@@ -667,7 +693,8 @@ fn default_limit() -> usize {
 }
 
 async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
-    if !(1..=20).contains(&input.limit) {
+    if !(1..=20).contains(&input.limit) || (input.record_ids.is_some() && input.checkpoint_handoff)
+    {
         return Err(Error::invalid());
     }
     if let Some(ids) = &input.record_ids {
@@ -686,6 +713,8 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     let mut conn = open(&ledger_path()?, true).await?;
     let mut tx = conn.begin().await.map_err(Error::storage)?;
     let task = registered_task(&mut tx, &config.task_id).await?;
+    let handoff =
+        input.checkpoint_handoff && relay::active(&mut tx, &config.task_id).await?.is_some();
     let mut rows = Vec::new();
     if let Some(ids) = &input.record_ids {
         for id in ids {
@@ -712,13 +741,16 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
             }
         }
     } else {
-        rows = sqlx::query(
-            "SELECT * FROM task_records WHERE task_id=? AND state='current' AND kind!='draft'",
-        )
-        .bind(&config.task_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(Error::storage)?;
+        let query = if handoff {
+            "SELECT r.*, c.origin AS origin_device, c.parents AS checkpoint_parents FROM task_records r LEFT JOIN task_relay_changes c ON c.task_id=r.task_id AND c.record_id=r.id WHERE r.task_id=? AND r.state='current' AND r.kind!='draft'"
+        } else {
+            "SELECT * FROM task_records WHERE task_id=? AND state='current' AND kind!='draft'"
+        };
+        rows = sqlx::query(query)
+            .bind(&config.task_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(Error::storage)?;
     }
     rows.sort_by(|a, b| {
         fn priority(row: &sqlx::sqlite::SqliteRow) -> u8 {
@@ -729,6 +761,9 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
                 "checkpoint" => 1,
                 _ => 2,
             }
+        }
+        if handoff && priority(a) == 1 && priority(b) == 1 {
+            return a.get::<String, _>("id").cmp(&b.get::<String, _>("id"));
         }
         priority(a)
             .cmp(&priority(b))
@@ -741,6 +776,10 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     let display_name: String = task.get("display_name");
     let mut characters = display_name.chars().count();
     let count = rows.len();
+    let checkpoint_count = rows
+        .iter()
+        .filter(|r| r.get::<String, _>("kind") == "checkpoint")
+        .count();
     let candidate_count = rows
         .iter()
         .filter(|row| {
@@ -775,6 +814,14 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
                 .await
                 .map_err(Error::storage)?;
         let mut entry = json!({"id":id,"kind":row.get::<String,_>("kind"),"trust":row.get::<String,_>("trust"),"occurred_at":row.get::<String,_>("occurred_at"),"run_id":row.get::<String,_>("run_id"),"client":row.get::<String,_>("client"),"state":state,"revision":row.get::<i64,_>("revision"),"source_ids":sources});
+        if handoff && entry["kind"] == "checkpoint" {
+            if let Some(origin) = row.get::<Option<String>, _>("origin_device") {
+                entry["origin_device"] = json!(origin);
+                entry["checkpoint_parents"] =
+                    serde_json::from_str(&row.get::<String, _>("checkpoint_parents"))
+                        .map_err(Error::storage)?;
+            }
+        }
         if visible {
             entry["text"] = json!(text);
             entry["evidence_refs"] = refs;
@@ -789,8 +836,13 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
         }
     }
     let omitted = count - entries.len() - candidates.len();
+    let mut result = json!({"display_name":display_name,"entries":entries,"candidates":candidates,"candidate_count":candidate_count,"omitted_count":omitted,"truncated":omitted>0});
+    if handoff {
+        result["checkpoint_progress"] =
+            json!({"current_count":checkpoint_count,"peer_completeness":"unconfirmed"});
+    }
     Ok(
-        json!({"schema_version":1,"status":"ok","task_id":config.task_id,"revision":task.get::<i64,_>("revision"),"result":{"display_name":display_name,"entries":entries,"candidates":candidates,"candidate_count":candidate_count,"omitted_count":omitted,"truncated":omitted>0}}),
+        json!({"schema_version":1,"status":"ok","task_id":config.task_id,"revision":task.get::<i64,_>("revision"),"result":result}),
     )
 }
 
