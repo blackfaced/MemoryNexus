@@ -77,7 +77,7 @@ impl<T: Serialize> Proof<T> {
 }
 
 async fn latest(tx: &mut SqliteConnection, pair: &SqliteRow) -> Result<Option<SqliteRow>, Error> {
-    if !matches!(recovery::schema_version(tx).await?, 5..=10) {
+    if !matches!(recovery::schema_version(tx).await?, 5..=12) {
         return Ok(None);
     }
     sqlx::query(
@@ -154,7 +154,7 @@ pub(super) async fn install(tx: &mut SqliteConnection) -> Result<(), Error> {
     let marker = match version {
         3 | 5 => "PRAGMA user_version=7",
         4 | 6 => "PRAGMA user_version=8",
-        7..=10 => return Ok(()),
+        7..=12 => return Ok(()),
         _ => return Err(Error::version()),
     };
     if matches!(version, 3 | 4) {
@@ -238,7 +238,15 @@ pub(super) async fn page(
         .await.map_err(Error::storage)?;
     let mut page = json!({"offer":offer(pair, &row, key)?});
     if !ids.is_empty() {
-        page["batch"] = export(tx, task, pair, key, super::Selection { record_ids: ids }).await?;
+        page["batch"] = export(
+            tx,
+            task,
+            pair,
+            key,
+            super::Selection { record_ids: ids },
+            true,
+        )
+        .await?;
     }
     Ok(page)
 }

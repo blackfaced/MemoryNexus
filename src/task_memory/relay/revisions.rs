@@ -5,7 +5,7 @@ pub(super) const EDGES: &str = "CREATE TABLE task_record_revisions (record_id TE
 pub(super) const BY_PARENT: &str =
     "CREATE INDEX task_revision_children ON task_record_revisions(supersedes_id)";
 
-async fn allow_forks(tx: &mut SqliteConnection) -> Result<(), Error> {
+pub(super) async fn allow_forks(tx: &mut SqliteConnection) -> Result<(), Error> {
     if recovery::schema_version(tx).await? >= 9 {
         return Ok(());
     }
