@@ -38,7 +38,7 @@ pub(super) struct Target {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Proof<T> {
-    body: T,
+    pub(super) body: T,
     mac: String,
 }
 
@@ -64,11 +64,11 @@ fn tag<T: Serialize>(key: &str, domain: &[u8], body: &T) -> Result<Hmac<Sha256>,
 const OFFER: &[u8] = b"memorynexus/relay-target/v1\0";
 const ACK: &[u8] = b"memorynexus/relay-receipt/v1\0";
 impl<T: Serialize> Proof<T> {
-    fn sign(body: T, key: &str, domain: &[u8]) -> Result<Self, Error> {
+    pub(super) fn sign(body: T, key: &str, domain: &[u8]) -> Result<Self, Error> {
         let mac = format!("{:x}", tag(key, domain, &body)?.finalize().into_bytes());
         Ok(Self { body, mac })
     }
-    fn verify(&self, key: &str, domain: &[u8]) -> Result<(), Error> {
+    pub(super) fn verify(&self, key: &str, domain: &[u8]) -> Result<(), Error> {
         let bytes = decode_tag(&self.mac)?;
         tag(key, domain, &self.body)?
             .verify_slice(&bytes)
@@ -77,7 +77,7 @@ impl<T: Serialize> Proof<T> {
 }
 
 async fn latest(tx: &mut SqliteConnection, pair: &SqliteRow) -> Result<Option<SqliteRow>, Error> {
-    if !matches!(recovery::schema_version(tx).await?, 5..=12) {
+    if !matches!(recovery::schema_version(tx).await?, 5..=14) {
         return Ok(None);
     }
     sqlx::query(
@@ -88,6 +88,17 @@ async fn latest(tx: &mut SqliteConnection, pair: &SqliteRow) -> Result<Option<Sq
     .fetch_optional(tx)
     .await
     .map_err(Error::storage)
+}
+
+pub(super) async fn last_positions(
+    tx: &mut SqliteConnection,
+    pair: &SqliteRow,
+) -> Result<(i64, i64), Error> {
+    let row = latest(tx, pair).await?;
+    Ok((
+        row.as_ref().map_or(0, |r| r.get("confirmed")),
+        row.as_ref().map_or(0, |r| r.get("received")),
+    ))
 }
 
 async fn current(
@@ -154,7 +165,7 @@ pub(super) async fn install(tx: &mut SqliteConnection) -> Result<(), Error> {
     let marker = match version {
         3 | 5 => "PRAGMA user_version=7",
         4 | 6 => "PRAGMA user_version=8",
-        7..=12 => return Ok(()),
+        7..=14 => return Ok(()),
         _ => return Err(Error::version()),
     };
     if matches!(version, 3 | 4) {

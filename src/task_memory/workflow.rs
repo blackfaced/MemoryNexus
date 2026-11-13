@@ -101,7 +101,7 @@ pub(super) async fn run(path: &Path, action: &str, mut input: Value) -> Result<V
         .fetch_one(&mut conn)
         .await
         .map_err(Error::storage)?;
-    if !matches!(version, 2 | 4 | 6 | 8 | 10 | 12) {
+    if !matches!(version, 2 | 4 | 6 | 8 | 10 | 12 | 14) {
         return Err(Error::version());
     }
     if action == "workflow-status" {
@@ -143,6 +143,7 @@ pub(super) async fn run(path: &Path, action: &str, mut input: Value) -> Result<V
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(Error::storage)?;
+    relay::restore::require_ready(&mut tx, &config.task_id).await?;
     let task = registered_task(&mut tx, &config.task_id).await?;
     let rev = task.get::<i64, _>("revision");
     let inc = incarnation(&mut tx).await?;

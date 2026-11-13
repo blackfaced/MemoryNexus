@@ -371,6 +371,7 @@ pub(super) async fn retract(path: &Path, input: RetractInput) -> Result<Value, E
         .await
         .map_err(Error::storage)?;
     let task = registered_task(&mut tx, &config.task_id).await?;
+    relay::restore::require_ready(&mut tx, &config.task_id).await?;
     let previous_revision = task.get::<i64, _>("revision");
     if let Some(response) = replay(
         &mut tx,
