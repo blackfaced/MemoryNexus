@@ -388,17 +388,9 @@ pub(super) async fn retract(path: &Path, input: RetractInput) -> Result<Value, E
     if target.get::<String, _>("state") == "retracted" {
         return Err(Error::conflict());
     }
-    // Traverse both directions so withdrawing any revision removes the entire
-    // retained chain, including successors written after the supplied ID.
-    let chain: Vec<String> = sqlx::query_scalar("WITH RECURSIVE chain(id) AS (SELECT id FROM task_records WHERE task_id=? AND id=? UNION SELECT CASE WHEN r.record_id=c.id THEN r.supersedes_id ELSE r.record_id END FROM task_record_revisions r JOIN chain c ON r.record_id=c.id OR r.supersedes_id=c.id) SELECT id FROM chain")
-        .bind(&config.task_id).bind(&input.target_id).fetch_all(&mut *tx).await.map_err(Error::storage)?;
     let revision = previous_revision + 1;
-    workflow::retract_records(&mut tx, &config.task_id, &chain, revision).await?;
-    for id in chain {
-        invalidate_dependents(&mut tx, &config.task_id, &id, revision).await?;
-        sqlx::query("UPDATE task_records SET state='retracted',text='',evidence_refs='[]',revision=? WHERE task_id=? AND id=?")
-            .bind(revision).bind(&config.task_id).bind(&id).execute(&mut *tx).await.map_err(Error::storage)?;
-    }
+    withdraw_chain(&mut tx, &config.task_id, &input.target_id, revision).await?;
+    relay::queue_withdrawal(&mut tx, &config.task_id, &input.target_id, revision).await?;
     // Only the digest is retained; the reason and request body are never copied.
     save_receipt(
         &mut tx,
@@ -418,4 +410,24 @@ pub(super) async fn retract(path: &Path, input: RetractInput) -> Result<Value, E
         &input.target_id,
         "retracted",
     ))
+}
+
+pub(super) async fn withdraw_chain(
+    conn: &mut SqliteConnection,
+    task_id: &str,
+    target_id: &str,
+    revision: i64,
+) -> Result<(), Error> {
+    // Traverse both directions so withdrawing any revision removes the entire
+    // retained chain, including successors written after the supplied ID.
+    let chain: Vec<String> = sqlx::query_scalar("WITH RECURSIVE chain(id) AS (SELECT id FROM task_records WHERE task_id=? AND id=? UNION SELECT CASE WHEN r.record_id=c.id THEN r.supersedes_id ELSE r.record_id END FROM task_record_revisions r JOIN chain c ON r.record_id=c.id OR r.supersedes_id=c.id) SELECT id FROM chain")
+        .bind(task_id).bind(target_id).fetch_all(&mut *conn).await.map_err(Error::storage)?;
+
+    workflow::retract_records(conn, task_id, &chain, revision).await?;
+    for id in chain {
+        invalidate_dependents(conn, task_id, &id, revision).await?;
+        sqlx::query("UPDATE task_records SET state='retracted',text='',evidence_refs='[]',revision=? WHERE task_id=? AND id=?")
+            .bind(revision).bind(task_id).bind(&id).execute(&mut *conn).await.map_err(Error::storage)?;
+    }
+    Ok(())
 }

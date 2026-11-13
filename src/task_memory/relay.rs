@@ -1,33 +1,42 @@
 //! Explicit two-device batches for one locally paired task.
 pub(super) mod refresh;
 pub(super) mod revisions;
+mod withdrawal;
 use super::*;
 use hmac::{Hmac, Mac};
 use sqlx::sqlite::SqliteRow;
+pub(super) use withdrawal::queue_withdrawal;
 
 const PAIR: &str = "CREATE TABLE task_relay_pairs (task_id TEXT NOT NULL REFERENCES tasks(id), epoch TEXT NOT NULL, device TEXT NOT NULL, peer TEXT NOT NULL, key_hash TEXT NOT NULL, active INTEGER NOT NULL, PRIMARY KEY(task_id,epoch))";
 const CHANGES: &str = "CREATE TABLE task_relay_changes (task_id TEXT NOT NULL, epoch TEXT NOT NULL, origin TEXT NOT NULL, seq INTEGER NOT NULL, record_id TEXT NOT NULL UNIQUE REFERENCES task_records(id), source_revision INTEGER NOT NULL, parents TEXT NOT NULL, envelope TEXT NOT NULL, digest TEXT NOT NULL, PRIMARY KEY(task_id,epoch,origin,seq), FOREIGN KEY(task_id,epoch) REFERENCES task_relay_pairs(task_id,epoch))";
 const MAX_BATCH: u64 = 1024 * 1024;
 
 pub(super) fn include_schema(version: i64, expected: &mut Vec<String>) {
-    if matches!(version, 9 | 10) {
+    if matches!(version, 9..=12) {
         expected.retain(|sql| !sql.starts_with("CREATE TABLE task_record_revisions "));
         expected.push(revisions::EDGES.to_owned());
         expected.push(revisions::BY_PARENT.to_owned());
     }
-    if matches!(version, 7..=10) {
+    if matches!(version, 7..=12) {
         expected.push(refresh::ENQUEUED.to_owned());
     }
-    if matches!(version, 5..=10) {
+    if matches!(version, 5..=12) {
         expected.push(refresh::ROUNDS.to_owned());
     }
-    if matches!(version, 3..=10) {
-        expected.extend([PAIR.to_owned(), CHANGES.to_owned()]);
+    if matches!(version, 3..=12) {
+        expected.extend([
+            PAIR.to_owned(),
+            if version >= 11 {
+                withdrawal::changes_schema()
+            } else {
+                CHANGES.to_owned()
+            },
+        ]);
     }
 }
 
 pub(super) async fn installed(c: &mut SqliteConnection) -> Result<bool, Error> {
-    Ok(matches!(recovery::schema_version(c).await?, 3..=10))
+    Ok(matches!(recovery::schema_version(c).await?, 3..=12))
 }
 
 pub(super) async fn disable_restored_pairs(c: &mut SqliteConnection) -> Result<(), Error> {
@@ -189,7 +198,12 @@ async fn remember(
     if let Some(refs) = input.get_mut("evidence_refs") {
         *refs = json!([]);
     }
-    sqlx::query("INSERT INTO task_relay_changes VALUES (?,?,?,?,?,?,?,?,?)")
+    let sql = if recovery::schema_version(tx).await? >= 11 {
+        "INSERT INTO task_relay_changes VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,(SELECT id FROM task_records WHERE id=?5 AND task_id=?1))"
+    } else {
+        "INSERT INTO task_relay_changes VALUES (?,?,?,?,?,?,?,?,?)"
+    };
+    sqlx::query(sql)
         .bind(task)
         .bind(epoch)
         .bind(origin)
@@ -228,30 +242,52 @@ pub(super) async fn write_local(path: &Path, mutation: Mutation) -> Result<Value
     let response = mutation.apply(&mut tx, &task, &id, &parents, None).await?;
     if let (Some(row), Some(mutation)) = (pair, wire) {
         if response["status"] == "accepted" {
-            let epoch: String = row.get("epoch");
-            let device: String = row.get("device");
-            let seq=sqlx::query_scalar("SELECT COALESCE(MAX(seq),0)+1 FROM task_relay_changes WHERE task_id=? AND epoch=? AND origin=?")
-                .bind(&task).bind(&epoch).bind(&device).fetch_one(&mut *tx).await.map_err(Error::storage)?;
-            let change = Change {
-                seq,
-                record_id: id,
-                source_revision: response["revision"].as_i64().ok_or_else(Error::invalid)?,
+            enqueue(
+                &mut tx,
+                &task,
+                &row,
+                id,
+                response["revision"].as_i64().ok_or_else(Error::invalid)?,
                 parents,
                 mutation,
-            };
-            let hash = digest("task-relay-v1", &change)?;
-            remember(&mut tx, &task, &epoch, &device, &change, &hash).await?;
-            refresh::install(&mut tx).await?;
-            sqlx::query("INSERT INTO task_relay_enqueued (record_id, queued_at_ms) VALUES (?,?)")
-                .bind(&change.record_id)
-                .bind(chrono::Utc::now().timestamp_millis())
-                .execute(&mut *tx)
-                .await
-                .map_err(Error::storage)?;
+            )
+            .await?;
         }
     }
     tx.commit().await.map_err(Error::storage)?;
     Ok(response)
+}
+
+async fn enqueue(
+    tx: &mut SqliteConnection,
+    task: &str,
+    pair: &SqliteRow,
+    id: String,
+    revision: i64,
+    parents: Vec<String>,
+    mutation: Value,
+) -> Result<(), Error> {
+    let epoch: &str = pair.get("epoch");
+    let device: &str = pair.get("device");
+    let seq = sqlx::query_scalar("SELECT COALESCE(MAX(seq),0)+1 FROM task_relay_changes WHERE task_id=? AND epoch=? AND origin=?")
+        .bind(task).bind(epoch).bind(device).fetch_one(&mut *tx).await.map_err(Error::storage)?;
+    let change = Change {
+        seq,
+        record_id: id,
+        source_revision: revision,
+        parents,
+        mutation,
+    };
+    let hash = digest("task-relay-v1", &change)?;
+    remember(tx, task, epoch, device, &change, &hash).await?;
+    refresh::install(tx).await?;
+    sqlx::query("INSERT INTO task_relay_enqueued (record_id, queued_at_ms) VALUES (?,?)")
+        .bind(&change.record_id)
+        .bind(chrono::Utc::now().timestamp_millis())
+        .execute(tx)
+        .await
+        .map_err(Error::storage)?;
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -289,6 +325,7 @@ async fn export(
     pair: &SqliteRow,
     key: &str,
     sel: Selection,
+    include_redactions: bool,
 ) -> Result<Value, Error> {
     if sel.record_ids.is_empty() || sel.record_ids.len() > 20 {
         return Err(Error::invalid());
@@ -298,22 +335,26 @@ async fn export(
     let mut changes = Vec::new();
     for id in sel.record_ids {
         canonical_uuid(&id)?;
-        let rec = lifecycle::scoped_record(tx, task, &id).await?;
-        if matches!(
-            rec.get::<String, _>("state").as_str(),
-            "retracted" | "stale"
-        ) {
-            return Err(Error::conflict());
-        }
         let row=sqlx::query("SELECT seq,source_revision,parents,envelope,digest FROM task_relay_changes WHERE task_id=? AND epoch=? AND origin=? AND record_id=?")
             .bind(task).bind(&epoch).bind(&origin).bind(&id).fetch_optional(&mut *tx).await.map_err(Error::storage)?.ok_or_else(Error::not_found)?;
         let mut mutation: Value =
             serde_json::from_str(&row.get::<String, _>("envelope")).map_err(Error::storage)?;
-        mutation["input"]["text"] = json!(rec.get::<String, _>("text"));
-        if mutation["input"].get("evidence_refs").is_some() {
-            mutation["input"]["evidence_refs"] =
-                serde_json::from_str(&rec.get::<String, _>("evidence_refs"))
-                    .map_err(Error::storage)?;
+        let original_hash: String = row.get("digest");
+        if mutation["action"] != "withdraw" {
+            let rec = lifecycle::scoped_record(tx, task, &id).await?;
+            if matches!(rec.get::<&str, _>("state"), "retracted" | "stale") {
+                if !include_redactions {
+                    return Err(Error::conflict());
+                }
+                mutation = withdrawal::redacted(tx, task, &rec, &original_hash).await?;
+            } else {
+                mutation["input"]["text"] = json!(rec.get::<String, _>("text"));
+                if mutation["input"].get("evidence_refs").is_some() {
+                    mutation["input"]["evidence_refs"] =
+                        serde_json::from_str(&rec.get::<String, _>("evidence_refs"))
+                            .map_err(Error::storage)?;
+                }
+            }
         }
         let change = Change {
             seq: row.get("seq"),
@@ -323,7 +364,9 @@ async fn export(
             record_id: id,
             mutation,
         };
-        if digest("task-relay-v1", &change)? != row.get::<String, _>("digest") {
+        if change.mutation["action"] != "redacted"
+            && digest("task-relay-v1", &change)? != original_hash
+        {
             return Err(Error::conflict());
         }
         changes.push(change);
@@ -391,11 +434,17 @@ async fn receive(
         if c.seq < 1 || c.source_revision < 2 {
             return Err(Error::invalid());
         }
-        let hash = digest("task-relay-v1", &c)?;
-        let seen:Option<String>=sqlx::query_scalar("SELECT digest FROM task_relay_changes WHERE task_id=? AND epoch=? AND origin=? AND seq=?")
+        let marker = withdrawal::parse_redaction(&c)?;
+        let hash = match &marker {
+            Some(m) => m.digest.clone(),
+            None => digest("task-relay-v1", &c)?,
+        };
+        let seen=sqlx::query("SELECT record_id,digest FROM task_relay_changes WHERE task_id=? AND epoch=? AND origin=? AND seq=?")
             .bind(task).bind(&b.epoch).bind(&b.origin).bind(c.seq).fetch_optional(&mut *tx).await.map_err(Error::storage)?;
         if let Some(seen) = seen {
-            if seen != hash {
+            if seen.get::<&str, _>("digest") != hash
+                || seen.get::<&str, _>("record_id") != c.record_id
+            {
                 return Err(Error::conflict());
             }
             replayed.push(c.record_id);
@@ -409,16 +458,22 @@ async fn receive(
         if used {
             return Err(Error::conflict());
         }
-        let mutation: Mutation =
-            serde_json::from_value(c.mutation.clone()).map_err(|_| Error::invalid())?;
-        if !mutation.checkpoint() && !c.parents.is_empty() {
-            return Err(Error::invalid());
-        }
-        let response = mutation
-            .apply(tx, task, &c.record_id, &c.parents, Some(pair))
-            .await?;
-        if response["status"] != "accepted" {
-            return Err(Error::conflict());
+        if let Some(marker) = marker {
+            withdrawal::receive_redaction(tx, task, &c, marker).await?;
+        } else if c.mutation["action"] == "withdraw" {
+            withdrawal::receive_withdrawal(tx, task, &c).await?;
+        } else {
+            let mutation: Mutation =
+                serde_json::from_value(c.mutation.clone()).map_err(|_| Error::invalid())?;
+            if !mutation.checkpoint() && !c.parents.is_empty() {
+                return Err(Error::invalid());
+            }
+            let response = mutation
+                .apply(tx, task, &c.record_id, &c.parents, Some(pair))
+                .await?;
+            if response["status"] != "accepted" {
+                return Err(Error::conflict());
+            }
         }
         remember(tx, task, &b.epoch, &b.origin, &c, &hash).await?;
         accepted.push(c.record_id);
@@ -482,7 +537,7 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
             let binding = authorized(&mut tx, &task, &key).await?;
             match other {
                 Request::Export(selection) => {
-                    export(&mut tx, &task, &binding, &key, selection).await?
+                    export(&mut tx, &task, &binding, &key, selection, false).await?
                 }
                 Request::Receive(signed) => receive(&mut tx, &task, &binding, &key, signed).await?,
                 Request::Refresh(start) => refresh::start(&mut tx, &binding, start, &key).await?,

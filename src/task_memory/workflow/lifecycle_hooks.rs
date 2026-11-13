@@ -209,7 +209,7 @@ pub(in crate::task_memory) async fn retract_records(
 async fn is_v2(conn: &mut SqliteConnection) -> Result<bool, Error> {
     Ok(matches!(
         recovery::schema_version(conn).await?,
-        2 | 4 | 6 | 8 | 10
+        2 | 4 | 6 | 8 | 10 | 12
     ))
 }
 async fn invalidate(

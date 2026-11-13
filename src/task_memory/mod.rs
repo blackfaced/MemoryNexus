@@ -312,13 +312,13 @@ async fn validate_format(conn: &mut SqliteConnection) -> Result<(), Error> {
         .fetch_one(&mut *conn)
         .await
         .map_err(Error::storage)?;
-    if !(1..=10).contains(&version) {
+    if !(1..=12).contains(&version) {
         return Err(Error::version());
     }
-    if matches!(version, 3 | 5 | 7 | 9) {
+    if matches!(version, 3 | 5 | 7 | 9 | 11) {
         recovery::validate_base_schema(conn).await?;
     }
-    if matches!(version, 2 | 4 | 6 | 8 | 10) {
+    if matches!(version, 2 | 4 | 6 | 8 | 10 | 12) {
         workflow::validate_schema(conn).await?;
     }
     Ok(())
@@ -452,7 +452,7 @@ async fn init(path: &Path, mut input: InitInput) -> Result<Value, Error> {
             .fetch_one(&mut *tx)
             .await
             .map_err(Error::storage)?;
-        if !matches!(version, 1 | 3 | 5 | 7 | 9) {
+        if !matches!(version, 1 | 3 | 5 | 7 | 9 | 11) {
             return Err(Error::version());
         }
         if existing_config.is_some() {
