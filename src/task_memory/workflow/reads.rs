@@ -80,6 +80,7 @@ pub(super) async fn status(
         }
     }
     let mut tx = conn.begin().await.map_err(Error::storage)?;
+    relay::restore::require_ready(&mut tx, task).await?;
     let revision = registered_task(&mut tx, task)
         .await?
         .get::<i64, _>("revision");

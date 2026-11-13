@@ -7,7 +7,12 @@ pub(super) struct ExportInput {}
 
 pub(super) async fn export(path: &Path, _: ExportInput) -> Result<Value, Error> {
     let mut conn = open(path, true).await?;
-    let result = export_connection(&mut conn).await?;
+    let mut tx = conn.begin().await.map_err(Error::storage)?;
+    if relay::restore::any_pending(&mut tx).await? {
+        return Err(relay::restore::required());
+    }
+    let result = export_connection(&mut tx).await?;
+    tx.commit().await.map_err(Error::storage)?;
     conn.close().await.map_err(Error::storage)?;
     Ok(result)
 }
@@ -47,7 +52,7 @@ async fn export_connection(conn: &mut SqliteConnection) -> Result<Value, Error> 
     let revisions = sqlx::query("SELECT record_id, supersedes_id FROM task_record_revisions ORDER BY record_id, supersedes_id")
         .fetch_all(&mut *tx).await.map_err(Error::storage)?.into_iter()
         .map(|row| json!({"record_id":row.get::<String,_>("record_id"),"supersedes_id":row.get::<String,_>("supersedes_id")})).collect::<Vec<_>>();
-    let receipt_query = if matches!(version, 1 | 3 | 5 | 7 | 9 | 11) {
+    let receipt_query = if matches!(version, 1 | 3 | 5 | 7 | 9 | 11 | 13) {
         "SELECT task_id, idempotency_key, action, digest, record_id, revision FROM task_receipts ORDER BY task_id, revision, idempotency_key"
     } else {
         "SELECT task_id, idempotency_key, action, digest, record_id, revision, result_type, result_id, result_json FROM task_receipts ORDER BY task_id, revision, idempotency_key"
@@ -60,7 +65,7 @@ async fn export_connection(conn: &mut SqliteConnection) -> Result<Value, Error> 
     for row in receipt_rows {
         let record_id: Option<String> = row.get("record_id");
         let mut receipt = json!({"task_id":row.get::<String,_>("task_id"),"idempotency_key":row.get::<String,_>("idempotency_key"),"action":row.get::<String,_>("action"),"digest":row.get::<String,_>("digest"),"record_id":record_id,"revision":row.get::<i64,_>("revision")});
-        if matches!(version, 2 | 4 | 6 | 8 | 10 | 12) {
+        if matches!(version, 2 | 4 | 6 | 8 | 10 | 12 | 14) {
             let result_type: String = row.get("result_type");
             let result_id: Option<String> = row.get("result_id");
             let result_json: Option<String> = row.get("result_json");
@@ -82,7 +87,7 @@ async fn export_connection(conn: &mut SqliteConnection) -> Result<Value, Error> 
             .await
             .map_err(Error::storage)?;
     let mut result = json!({"format":"memorynexus-task-ledger","version":version,"tasks":tasks,"records":records,"record_sources":sources,"record_revisions":revisions,"receipts":receipts,"init_receipts":init_receipts,"commit_sequence":sequence.unwrap_or(0)});
-    if matches!(version, 2 | 4 | 6 | 8 | 10 | 12) {
+    if matches!(version, 2 | 4 | 6 | 8 | 10 | 12 | 14) {
         let additional = workflow::export_tables(&mut tx).await?;
         result
             .as_object_mut()
@@ -144,7 +149,7 @@ impl Drop for Snapshot {
 
 async fn validate_snapshot(conn: &mut SqliteConnection) -> Result<i64, Error> {
     validate_format(conn).await?;
-    if matches!(schema_version(conn).await?, 2 | 4 | 6 | 8 | 10 | 12) {
+    if matches!(schema_version(conn).await?, 2 | 4 | 6 | 8 | 10 | 12 | 14) {
         workflow::validate_schema(conn).await?;
     } else {
         validate_base_schema(conn).await?;
@@ -224,7 +229,7 @@ async fn publish_snapshot(temporary: Snapshot, destination: &Path) -> Result<Val
     let mut conn = connection(&temporary.file.0, false).await?;
     let revision = validate_snapshot(&mut conn).await?;
     let version = schema_version(&mut conn).await?;
-    let incarnation: Option<String> = if matches!(version, 2 | 4 | 6 | 8 | 10 | 12) {
+    let incarnation: Option<String> = if matches!(version, 2 | 4 | 6 | 8 | 10 | 12 | 14) {
         Some(
             sqlx::query_scalar("SELECT incarnation FROM task_ledger_meta WHERE singleton=1")
                 .fetch_one(&mut conn)
@@ -266,10 +271,15 @@ async fn snapshot(source: &Path, destination: &Path, restore: bool) -> Result<Va
     if restore {
         let mut conn = connection(&temporary.file.0, false).await?;
         validate_snapshot(&mut conn).await?;
-        if matches!(schema_version(&mut conn).await?, 2 | 4 | 6 | 8 | 10 | 12) {
+        if matches!(
+            schema_version(&mut conn).await?,
+            2 | 4 | 6 | 8 | 10 | 12 | 14
+        ) {
             workflow::restore_gate(&mut conn).await?;
         }
-        relay::disable_restored_pairs(&mut conn).await?;
+        let mut tx = conn.begin().await.map_err(Error::storage)?;
+        relay::restore::quarantine(&mut tx).await?;
+        tx.commit().await.map_err(Error::storage)?;
         conn.close().await.map_err(Error::storage)?;
     }
     publish_snapshot(temporary, destination).await

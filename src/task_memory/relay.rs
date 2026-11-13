@@ -1,5 +1,6 @@
 //! Explicit two-device batches for one locally paired task.
 pub(super) mod refresh;
+pub(super) mod restore;
 pub(super) mod revisions;
 mod withdrawal;
 use super::*;
@@ -12,18 +13,21 @@ const CHANGES: &str = "CREATE TABLE task_relay_changes (task_id TEXT NOT NULL, e
 const MAX_BATCH: u64 = 1024 * 1024;
 
 pub(super) fn include_schema(version: i64, expected: &mut Vec<String>) {
-    if matches!(version, 9..=12) {
+    if version >= 13 {
+        expected.push(restore::TABLE.to_owned());
+    }
+    if matches!(version, 9..=14) {
         expected.retain(|sql| !sql.starts_with("CREATE TABLE task_record_revisions "));
         expected.push(revisions::EDGES.to_owned());
         expected.push(revisions::BY_PARENT.to_owned());
     }
-    if matches!(version, 7..=12) {
+    if matches!(version, 7..=14) {
         expected.push(refresh::ENQUEUED.to_owned());
     }
-    if matches!(version, 5..=12) {
+    if matches!(version, 5..=14) {
         expected.push(refresh::ROUNDS.to_owned());
     }
-    if matches!(version, 3..=12) {
+    if matches!(version, 3..=14) {
         expected.extend([
             PAIR.to_owned(),
             if version >= 11 {
@@ -36,17 +40,7 @@ pub(super) fn include_schema(version: i64, expected: &mut Vec<String>) {
 }
 
 pub(super) async fn installed(c: &mut SqliteConnection) -> Result<bool, Error> {
-    Ok(matches!(recovery::schema_version(c).await?, 3..=12))
-}
-
-pub(super) async fn disable_restored_pairs(c: &mut SqliteConnection) -> Result<(), Error> {
-    if installed(c).await? {
-        sqlx::query("UPDATE task_relay_pairs SET active=0")
-            .execute(c)
-            .await
-            .map_err(Error::storage)?;
-    }
-    Ok(())
+    Ok(matches!(recovery::schema_version(c).await?, 3..=14))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -226,6 +220,7 @@ pub(super) async fn write_local(path: &Path, mutation: Mutation) -> Result<Value
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(Error::storage)?;
+    restore::require_ready(&mut tx, &task).await?;
     let pair = active(&mut tx, &task).await?;
     let parents = if mutation.checkpoint() {
         sqlx::query_scalar("SELECT id FROM task_records WHERE task_id=? AND kind='checkpoint' AND state='current' ORDER BY commit_sequence")
@@ -501,6 +496,9 @@ enum Request {
     Accept(refresh::Page),
     Ack(refresh::Proof<refresh::Receipt>),
     Status(refresh::StatusOptions),
+    RecoveryProof(restore::Challenge),
+    RecoveryPage(restore::PageRequest),
+    Reconcile(restore::Approval),
 }
 
 pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
@@ -510,6 +508,10 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
         "receive-page" => Request::Accept(read_bounded_input(false, MAX_BATCH + 8192)?),
         "ack" => Request::Ack(read_input(false)?),
         "status" => Request::Status(read_input(true)?),
+        "recovery-page" => Request::RecoveryPage(read_input(false)?),
+        "recovery-status" => return restore::local_status(path).await,
+        "recovery-proof" => Request::RecoveryProof(read_input(false)?),
+        "reconcile" => Request::Reconcile(read_bounded_input(false, MAX_BATCH)?),
         "pair" => Request::Pair(read_input(false)?),
         "export" => Request::Export(read_input(false)?),
         "receive" => Request::Receive(read_bounded_input(false, MAX_BATCH)?),
@@ -519,7 +521,11 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
     let key = pair_key()?;
     let read_only = matches!(
         request,
-        Request::Export(_) | Request::Page(_) | Request::Status(_)
+        Request::Export(_)
+            | Request::Page(_)
+            | Request::Status(_)
+            | Request::RecoveryProof(_)
+            | Request::RecoveryPage(_)
     );
     let mut conn = open(&ledger_path()?, read_only).await?;
     let mut tx = conn
@@ -531,25 +537,59 @@ pub(super) async fn run(path: &Path, action: &str) -> Result<Value, Error> {
         .await
         .map_err(Error::storage)?;
     registered_task(&mut tx, &task).await?;
-    let result = match request {
-        Request::Pair(input) => pair(&mut tx, &task, input, &key).await?,
-        other => {
-            let binding = authorized(&mut tx, &task, &key).await?;
-            match other {
-                Request::Export(selection) => {
-                    export(&mut tx, &task, &binding, &key, selection, false).await?
+    let pending = restore::pending(&mut tx, &task).await?;
+    let result = match (pending, request) {
+        (Some(row), request) => {
+            if row.get::<&str, _>("key_hash") != format!("{:x}", Sha256::digest(key.as_bytes())) {
+                return Err(Error::scope());
+            }
+            match request {
+                Request::Status(_) => restore::status(&mut tx, &row).await?,
+                Request::Reconcile(proof) => {
+                    restore::reconcile(&mut tx, &row, proof, &key, true).await?
                 }
-                Request::Receive(signed) => receive(&mut tx, &task, &binding, &key, signed).await?,
-                Request::Refresh(start) => refresh::start(&mut tx, &binding, start, &key).await?,
-                Request::Page(sel) => refresh::page(&mut tx, &binding, sel, &key).await?,
-                Request::Accept(page) => refresh::accept(&mut tx, &binding, page, &key).await?,
-                Request::Ack(proof) => refresh::acknowledge(&mut tx, &binding, proof, &key).await?,
-                Request::Status(options) => {
-                    refresh::status(&mut tx, &binding, options.include_batch_age).await?
+                Request::Receive(signed) => {
+                    let route = restore::incoming(&mut tx, &row, &signed.batch.origin).await?;
+                    receive(&mut tx, &task, &route, &key, signed).await?
                 }
-                Request::Pair(_) => unreachable!(),
+                _ => return Err(restore::required()),
             }
         }
+        (None, request) => match request {
+            Request::Pair(input) => pair(&mut tx, &task, input, &key).await?,
+            other => {
+                let binding = authorized(&mut tx, &task, &key).await?;
+                match other {
+                    Request::RecoveryProof(challenge) => {
+                        restore::proof(&mut tx, &binding, challenge, &key).await?
+                    }
+                    Request::Reconcile(approval) => {
+                        restore::reconcile(&mut tx, &binding, approval, &key, false).await?
+                    }
+                    Request::RecoveryPage(req) => {
+                        restore::page(&mut tx, &binding, req, &key).await?
+                    }
+                    Request::Export(selection) => {
+                        export(&mut tx, &task, &binding, &key, selection, false).await?
+                    }
+                    Request::Receive(signed) => {
+                        receive(&mut tx, &task, &binding, &key, signed).await?
+                    }
+                    Request::Refresh(start) => {
+                        refresh::start(&mut tx, &binding, start, &key).await?
+                    }
+                    Request::Page(sel) => refresh::page(&mut tx, &binding, sel, &key).await?,
+                    Request::Accept(page) => refresh::accept(&mut tx, &binding, page, &key).await?,
+                    Request::Ack(proof) => {
+                        refresh::acknowledge(&mut tx, &binding, proof, &key).await?
+                    }
+                    Request::Status(options) => {
+                        refresh::status(&mut tx, &binding, options.include_batch_age).await?
+                    }
+                    Request::Pair(_) => unreachable!(),
+                }
+            }
+        },
     };
     let revision: i64 = registered_task(&mut tx, &task).await?.get("revision");
     tx.commit().await.map_err(Error::storage)?;

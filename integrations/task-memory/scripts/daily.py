@@ -17,7 +17,7 @@ from workflow_types import (array, canonical, digest, fail, fields, number, stri
 ACTIONS = {'record', 'review', 'correct', 'retract'}
 STATES = {'current', 'historical', 'superseded', 'stale', 'retracted', 'pending_confirmation'}
 CODES = {'invalid_input', 'scope_mismatch', 'unsupported_version', 'stale_snapshot',
-         'conflict', 'not_found', 'storage_unavailable', 'unsafe_path', 'oversize',
+         'conflict', 'recovery_required', 'not_found', 'storage_unavailable', 'unsafe_path', 'oversize',
          'io_error', 'busy', 'invalid_response', 'readback_failed'}
 
 

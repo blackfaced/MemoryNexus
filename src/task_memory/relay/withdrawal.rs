@@ -11,7 +11,7 @@ pub(super) fn changes_schema() -> String {
         )
 }
 
-async fn install(tx: &mut SqliteConnection) -> Result<(), Error> {
+pub(super) async fn install(tx: &mut SqliteConnection) -> Result<(), Error> {
     if recovery::schema_version(tx).await? >= 11 {
         return Ok(());
     }

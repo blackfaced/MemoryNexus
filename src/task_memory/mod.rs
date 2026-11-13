@@ -48,7 +48,7 @@ pub async fn run(args: &[String]) -> Result<Value, Error> {
 async fn run_inner(args: &[String]) -> Result<Value, Error> {
     if args == ["--help"] {
         return Ok(
-            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","checkpoint_handoff":1,"relay_progress":1,"relay":{"usage":"task relay --config <absolute-path> <pair|export|receive|refresh|page|receive-page|ack|status>","key_env":"MEMORYNEXUS_TASK_PAIR_KEY"},"commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
+            json!({"schema_version":1,"status":"ok","revision":0,"result":{"command":"task","checkpoint_handoff":1,"relay_progress":1,"relay":{"usage":"task relay --config <absolute-path> <pair|export|receive|refresh|page|receive-page|ack|status|recovery-status|recovery-page|recovery-proof|reconcile>","key_env":"MEMORYNEXUS_TASK_PAIR_KEY"},"commands":["init","record","context","review","correct","retract","export","backup","restore","migrate","workflow-bind","source-sync","source-capture","consumer-review","consumer-approve","publication-result","workflow-status"]}}),
         );
     }
     if let [group, flag, path, action] = args {
@@ -312,13 +312,13 @@ async fn validate_format(conn: &mut SqliteConnection) -> Result<(), Error> {
         .fetch_one(&mut *conn)
         .await
         .map_err(Error::storage)?;
-    if !(1..=12).contains(&version) {
+    if !(1..=14).contains(&version) {
         return Err(Error::version());
     }
-    if matches!(version, 3 | 5 | 7 | 9 | 11) {
+    if matches!(version, 3 | 5 | 7 | 9 | 11 | 13) {
         recovery::validate_base_schema(conn).await?;
     }
-    if matches!(version, 2 | 4 | 6 | 8 | 10 | 12) {
+    if matches!(version, 2 | 4 | 6 | 8 | 10 | 12 | 14) {
         workflow::validate_schema(conn).await?;
     }
     Ok(())
@@ -452,7 +452,7 @@ async fn init(path: &Path, mut input: InitInput) -> Result<Value, Error> {
             .fetch_one(&mut *tx)
             .await
             .map_err(Error::storage)?;
-        if !matches!(version, 1 | 3 | 5 | 7 | 9 | 11) {
+        if !matches!(version, 1 | 3 | 5 | 7 | 9 | 11 | 13) {
             return Err(Error::version());
         }
         if existing_config.is_some() {
@@ -717,6 +717,7 @@ async fn context(path: &Path, input: ContextInput) -> Result<Value, Error> {
     let mut conn = open(&ledger_path()?, true).await?;
     let mut tx = conn.begin().await.map_err(Error::storage)?;
     let task = registered_task(&mut tx, &config.task_id).await?;
+    relay::restore::require_ready(&mut tx, &config.task_id).await?;
     let pair = if input.checkpoint_handoff {
         relay::active(&mut tx, &config.task_id).await?
     } else {
