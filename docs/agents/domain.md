@@ -7,7 +7,7 @@ How engineering skills should consume MemoryNexus domain documentation.
 This is a single-context repository.
 
 - Read root `AGENTS.md` first; it is the active project and agent operating guide.
-- Read root `CONTEXT.md` if it exists; otherwise proceed silently.
+- Read root `GLOSSARY.md` if it exists; otherwise proceed silently.
 - Read relevant architecture decisions from `decisions/`. This repository uses `decisions/` for ADRs, not `docs/adr/`.
 - Read `README.md`, `docs/TODO.md`, and focused docs under `docs/` for the area being changed.
 
